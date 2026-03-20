@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import TopBar from './components/layout/TopBar'
 import Dashboard from './pages/Dashboard'
 import Vendas from './pages/Vendas'
@@ -13,6 +13,7 @@ import Relatorios from './pages/Relatorios'
 import EmBreve from './pages/EmBreve'
 import Configuracoes from './pages/Configuracoes'
 import Assistente from './components/Assistente'
+import BuscaGlobal from './components/BuscaGlobal'
 
 const titulos = {
   dashboard: 'Início',
@@ -70,6 +71,18 @@ const titulos = {
 export default function App() {
   const [pagina, setPagina] = useState('dashboard')
   const [caixaAberto, setCaixaAberto] = useState(true)
+  const [buscaAberta, setBuscaAberta] = useState(false)
+
+  useEffect(() => {
+    function handler(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        setBuscaAberta((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   function renderPagina() {
     switch (pagina) {
@@ -173,6 +186,12 @@ export default function App() {
       >
         {renderPagina()}
       </div>
+      {buscaAberta && (
+        <BuscaGlobal
+          onNavigate={setPagina}
+          onClose={() => setBuscaAberta(false)}
+        />
+      )}
       <Assistente caixaAberto={caixaAberto} onNavigate={setPagina} />
     </div>
   )

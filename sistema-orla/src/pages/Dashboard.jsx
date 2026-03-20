@@ -676,6 +676,305 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
           </div>
         )}
 
+        {/* ── META DIÁRIA + GRÁFICO ── */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1.8fr',
+            gap: 16,
+            marginBottom: 16,
+          }}
+        >
+          {/* META DIÁRIA */}
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: 16,
+              border: '1px solid #E2EAF4',
+              padding: '20px 22px',
+              boxShadow: '0 2px 12px rgba(24,95,165,0.06)',
+              animation: 'fadeUp 0.5s ease 0.28s both',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: 16,
+              }}
+            >
+              <div>
+                <div
+                  style={{ fontSize: 14, fontWeight: 600, color: '#1A202C' }}
+                >
+                  Meta do dia
+                </div>
+                <div style={{ fontSize: 11, color: '#9AA3B2', marginTop: 2 }}>
+                  Faturamento diário
+                </div>
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: totalHoje >= 2000 ? '#22863A' : '#185FA5',
+                  background: totalHoje >= 2000 ? '#EAF6EE' : '#EBF3FC',
+                  padding: '3px 10px',
+                  borderRadius: 99,
+                }}
+              >
+                {Math.round((totalHoje / 2000) * 100)}%
+              </div>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginBottom: 6,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 800,
+                    color: '#0C3F7A',
+                    letterSpacing: '-0.5px',
+                  }}
+                >
+                  {fmt(totalHoje)}
+                </span>
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: '#9AA3B2',
+                    alignSelf: 'flex-end',
+                    marginBottom: 2,
+                  }}
+                >
+                  de {fmt(2000)}
+                </span>
+              </div>
+              <div
+                style={{
+                  height: 10,
+                  background: '#F0F4FA',
+                  borderRadius: 99,
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    borderRadius: 99,
+                    background:
+                      totalHoje >= 2000
+                        ? 'linear-gradient(90deg, #155724, #22863A)'
+                        : 'linear-gradient(90deg, #0C3F7A, #378ADD)',
+                    width: `${Math.min((totalHoje / 2000) * 100, 100)}%`,
+                    transition: 'width 1s ease',
+                  }}
+                />
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: '#9AA3B2' }}>
+              {totalHoje >= 2000
+                ? '🎉 Meta atingida! Parabéns!'
+                : `Faltam ${fmt(2000 - totalHoje)} para a meta`}
+            </div>
+            <div
+              style={{
+                borderTop: '1px solid #EEF3F9',
+                marginTop: 14,
+                paddingTop: 12,
+                display: 'flex',
+                justifyContent: 'space-between',
+              }}
+            >
+              {[
+                { label: 'Ontem', value: fmt(980.0) },
+                { label: 'Semana', value: fmt(4820.0) },
+                { label: 'Melhor', value: fmt(2340.0) },
+              ].map((item) => (
+                <div key={item.label} style={{ textAlign: 'center' }}>
+                  <div
+                    style={{ fontSize: 11, color: '#9AA3B2', marginBottom: 2 }}
+                  >
+                    {item.label}
+                  </div>
+                  <div
+                    style={{ fontSize: 13, fontWeight: 600, color: '#4A5568' }}
+                  >
+                    {item.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* GRÁFICO 7 DIAS */}
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: 16,
+              border: '1px solid #E2EAF4',
+              padding: '20px 22px',
+              boxShadow: '0 2px 12px rgba(24,95,165,0.06)',
+              animation: 'fadeUp 0.5s ease 0.3s both',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: 18,
+              }}
+            >
+              <div>
+                <div
+                  style={{ fontSize: 14, fontWeight: 600, color: '#1A202C' }}
+                >
+                  Vendas — últimos 7 dias
+                </div>
+                <div style={{ fontSize: 11, color: '#9AA3B2', marginTop: 2 }}>
+                  Comparativo diário
+                </div>
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: '#22863A',
+                  fontWeight: 600,
+                  background: '#EAF6EE',
+                  padding: '3px 10px',
+                  borderRadius: 99,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                <TrendingUp size={11} /> +8.2% na semana
+              </div>
+            </div>
+            {(() => {
+              const dias = [
+                { dia: 'Seg', valor: 980, hoje: false },
+                { dia: 'Ter', valor: 1240, hoje: false },
+                { dia: 'Qua', valor: 760, hoje: false },
+                { dia: 'Qui', valor: 2100, hoje: false },
+                { dia: 'Sex', valor: 1580, hoje: false },
+                { dia: 'Sáb', valor: 890, hoje: false },
+                { dia: 'Hoje', valor: totalHoje, hoje: true },
+              ]
+              const maxValor = Math.max(...dias.map((d) => d.valor))
+              const meta = 2000
+              return (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-end',
+                    gap: 8,
+                    height: 120,
+                    position: 'relative',
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      bottom: `${(meta / maxValor) * 100}%`,
+                      borderTop: '1.5px dashed #C5DEFA',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'flex-end',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 9,
+                        color: '#185FA5',
+                        background: '#fff',
+                        padding: '0 4px',
+                        marginTop: -8,
+                      }}
+                    >
+                      meta
+                    </span>
+                  </div>
+                  {dias.map((d, i) => {
+                    const altura = Math.max((d.valor / maxValor) * 100, 4)
+                    const atingiu = d.valor >= meta
+                    return (
+                      <div
+                        key={d.dia}
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: 6,
+                          height: '100%',
+                          justifyContent: 'flex-end',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            color: d.hoje ? '#0C3F7A' : '#9AA3B2',
+                          }}
+                        >
+                          {d.valor >= 1000
+                            ? `${(d.valor / 1000).toFixed(1)}k`
+                            : d.valor}
+                        </div>
+                        <div
+                          style={{
+                            width: '100%',
+                            borderRadius: '6px 6px 0 0',
+                            height: `${altura}%`,
+                            background: d.hoje
+                              ? 'linear-gradient(180deg, #185FA5, #0C3F7A)'
+                              : atingiu
+                                ? 'linear-gradient(180deg, #22863A99, #15572466)'
+                                : 'linear-gradient(180deg, #C5DEFA, #8BBEF4)',
+                            transition: `height 0.8s ease ${i * 0.08}s`,
+                            position: 'relative',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {d.hoje && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                inset: 0,
+                                background:
+                                  'linear-gradient(180deg, rgba(255,255,255,0.15), transparent)',
+                              }}
+                            />
+                          )}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: d.hoje ? '#0C3F7A' : '#9AA3B2',
+                            fontWeight: d.hoje ? 700 : 400,
+                          }}
+                        >
+                          {d.dia}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+
         <div
           style={{
             display: 'grid',
