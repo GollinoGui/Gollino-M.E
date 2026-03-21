@@ -14,7 +14,8 @@ import EmBreve from './pages/EmBreve'
 import Configuracoes from './pages/Configuracoes'
 import Assistente from './components/Assistente'
 import BuscaGlobal from './components/BuscaGlobal'
-
+import Login from './pages/Login'
+import AtalhosTecla from './components/AtalhosTecla'
 const titulos = {
   dashboard: 'Início',
   vendas: 'Vendas',
@@ -72,17 +73,66 @@ export default function App() {
   const [pagina, setPagina] = useState('dashboard')
   const [caixaAberto, setCaixaAberto] = useState(true)
   const [buscaAberta, setBuscaAberta] = useState(false)
-
+  const [usuario, setUsuario] = useState(null)
+  const [temaEscuro, setTemaEscuro] = useState(false)
   useEffect(() => {
     function handler(e) {
+      const tag = document.activeElement?.tagName
+      const digitando =
+        tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+
+      // Ctrl+K — busca global (sempre ativo)
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault()
         setBuscaAberta((prev) => !prev)
+        return
+      }
+
+      // Atalhos de função — só quando não está digitando em campo
+      if (!digitando) {
+        switch (e.key) {
+          case 'F1':
+            e.preventDefault()
+            setBuscaAberta((prev) => !prev)
+            break
+          case 'F2':
+            e.preventDefault()
+            setPagina('vendas')
+            break
+          case 'F3':
+            e.preventDefault()
+            setPagina('pre-vendas')
+            break
+          case 'F4':
+            e.preventDefault()
+            setPagina('contas-receber')
+            break
+          case 'F5':
+            e.preventDefault()
+            setPagina('produtos')
+            break
+          case 'F6':
+            e.preventDefault()
+            setPagina('clientes')
+            break
+          case 'F7':
+            e.preventDefault()
+            setPagina('estoque-consulta')
+            break
+          case 'F8':
+            e.preventDefault()
+            setPagina('dashboard')
+            break
+          case 'Escape':
+            if (buscaAberta) setBuscaAberta(false)
+            else if (pagina !== 'dashboard') setPagina('dashboard')
+            break
+        }
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [buscaAberta, pagina])
 
   function renderPagina() {
     switch (pagina) {
@@ -144,13 +194,15 @@ export default function App() {
   }
 
   const titulo = titulos[pagina] || pagina.replace(/-/g, ' ')
-
+  if (!usuario) return <Login onLogin={setUsuario} />
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <TopBar
         activePage={pagina}
         onNavigate={setPagina}
         caixaAberto={caixaAberto}
+        temaEscuro={temaEscuro}
+        setTemaEscuro={setTemaEscuro}
       />
       <div
         style={{
@@ -193,6 +245,7 @@ export default function App() {
         />
       )}
       <Assistente caixaAberto={caixaAberto} onNavigate={setPagina} />
+      <AtalhosTecla />
     </div>
   )
 }

@@ -28,7 +28,7 @@ import {
   Search,
   AlertCircle,
 } from 'lucide-react'
-
+import { Sun, Moon } from 'lucide-react'
 const menus = [
   {
     id: 'operacional',
@@ -174,10 +174,20 @@ const menus = [
   },
 ]
 
-export default function TopBar({ activePage, onNavigate, caixaAberto }) {
+export default function TopBar({
+  activePage,
+  onNavigate,
+  caixaAberto,
+  temaEscuro,
+  setTemaEscuro,
+}) {
   const [openMenu, setOpenMenu] = useState(null)
   const menuRef = useRef(null)
 
+  function toggleTema() {
+    document.body.classList.toggle('dark')
+    setTemaEscuro((prev) => !prev)
+  }
   useEffect(() => {
     function handler(e) {
       if (menuRef.current && !menuRef.current.contains(e.target))
@@ -381,6 +391,32 @@ export default function TopBar({ activePage, onNavigate, caixaAberto }) {
           borderLeft: '1px solid rgba(255,255,255,0.12)',
         }}
       >
+        <button
+          onClick={toggleTema}
+          title={temaEscuro ? 'Tema claro' : 'Tema escuro'}
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(255,255,255,0.1)',
+            border: '1px solid rgba(255,255,255,0.18)',
+            color: 'rgba(255,255,255,0.8)',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.background = 'rgba(255,255,255,0.2)')
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')
+          }
+        >
+          {temaEscuro ? <Sun size={14} /> : <Moon size={14} />}
+        </button>
         <button
           onClickCapture={() =>
             window.dispatchEvent(
