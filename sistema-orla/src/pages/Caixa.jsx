@@ -23,11 +23,11 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
   async function carregar() {
     setLoading(true)
     try {
-      const status = await window.api.invoke('caixa:status')
+      const status = await window.api.caixa.status()
       setStatusCaixa(status)
 
       const hoje = new Date().toISOString().slice(0, 10)
-      const vendas = await window.api.invoke('vendas:listar', {
+      const vendas = await window.api.vendas.listar({
         dataInicio: hoje,
         dataFim: hoje,
         situacao: 'N',
@@ -68,7 +68,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
   async function abrirCaixa() {
     setSalvando(true)
     try {
-      await window.api.invoke('caixa:abrir', {
+      await window.api.caixa.abrir({
         numero_caixa: '001',
         numero_turno: '1',
         usuario: 'rosangela',
@@ -89,7 +89,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
   async function fecharCaixa() {
     setSalvando(true)
     try {
-      await window.api.invoke('caixa:fechar', {
+      await window.api.caixa.fechar({
         usuario: 'rosangela',
         valor_fechamento: totalVendas,
         valor_dinheiro: totalDinheiro,
@@ -141,7 +141,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        background: '#fff',
+        background: 'var(--surface)',
         position: 'relative',
       }}
     >
@@ -153,7 +153,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
             left: '50%',
             transform: 'translateX(-50%)',
             background: '#22863A',
-            color: '#fff',
+            color: 'var(--surface)',
             padding: '9px 22px',
             borderRadius: 10,
             fontSize: 13,
@@ -171,7 +171,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
           display: 'flex',
           gap: 16,
           padding: 20,
-          borderBottom: '1px solid #E2EAF4',
+          borderBottom: '1px solid var(--border-md)',
         }}
       >
         {/* Status */}
@@ -224,7 +224,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
             >
               {caixaAberto ? 'Aberto' : 'Fechado'}
             </div>
-            <div style={{ fontSize: 12, color: '#9AA3B2', marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
               {caixaAberto ? `Aberto às ${horaAbertura}` : 'Caixa não iniciado'}
             </div>
           </div>
@@ -248,15 +248,15 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
             label: 'Qtde vendas',
             value: vendasHoje.length,
             icon: TrendingUp,
-            color: '#9AA3B2',
+            color: 'var(--text-muted)',
           },
         ].map((card) => (
           <div
             key={card.label}
             style={{
               width: 160,
-              background: '#F7FAFF',
-              border: '1px solid #E2EAF4',
+              background: 'var(--gray-50)',
+              border: '1px solid var(--border-md)',
               borderRadius: 14,
               padding: '16px 18px',
               display: 'flex',
@@ -266,7 +266,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
           >
             <card.icon size={18} style={{ color: card.color }} />
             <div>
-              <div style={{ fontSize: 11, color: '#9AA3B2', marginBottom: 2 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>
                 {card.label}
               </div>
               <div style={{ fontSize: 18, fontWeight: 600, color: card.color }}>
@@ -281,9 +281,9 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
           style={{
             alignSelf: 'flex-start',
             padding: '8px 10px',
-            border: '1px solid #E2EAF4',
+            border: '1px solid var(--border-md)',
             borderRadius: 8,
-            color: '#9AA3B2',
+            color: 'var(--text-muted)',
             marginTop: 4,
           }}
           title='Atualizar'
@@ -297,7 +297,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
         <div
           style={{
             padding: '12px 20px',
-            borderBottom: '1px solid #E2EAF4',
+            borderBottom: '1px solid var(--border-md)',
             display: 'flex',
             gap: 10,
           }}
@@ -306,21 +306,21 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
             { label: 'Dinheiro', value: totalDinheiro, color: '#22863A' },
             { label: 'Cartão Créd.', value: totalCartaoC, color: '#185FA5' },
             { label: 'Cartão Déb.', value: totalCartaoD, color: '#B7791F' },
-            { label: 'Cheque', value: totalCheque, color: '#9AA3B2' },
+            { label: 'Cheque', value: totalCheque, color: 'var(--text-muted)' },
           ]
             .filter((f) => f.value > 0)
             .map((f) => (
               <div
                 key={f.label}
                 style={{
-                  background: '#F7FAFF',
-                  border: '1px solid #E2EAF4',
+                  background: 'var(--gray-50)',
+                  border: '1px solid var(--border-md)',
                   borderRadius: 8,
                   padding: '8px 14px',
                 }}
               >
                 <div
-                  style={{ fontSize: 10, color: '#9AA3B2', marginBottom: 2 }}
+                  style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}
                 >
                   {f.label}
                 </div>
@@ -338,7 +338,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
           style={{
             fontSize: 12,
             fontWeight: 500,
-            color: '#9AA3B2',
+            color: 'var(--text-muted)',
             marginBottom: 12,
             letterSpacing: '0.03em',
           }}
@@ -347,14 +347,14 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
         </div>
 
         {loading ? (
-          <div style={{ textAlign: 'center', color: '#9AA3B2', padding: 40 }}>
+          <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 40 }}>
             Carregando...
           </div>
         ) : historico.length === 0 ? (
           <div
             style={{
               textAlign: 'center',
-              color: '#9AA3B2',
+              color: 'var(--text-muted)',
               padding: 40,
               fontSize: 13,
             }}
@@ -371,9 +371,9 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
                 gap: 12,
                 padding: '10px 14px',
                 borderRadius: 10,
-                border: '1px solid #E2EAF4',
+                border: '1px solid var(--border-md)',
                 marginBottom: 6,
-                background: h.tipo === 'fechamento' ? '#F7FAFF' : '#fff',
+                background: h.tipo === 'fechamento' ? 'var(--gray-50)' : 'var(--surface)',
               }}
             >
               <div
@@ -398,7 +398,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
                 ) : h.tipo === 'abertura' ? (
                   <FolderOpen size={14} style={{ color: '#22863A' }} />
                 ) : (
-                  <X size={14} style={{ color: '#9AA3B2' }} />
+                  <X size={14} style={{ color: 'var(--text-muted)' }} />
                 )}
               </div>
               <div
@@ -409,11 +409,11 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
                   minWidth: 52,
                 }}
               >
-                <Clock size={11} style={{ color: '#9AA3B2' }} />
+                <Clock size={11} style={{ color: 'var(--text-muted)' }} />
                 <span
                   style={{
                     fontSize: 12,
-                    color: '#9AA3B2',
+                    color: 'var(--text-muted)',
                     fontFamily: 'monospace',
                   }}
                 >
@@ -453,8 +453,8 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
       <div
         style={{
           padding: '14px 20px',
-          borderTop: '1px solid #E2EAF4',
-          background: '#F7FAFF',
+          borderTop: '1px solid var(--border-md)',
+          background: 'var(--gray-50)',
           display: 'flex',
           gap: 10,
           alignItems: 'center',
@@ -469,7 +469,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
                 height: 38,
                 padding: '0 24px',
                 background: confirmando ? '#22863A' : '#185FA5',
-                color: '#fff',
+                color: 'var(--surface)',
                 borderRadius: 8,
                 fontSize: 14,
                 fontWeight: 600,
@@ -493,10 +493,10 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
                 style={{
                   height: 38,
                   padding: '0 16px',
-                  border: '1px solid #E2EAF4',
+                  border: '1px solid var(--border-md)',
                   borderRadius: 8,
                   fontSize: 13,
-                  color: '#9AA3B2',
+                  color: 'var(--text-muted)',
                 }}
               >
                 Cancelar
@@ -505,7 +505,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
           </>
         ) : (
           <>
-            <div style={{ flex: 1, fontSize: 13, color: '#9AA3B2' }}>
+            <div style={{ flex: 1, fontSize: 13, color: 'var(--text-muted)' }}>
               Total do dia:{' '}
               <strong style={{ color: '#185FA5' }}>{fmt(totalVendas)}</strong>{' '}
               em {vendasHoje.length} venda(s)
@@ -517,7 +517,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
                 height: 38,
                 padding: '0 24px',
                 background: confirmando ? '#C53030' : '#4A5568',
-                color: '#fff',
+                color: 'var(--surface)',
                 borderRadius: 8,
                 fontSize: 14,
                 fontWeight: 600,
@@ -541,10 +541,10 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
                 style={{
                   height: 38,
                   padding: '0 16px',
-                  border: '1px solid #E2EAF4',
+                  border: '1px solid var(--border-md)',
                   borderRadius: 8,
                   fontSize: 13,
-                  color: '#9AA3B2',
+                  color: 'var(--text-muted)',
                 }}
               >
                 Cancelar

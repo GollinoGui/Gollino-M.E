@@ -1,85 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Search, ArrowDownCircle, Package } from 'lucide-react'
-import { produtos as dadosProdutos } from '../data/mock'
 
 const fmt = (v) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = (d) => new Date(d).toLocaleDateString('pt-BR')
 
-const movimentosIniciais = [
-  {
-    id: '1',
-    tipo: 'ENTRADA',
-    produto_id: '00000215',
-    produto: 'Calha alumínio 3m',
-    quantidade: 20,
-    valor_unitario: 38.0,
-    total: 760.0,
-    data: '2024-01-10',
-    fornecedor: 'Calhas Brasil',
-    obs: 'NF 00123',
-  },
-  {
-    id: '2',
-    tipo: 'ENTRADA',
-    produto_id: '00000089',
-    produto: 'Rufo simples 0,43mm',
-    quantidade: 50,
-    valor_unitario: 22.0,
-    total: 1100.0,
-    data: '2024-01-12',
-    fornecedor: 'Aço Total',
-    obs: 'NF 00456',
-  },
-  {
-    id: '3',
-    tipo: 'SAIDA',
-    produto_id: '00000312',
-    produto: 'Chapa galvanizada 26 1,20×3m',
-    quantidade: 3,
-    valor_unitario: 187.0,
-    total: 561.0,
-    data: '2024-01-15',
-    fornecedor: '',
-    obs: 'Venda #00001490',
-  },
-  {
-    id: '4',
-    tipo: 'ENTRADA',
-    produto_id: '00000314',
-    produto: 'Chapa lisa zincada 0,50mm',
-    quantidade: 15,
-    valor_unitario: 80.0,
-    total: 1200.0,
-    data: '2024-01-18',
-    fornecedor: 'Aço Total',
-    obs: 'NF 00789',
-  },
-  {
-    id: '5',
-    tipo: 'SAIDA',
-    produto_id: '00000215',
-    produto: 'Calha alumínio 3m',
-    quantidade: 2,
-    valor_unitario: 45.0,
-    total: 90.0,
-    data: '2024-01-20',
-    fornecedor: '',
-    obs: 'Venda #00001492',
-  },
-  {
-    id: '6',
-    tipo: 'ACERTO',
-    produto_id: '00000401',
-    produto: 'Conector calha PVC',
-    quantidade: 150,
-    valor_unitario: 0,
-    total: 0,
-    data: '2024-01-22',
-    fornecedor: '',
-    obs: 'Acerto de inventário',
-  },
-]
 
 const abasEstoque = [
   { id: 'movimentos', label: 'Movimentos', pronto: true },
@@ -103,8 +28,14 @@ function ModalEntrada({ onClose, onSalvar }) {
   })
   const [busca, setBusca] = useState('')
   const [dropdown, setDropdown] = useState(false)
+  const [prodsBusca, setProdsBusca] = useState([])
   const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }))
-  const prodsFiltrados = dadosProdutos.filter(
+
+  useEffect(() => {
+    window.api.produtos.listar({ situacao: 'A' }).then(setProdsBusca).catch(console.error)
+  }, [])
+
+  const prodsFiltrados = prodsBusca.filter(
     (p) =>
       p.descricao.toLowerCase().includes(busca.toLowerCase()) ||
       p.codigo.includes(busca),
@@ -128,7 +59,7 @@ function ModalEntrada({ onClose, onSalvar }) {
     >
       <div
         style={{
-          background: '#fff',
+          background: 'var(--surface)',
           borderRadius: 'var(--radius-lg)',
           border: '1px solid var(--border-md)',
           width: 500,
@@ -193,7 +124,7 @@ function ModalEntrada({ onClose, onSalvar }) {
                   left: 0,
                   right: 0,
                   zIndex: 50,
-                  background: '#fff',
+                  background: 'var(--surface)',
                   border: '1px solid var(--border-md)',
                   borderRadius: 'var(--radius-md)',
                   boxShadow: '0 6px 20px rgba(0,0,0,0.1)',
@@ -207,9 +138,9 @@ function ModalEntrada({ onClose, onSalvar }) {
                     onClick={() => {
                       setForm((prev) => ({
                         ...prev,
-                        produto_id: p.id,
+                        produto_id: p.codigo,
                         produto: p.descricao,
-                        valor_unitario: p.preco_vista.toFixed(2),
+                        valor_unitario: (p.preco_venda_vista || 0).toFixed(2),
                       }))
                       setBusca('')
                       setDropdown(false)
@@ -232,7 +163,7 @@ function ModalEntrada({ onClose, onSalvar }) {
                   >
                     <span style={{ fontWeight: 500 }}>{p.descricao}</span>
                     <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                      Estoque: {p.estoque}
+                      Estoque: {p.estoque_atual ?? 0}
                     </span>
                   </button>
                 ))}
@@ -379,7 +310,7 @@ function ModalEntrada({ onClose, onSalvar }) {
               padding: '8px 20px',
               borderRadius: 'var(--radius-md)',
               background: valido ? 'var(--green-500)' : 'var(--gray-200)',
-              color: valido ? '#fff' : 'var(--text-muted)',
+              color: valido ? 'var(--surface)' : 'var(--text-muted)',
               fontSize: 13,
               fontWeight: 500,
               cursor: valido ? 'pointer' : 'not-allowed',
@@ -395,12 +326,19 @@ function ModalEntrada({ onClose, onSalvar }) {
 
 export default function Estoque() {
   const [aba, setAba] = useState('movimentos')
-  const [movimentos, setMovimentos] = useState(movimentosIniciais)
-  const [produtos, setProdutos] = useState(dadosProdutos)
+  const [movimentos, setMovimentos] = useState([])
+  const [produtos, setProdutos] = useState([])
   const [busca, setBusca] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('todos')
   const [modalEntrada, setModalEntrada] = useState(false)
   const [sucesso, setSucesso] = useState('')
+
+  useEffect(() => {
+    window.api.produtos.listar({ situacao: 'A' }).then(setProdutos).catch(console.error)
+    if (window.api.movimentosEstoque) {
+      window.api.movimentosEstoque.listar({}).then(setMovimentos).catch(console.error)
+    }
+  }, [])
 
   const movFiltrados = movimentos.filter((m) => {
     const matchBusca = m.produto.toLowerCase().includes(busca.toLowerCase())
@@ -410,28 +348,29 @@ export default function Estoque() {
 
   const prodFiltrados = produtos.filter(
     (p) =>
-      p.descricao.toLowerCase().includes(busca.toLowerCase()) ||
-      p.codigo.includes(busca),
+      (p.descricao || '').toLowerCase().includes(busca.toLowerCase()) ||
+      (p.codigo || '').includes(busca),
   )
 
-  function salvarEntrada(form) {
-    const novo = {
-      ...form,
-      id: String(movimentos.length + 1),
-      quantidade: parseFloat(form.quantidade),
-      valor_unitario: parseFloat(form.valor_unitario),
+  async function salvarEntrada(form) {
+    try {
+      if (!window.api.movimentosEstoque) {
+        console.error('API movimentosEstoque não disponível — reinicie o Electron')
+        return
+      }
+      await window.api.movimentosEstoque.salvar(form)
+      const [novosMov, novosProd] = await Promise.all([
+        window.api.movimentosEstoque.listar({}),
+        window.api.produtos.listar({ situacao: 'A' }),
+      ])
+      setMovimentos(novosMov)
+      setProdutos(novosProd)
+      setModalEntrada(false)
+      setSucesso('Entrada registrada!')
+      setTimeout(() => setSucesso(''), 2000)
+    } catch (err) {
+      console.error('Erro ao registrar entrada:', err)
     }
-    setMovimentos((prev) => [novo, ...prev])
-    setProdutos((prev) =>
-      prev.map((p) =>
-        p.id === form.produto_id
-          ? { ...p, estoque: p.estoque + parseFloat(form.quantidade) }
-          : p,
-      ),
-    )
-    setModalEntrada(false)
-    setSucesso('Entrada registrada!')
-    setTimeout(() => setSucesso(''), 2000)
   }
 
   return (
@@ -440,7 +379,7 @@ export default function Estoque() {
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        background: '#fff',
+        background: 'var(--surface)',
         position: 'relative',
       }}
     >
@@ -452,7 +391,7 @@ export default function Estoque() {
             left: '50%',
             transform: 'translateX(-50%)',
             background: 'var(--green-500)',
-            color: '#fff',
+            color: 'var(--surface)',
             padding: '9px 22px',
             borderRadius: 'var(--radius-lg)',
             fontSize: 13,
@@ -479,7 +418,7 @@ export default function Estoque() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          background: '#fff',
+          background: 'var(--surface)',
           flexWrap: 'wrap',
           gap: 0,
         }}
@@ -540,7 +479,7 @@ export default function Estoque() {
               height: 34,
               padding: '0 14px',
               background: 'var(--green-500)',
-              color: '#fff',
+              color: 'var(--surface)',
               borderRadius: 'var(--radius-md)',
               fontSize: 13,
               fontWeight: 500,
@@ -812,12 +751,12 @@ export default function Estoque() {
               },
               {
                 label: 'Sem estoque',
-                value: produtos.filter((p) => p.estoque === 0).length,
+                value: produtos.filter((p) => (p.estoque_atual ?? 0) === 0).length,
                 color: 'var(--red-500)',
               },
               {
                 label: 'Estoque baixo (≤5)',
-                value: produtos.filter((p) => p.estoque > 0 && p.estoque <= 5)
+                value: produtos.filter((p) => (p.estoque_atual ?? 0) > 0 && (p.estoque_atual ?? 0) <= 5)
                   .length,
                 color: 'var(--amber-500)',
               },
@@ -955,7 +894,7 @@ export default function Estoque() {
                       borderBottom: '1px solid var(--border)',
                     }}
                   >
-                    {p.un}
+                    {p.unidade}
                   </td>
                   <td
                     style={{
@@ -969,14 +908,14 @@ export default function Estoque() {
                         fontSize: 15,
                         fontWeight: 700,
                         color:
-                          p.estoque === 0
+                          (p.estoque_atual ?? 0) === 0
                             ? 'var(--red-500)'
-                            : p.estoque <= 5
+                            : (p.estoque_atual ?? 0) <= 5
                               ? 'var(--amber-500)'
                               : 'var(--green-500)',
                       }}
                     >
-                      {p.estoque}
+                      {p.estoque_atual ?? 0}
                     </span>
                   </td>
                   <td
@@ -996,7 +935,7 @@ export default function Estoque() {
                       borderBottom: '1px solid var(--border)',
                     }}
                   >
-                    {p.estoque === 0 ? (
+                    {(p.estoque_atual ?? 0) === 0 ? (
                       <span
                         style={{
                           background: 'var(--red-50)',
@@ -1011,7 +950,7 @@ export default function Estoque() {
                       >
                         Sem estoque
                       </span>
-                    ) : p.estoque <= 5 ? (
+                    ) : (p.estoque_atual ?? 0) <= 5 ? (
                       <span
                         style={{
                           background: 'var(--amber-50)',

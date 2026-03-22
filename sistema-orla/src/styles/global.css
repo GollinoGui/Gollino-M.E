@@ -108,7 +108,7 @@ body.dark {
 
   --text-primary: #f0f4fa;
   --text-secondary: #a0aabb;
-  --text-muted: #5a6478;
+  --text-muted: #7a8499;
 
   color: var(--text-primary);
   background: var(--bg);
@@ -178,4 +178,115 @@ textarea:focus {
 }
 .fade-in {
   animation: fadeIn 0.18s ease both;
+}
+
+/* ── DARK MODE — sobrescreve seletores CSS com cores hardcoded ── */
+body.dark .busca-item:hover,
+body.dark .busca-item.ativo {
+  background: var(--blue-50) !important;
+}
+
+body.dark .row-hover:hover {
+  background: var(--blue-50) !important;
+}
+
+body.dark .card-hover:hover {
+  border-color: var(--blue-200) !important;
+}
+
+/* ── TOPBAR RESPONSIVA ── */
+
+/* Esconde scrollbar horizontal da nav mas permite scroll */
+.topbar-nav::-webkit-scrollbar {
+  display: none;
+}
+
+/* ≤ 1100px: remove o texto "Buscar" do botão de busca */
+@media (max-width: 1100px) {
+  .topbar-search-text {
+    display: none;
+  }
+  .topbar-search-kbd {
+    display: none;
+  }
+}
+
+/* ≤ 900px: esconde o nome do usuário */
+@media (max-width: 900px) {
+  .topbar-user {
+    display: none;
+  }
+}
+
+/* ≤ 780px: esconde texto "Caixa aberto/fechado", mantém só o indicador */
+@media (max-width: 780px) {
+  .topbar-caixa-text {
+    display: none;
+  }
+}
+
+/* ≤ 640px: esconde o nome da empresa */
+@media (max-width: 640px) {
+  .topbar-logo-text {
+    display: none;
+  }
+}
+
+/* ── RESPONSIVIDADE ── */
+
+/* Grid de 4 colunas no dashboard (cards de métricas) */
+.grid-4col {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+@media (max-width: 1100px) {
+  .grid-4col {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 580px) {
+  .grid-4col {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Layout meta + gráfico (lado a lado) */
+.grid-meta-grafico {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 1000px) {
+  .grid-meta-grafico {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Layout vendas + resumo (lado a lado) */
+.grid-vendas-resumo {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 14px;
+}
+@media (max-width: 900px) {
+  .grid-vendas-resumo {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Sidebar de vendas */
+.vendas-sidebar {
+  width: 320px;
+  flex-shrink: 0;
+}
+@media (max-width: 860px) {
+  .vendas-sidebar {
+    width: 260px;
+  }
+}
+@media (max-width: 700px) {
+  .vendas-sidebar {
+    width: 220px;
+  }
 }

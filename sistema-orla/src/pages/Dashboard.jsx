@@ -17,7 +17,7 @@ import {
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-function AnimatedNumber({ value, prefix = '', suffix = '' }) {
+function AnimatedNumber({ value, prefix = '', suffix = '', integer = false }) {
   const [display, setDisplay] = useState(0)
   useEffect(() => {
     const target = parseFloat(String(value).replace(/[^0-9.]/g, '')) || 0
@@ -35,7 +35,7 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }) {
     return () => clearInterval(timer)
   }, [value])
 
-  if (typeof value === 'number' && value < 100)
+  if (integer)
     return (
       <>
         {prefix}
@@ -230,6 +230,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
   const [produtosBaixo, setProdutosBaixo] = useState([])
   const [totalClientes, setTotalClientes] = useState(0)
   const [totalProdutos, setTotalProdutos] = useState(0)
+  const [cancelandoId, setCancelandoId] = useState(null)
 
   const META_DIARIA = 2000
 
@@ -238,12 +239,12 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
     setLoading(true)
     try {
       // Resumo principal
-      const res = await window.api.invoke('dashboard:resumo', p)
+      const res = await window.api.dashboard.resumo(p)
       setResumo(res)
 
       // Vendas de hoje (últimas 5)
       const dataHoje = new Date().toISOString().slice(0, 10)
-      const vendas = await window.api.invoke('vendas:listar', {
+      const vendas = await window.api.vendas.listar({
         dataInicio: dataHoje,
         dataFim: dataHoje,
         situacao: 'N',
@@ -253,30 +254,30 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
       // Contas a receber vencendo (próximos 7 dias)
       const d7 = new Date()
       d7.setDate(d7.getDate() + 7)
-      const cr = await window.api.invoke('contasReceber:listar', {
+      const cr = await window.api.contasReceber.listar({
         situacao: 'A',
         dataFim: d7.toISOString().slice(0, 10),
       })
       setContasVencendo(cr.slice(0, 4))
 
       // Contas a pagar vencendo (próximos 7 dias)
-      const cp = await window.api.invoke('contasPagar:listar', {
+      const cp = await window.api.contasPagar.listar({
         situacao: 'A',
         dataFim: d7.toISOString().slice(0, 10),
       })
       setContasPagarAlerta(cp.slice(0, 3))
 
       // Produtos com estoque baixo
-      const prods = await window.api.invoke('produtos:listar', {
+      const prods = await window.api.produtos.listar({
         estoqueBaixo: true,
       })
       setProdutosBaixo(prods.slice(0, 3))
 
       // Totais de clientes e produtos
-      window.api.clientes.listar(filtros)
+      const clientes = await window.api.clientes.listar({})
       setTotalClientes(clientes.length)
 
-      const todosProds = await window.api.invoke('produtos:listar', {
+      const todosProds = await window.api.produtos.listar({
         situacao: 'A',
       })
       setTotalProdutos(todosProds.length)
@@ -295,6 +296,23 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
     setPeriodo(p)
     setAnimKey((k) => k + 1)
     carregarDados(p)
+  }
+
+  async function cancelarVenda(orcamento) {
+    if (!window.confirm(`Cancelar a venda #${orcamento}?`)) return
+    setCancelandoId(orcamento)
+    try {
+      await window.api.vendas.cancelar({
+        orcamento,
+        motivo: 'Cancelado pelo usuário',
+        usuario: 'rosangela',
+      })
+      await carregarDados(periodo)
+    } catch (err) {
+      console.error('Erro ao cancelar venda:', err)
+    } finally {
+      setCancelandoId(null)
+    }
   }
 
   // ── Gráfico 7 dias ────────────────────────────────────────────
@@ -378,7 +396,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
   })()
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto', background: '#F0F4FA' }}>
+    <div style={{ height: '100%', overflowY: 'auto', background: 'var(--bg)' }}>
       <style>{`
         @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
         @keyframes slideRight { from { width:0; } to { width:var(--w); } }
@@ -464,7 +482,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 style={{
                   fontSize: 26,
                   fontWeight: 700,
-                  color: '#fff',
+                  color: 'var(--surface)',
                   marginBottom: 6,
                   letterSpacing: '-0.5px',
                 }}
@@ -505,7 +523,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                       periodo === p.id
                         ? 'rgba(255,255,255,0.22)'
                         : 'rgba(255,255,255,0.08)',
-                    color: '#fff',
+                    color: 'var(--surface)',
                     border:
                       periodo === p.id
                         ? '1px solid rgba(255,255,255,0.4)'
@@ -536,7 +554,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 value: resumo.vendas.total,
                 isCurrency: true,
                 sub: `${resumo.vendas.qtde} vendas no período`,
-                nav: 'vendas',
+                nav: 'rel-vendas',
               },
               {
                 label: 'A receber',
@@ -598,7 +616,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                   style={{
                     fontSize: 26,
                     fontWeight: 800,
-                    color: '#fff',
+                    color: 'var(--surface)',
                     lineHeight: 1,
                     marginBottom: 6,
                     letterSpacing: '-0.5px',
@@ -615,7 +633,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                       <AnimatedNumber value={card.value} />
                     </>
                   ) : (
-                    <AnimatedNumber value={card.value} />
+                    <AnimatedNumber value={card.value} integer />
                   )}
                 </div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
@@ -639,7 +657,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
         {!caixaAberto && (
           <div
             style={{
-              background: '#FFF8E6',
+              background: 'var(--amber-50)',
               border: '1px solid #FFE8A3',
               borderRadius: 14,
               padding: '14px 20px',
@@ -653,13 +671,13 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
           >
             <AlertCircle
               size={20}
-              style={{ color: '#B7791F', flexShrink: 0 }}
+              style={{ color: 'var(--amber-500)', flexShrink: 0 }}
             />
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: '#744210' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--amber-700)' }}>
                 Caixa fechado
               </div>
-              <div style={{ fontSize: 12, color: '#B7791F', marginTop: 1 }}>
+              <div style={{ fontSize: 12, color: 'var(--amber-500)', marginTop: 1 }}>
                 Abra o caixa antes de iniciar as vendas do dia.
               </div>
             </div>
@@ -668,8 +686,8 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
               onClick={() => onNavigate('abrir-caixa')}
               style={{
                 padding: '8px 18px',
-                background: '#B7791F',
-                color: '#fff',
+                background: 'var(--amber-500)',
+                color: 'var(--surface)',
                 borderRadius: 10,
                 fontSize: 13,
                 fontWeight: 600,
@@ -694,9 +712,9 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
           {/* META DIÁRIA */}
           <div
             style={{
-              background: '#fff',
+              background: 'var(--surface)',
               borderRadius: 16,
-              border: '1px solid #E2EAF4',
+              border: '1px solid var(--border-md)',
               padding: '20px 22px',
               boxShadow: '0 2px 12px rgba(24,95,165,0.06)',
               animation: 'fadeUp 0.5s ease 0.28s both',
@@ -712,11 +730,11 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
             >
               <div>
                 <div
-                  style={{ fontSize: 14, fontWeight: 600, color: '#1A202C' }}
+                  style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}
                 >
                   Meta do dia
                 </div>
-                <div style={{ fontSize: 11, color: '#9AA3B2', marginTop: 2 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                   Faturamento diário
                 </div>
               </div>
@@ -725,7 +743,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                   fontSize: 11,
                   fontWeight: 700,
                   color: totalHoje >= META_DIARIA ? '#22863A' : '#185FA5',
-                  background: totalHoje >= META_DIARIA ? '#EAF6EE' : '#EBF3FC',
+                  background: totalHoje >= META_DIARIA ? 'var(--green-50)' : 'var(--blue-50)',
                   padding: '3px 10px',
                   borderRadius: 99,
                 }}
@@ -745,7 +763,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                   style={{
                     fontSize: 22,
                     fontWeight: 800,
-                    color: '#0C3F7A',
+                    color: 'var(--blue-800)',
                     letterSpacing: '-0.5px',
                   }}
                 >
@@ -754,7 +772,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 <span
                   style={{
                     fontSize: 13,
-                    color: '#9AA3B2',
+                    color: 'var(--text-muted)',
                     alignSelf: 'flex-end',
                     marginBottom: 2,
                   }}
@@ -765,7 +783,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
               <div
                 style={{
                   height: 10,
-                  background: '#F0F4FA',
+                  background: 'var(--gray-50)',
                   borderRadius: 99,
                   overflow: 'hidden',
                 }}
@@ -784,14 +802,14 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 />
               </div>
             </div>
-            <div style={{ fontSize: 12, color: '#9AA3B2' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               {totalHoje >= META_DIARIA
                 ? '🎉 Meta atingida! Parabéns!'
                 : `Faltam ${fmt(META_DIARIA - totalHoje)} para a meta`}
             </div>
             <div
               style={{
-                borderTop: '1px solid #EEF3F9',
+                borderTop: '1px solid var(--gray-100)',
                 marginTop: 14,
                 paddingTop: 12,
                 display: 'flex',
@@ -805,12 +823,12 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
               ].map((item) => (
                 <div key={item.label} style={{ textAlign: 'center' }}>
                   <div
-                    style={{ fontSize: 11, color: '#9AA3B2', marginBottom: 2 }}
+                    style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}
                   >
                     {item.label}
                   </div>
                   <div
-                    style={{ fontSize: 13, fontWeight: 600, color: '#4A5568' }}
+                    style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}
                   >
                     {item.value}
                   </div>
@@ -822,9 +840,9 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
           {/* GRÁFICO 7 DIAS */}
           <div
             style={{
-              background: '#fff',
+              background: 'var(--surface)',
               borderRadius: 16,
-              border: '1px solid #E2EAF4',
+              border: '1px solid var(--border-md)',
               padding: '20px 22px',
               boxShadow: '0 2px 12px rgba(24,95,165,0.06)',
               animation: 'fadeUp 0.5s ease 0.3s both',
@@ -840,11 +858,11 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
             >
               <div>
                 <div
-                  style={{ fontSize: 14, fontWeight: 600, color: '#1A202C' }}
+                  style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}
                 >
                   Vendas — últimos 7 dias
                 </div>
-                <div style={{ fontSize: 11, color: '#9AA3B2', marginTop: 2 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                   Comparativo diário
                 </div>
               </div>
@@ -874,7 +892,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                   style={{
                     fontSize: 9,
                     color: '#185FA5',
-                    background: '#fff',
+                    background: 'var(--surface)',
                     padding: '0 4px',
                     marginTop: -8,
                   }}
@@ -902,7 +920,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                       style={{
                         fontSize: 10,
                         fontWeight: 600,
-                        color: d.hoje ? '#0C3F7A' : '#9AA3B2',
+                        color: d.hoje ? '#0C3F7A' : 'var(--text-muted)',
                       }}
                     >
                       {d.valor >= 1000
@@ -927,7 +945,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                     <div
                       style={{
                         fontSize: 10,
-                        color: d.hoje ? '#0C3F7A' : '#9AA3B2',
+                        color: d.hoje ? '#0C3F7A' : 'var(--text-muted)',
                         fontWeight: d.hoje ? 700 : 400,
                       }}
                     >
@@ -952,18 +970,20 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
           {/* VENDAS DE HOJE */}
           <div
             style={{
-              background: '#fff',
+              background: 'var(--surface)',
               borderRadius: 16,
-              border: '1px solid #E2EAF4',
+              border: '1px solid var(--border-md)',
               overflow: 'hidden',
               boxShadow: '0 2px 12px rgba(24,95,165,0.06)',
               animation: 'fadeUp 0.5s ease 0.3s both',
+              display: 'flex',
+              flexDirection: 'column',
             }}
           >
             <div
               style={{
                 padding: '16px 20px',
-                borderBottom: '1px solid #EEF3F9',
+                borderBottom: '1px solid var(--gray-100)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -972,16 +992,16 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
             >
               <div>
                 <div
-                  style={{ fontSize: 14, fontWeight: 600, color: '#1A202C' }}
+                  style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}
                 >
                   Vendas de hoje
                 </div>
-                <div style={{ fontSize: 11, color: '#9AA3B2', marginTop: 2 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                   Últimas transações
                 </div>
               </div>
               <button
-                onClick={() => onNavigate('vendas')}
+                onClick={() => onNavigate('rel-vendas')}
                 style={{
                   fontSize: 12,
                   color: '#185FA5',
@@ -995,7 +1015,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                   transition: 'all 0.15s',
                 }}
                 onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = '#EBF3FC')
+                  (e.currentTarget.style.background = 'var(--blue-50)')
                 }
                 onMouseLeave={(e) =>
                   (e.currentTarget.style.background = 'transparent')
@@ -1005,129 +1025,159 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
               </button>
             </div>
 
-            {loading ? (
-              <div
-                style={{
-                  padding: '24px 20px',
-                  textAlign: 'center',
-                  color: '#9AA3B2',
-                  fontSize: 13,
-                }}
-              >
-                Carregando...
-              </div>
-            ) : vendasHoje.length === 0 ? (
-              <div
-                style={{
-                  padding: '24px 20px',
-                  textAlign: 'center',
-                  color: '#9AA3B2',
-                  fontSize: 13,
-                }}
-              >
-                Nenhuma venda hoje ainda.
-              </div>
-            ) : (
-              vendasHoje.map((v, i) => (
+            <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+              {loading ? (
                 <div
-                  key={i}
-                  className='row-hover'
                   style={{
-                    padding: '12px 20px',
-                    borderBottom:
-                      i < vendasHoje.length - 1 ? '1px solid #F0F4FA' : 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 14,
-                    background: 'transparent',
+                    padding: '24px 20px',
+                    textAlign: 'center',
+                    color: 'var(--text-muted)',
+                    fontSize: 13,
                   }}
                 >
+                  Carregando...
+                </div>
+              ) : vendasHoje.length === 0 ? (
+                <div
+                  style={{
+                    padding: '24px 20px',
+                    textAlign: 'center',
+                    color: 'var(--text-muted)',
+                    fontSize: 13,
+                  }}
+                >
+                  Nenhuma venda hoje ainda.
+                </div>
+              ) : (
+                vendasHoje.map((v, i) => (
                   <div
+                    key={i}
+                    className='row-hover'
                     style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: '50%',
-                      background: 'linear-gradient(135deg,#EBF3FC,#C5DEFA)',
+                      padding: '12px 20px',
+                      borderBottom:
+                        i < vendasHoje.length - 1 ? '1px solid var(--border)' : 'none',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
+                      gap: 14,
+                      background: 'transparent',
                     }}
                   >
-                    <ShoppingCart size={14} style={{ color: '#185FA5' }} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
-                        fontSize: 13,
-                        fontWeight: 600,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        color: '#1A202C',
-                      }}
-                    >
-                      {v.nome_cliente || 'Consumidor'}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: '#9AA3B2',
+                        width: 36,
+                        height: 36,
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg,#EBF3FC,#C5DEFA)',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 6,
-                        marginTop: 2,
+                        justifyContent: 'center',
+                        flexShrink: 0,
                       }}
                     >
-                      <Clock size={10} /> {v.hora_cadastro || '--:--'}
-                      <span
+                      <ShoppingCart size={14} style={{ color: '#185FA5' }} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
                         style={{
-                          background: '#EEF3F9',
-                          color: '#4A5568',
-                          padding: '1px 7px',
-                          borderRadius: 99,
-                          fontSize: 10,
-                          fontWeight: 500,
+                          fontSize: 13,
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          color: 'var(--text-primary)',
                         }}
                       >
-                        {v.codigo_forma_pagamento1 || 'Outros'}
-                      </span>
+                        {v.nome_cliente || 'Consumidor'}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: 'var(--text-muted)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          marginTop: 2,
+                        }}
+                      >
+                        <Clock size={10} /> {v.hora_cadastro || '--:--'}
+                        <span
+                          style={{
+                            background: 'var(--gray-100)',
+                            color: 'var(--text-secondary)',
+                            padding: '1px 7px',
+                            borderRadius: 99,
+                            fontSize: 10,
+                            fontWeight: 500,
+                          }}
+                        >
+                          {v.codigo_forma_pagamento1 || 'Outros'}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <div
-                    style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-                  >
                     <div
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 700,
-                        color: '#185FA5',
-                      }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8 }}
                     >
-                      {fmt(v.valor_total)}
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 700,
+                          color: '#185FA5',
+                        }}
+                      >
+                        {fmt(v.valor_total)}
+                      </div>
+                      <CheckCircle
+                        size={14}
+                        style={{ color: '#22863A', flexShrink: 0 }}
+                      />
+                      <button
+                        onClick={() => cancelarVenda(v.orcamento)}
+                        disabled={cancelandoId === v.orcamento}
+                        title='Cancelar venda'
+                        style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: 4,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'var(--text-muted)',
+                          flexShrink: 0,
+                          opacity: cancelandoId === v.orcamento ? 0.5 : 1,
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'var(--red-50)'
+                          e.currentTarget.style.color = 'var(--red-500)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'transparent'
+                          e.currentTarget.style.color = 'var(--text-muted)'
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
                     </div>
-                    <CheckCircle
-                      size={14}
-                      style={{ color: '#22863A', flexShrink: 0 }}
-                    />
                   </div>
-                </div>
-              ))
-            )}
+                ))
+              )}
+            </div>
 
             <div
               style={{
                 padding: '12px 20px',
                 background: 'linear-gradient(90deg,#F7FAFF,#EBF3FC)',
+                borderTop: '1px solid var(--border-md)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
+                flexShrink: 0,
               }}
             >
-              <span style={{ fontSize: 12, color: '#4A5568', fontWeight: 500 }}>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 }}>
                 Total do dia
               </span>
-              <span style={{ fontSize: 16, fontWeight: 800, color: '#0C3F7A' }}>
+              <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--blue-800)' }}>
                 {fmt(totalHoje)}
               </span>
             </div>
@@ -1137,9 +1187,9 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
             {/* FORMAS DE PAGAMENTO */}
             <div
               style={{
-                background: '#fff',
+                background: 'var(--surface)',
                 borderRadius: 16,
-                border: '1px solid #E2EAF4',
+                border: '1px solid var(--border-md)',
                 padding: '18px 20px',
                 boxShadow: '0 2px 12px rgba(24,95,165,0.06)',
                 animation: 'fadeUp 0.5s ease 0.35s both',
@@ -1149,20 +1199,20 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 style={{
                   fontSize: 14,
                   fontWeight: 600,
-                  color: '#1A202C',
+                  color: 'var(--text-primary)',
                   marginBottom: 4,
                 }}
               >
                 Formas de pagamento
               </div>
-              <div style={{ fontSize: 11, color: '#9AA3B2', marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
                 Hoje
               </div>
               {formasPagamento.length === 0 ? (
                 <div
                   style={{
                     fontSize: 12,
-                    color: '#9AA3B2',
+                    color: 'var(--text-muted)',
                     textAlign: 'center',
                     padding: '8px 0',
                   }}
@@ -1202,7 +1252,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                         <span
                           style={{
                             fontSize: 12,
-                            color: '#4A5568',
+                            color: 'var(--text-secondary)',
                             fontWeight: 500,
                           }}
                         >
@@ -1213,7 +1263,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                         style={{
                           fontSize: 12,
                           fontWeight: 700,
-                          color: '#1A202C',
+                          color: 'var(--text-primary)',
                         }}
                       >
                         {fmt(fp.valor)}
@@ -1222,7 +1272,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                     <div
                       style={{
                         height: 7,
-                        background: '#F0F4FA',
+                        background: 'var(--gray-50)',
                         borderRadius: 99,
                         overflow: 'hidden',
                       }}
@@ -1245,9 +1295,9 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
             {/* RESUMO FINANCEIRO */}
             <div
               style={{
-                background: '#fff',
+                background: 'var(--surface)',
                 borderRadius: 16,
-                border: '1px solid #E2EAF4',
+                border: '1px solid var(--border-md)',
                 padding: '18px 20px',
                 boxShadow: '0 2px 12px rgba(24,95,165,0.06)',
                 animation: 'fadeUp 0.5s ease 0.4s both',
@@ -1258,7 +1308,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 style={{
                   fontSize: 14,
                   fontWeight: 600,
-                  color: '#1A202C',
+                  color: 'var(--text-primary)',
                   marginBottom: 16,
                 }}
               >
@@ -1269,13 +1319,13 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                   label: 'Entradas hoje',
                   value: fmt(totalHoje),
                   color: '#22863A',
-                  bg: '#EAF6EE',
+                  bg: 'var(--green-50)',
                   icon: TrendingUp,
                 },
                 {
                   label: 'A receber',
                   value: fmt(resumo.contasReceber.total),
-                  color: '#B7791F',
+                  color: 'var(--amber-500)',
                   bg: '#FFF8E6',
                   icon: Clock,
                 },
@@ -1283,7 +1333,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                   label: 'A pagar',
                   value: fmt(resumo.contasPagar.total),
                   color: '#C53030',
-                  bg: '#FFF0F0',
+                  bg: 'var(--red-50)',
                   icon: TrendingDown,
                 },
               ].map((item, i) => (
@@ -1336,9 +1386,9 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
           {/* CONTAS A RECEBER VENCENDO */}
           <div
             style={{
-              background: '#fff',
+              background: 'var(--surface)',
               borderRadius: 16,
-              border: '1px solid #E2EAF4',
+              border: '1px solid var(--border-md)',
               overflow: 'hidden',
               boxShadow: '0 2px 12px rgba(24,95,165,0.06)',
               animation: 'fadeUp 0.5s ease 0.45s both',
@@ -1347,14 +1397,14 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
             <div
               style={{
                 padding: '16px 20px',
-                borderBottom: '1px solid #EEF3F9',
+                borderBottom: '1px solid var(--gray-100)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 background: 'linear-gradient(90deg,#F7FAFF,#fff)',
               }}
             >
-              <div style={{ fontSize: 14, fontWeight: 600, color: '#1A202C' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
                 Contas a vencer
               </div>
               <button
@@ -1371,7 +1421,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                   transition: 'all 0.15s',
                 }}
                 onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = '#EBF3FC')
+                  (e.currentTarget.style.background = 'var(--blue-50)')
                 }
                 onMouseLeave={(e) =>
                   (e.currentTarget.style.background = 'transparent')
@@ -1385,7 +1435,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 style={{
                   padding: '24px 20px',
                   textAlign: 'center',
-                  color: '#9AA3B2',
+                  color: 'var(--text-muted)',
                   fontSize: 13,
                 }}
               >
@@ -1395,9 +1445,9 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
               contasVencendo.map((c, i) => {
                 const urg = urgenciaVencimento(c.data_vencimento)
                 const uc = {
-                  alta: { bg: '#FFF0F0', icon: '#C53030', text: '#C53030' },
+                  alta: { bg: 'var(--red-50)', icon: '#C53030', text: '#C53030' },
                   media: { bg: '#FFF8E6', icon: '#B7791F', text: '#B7791F' },
-                  baixa: { bg: '#EAF6EE', icon: '#22863A', text: '#22863A' },
+                  baixa: { bg: 'var(--green-50)', icon: '#22863A', text: '#22863A' },
                 }[urg]
                 return (
                   <div
@@ -1407,7 +1457,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                       padding: '12px 20px',
                       borderBottom:
                         i < contasVencendo.length - 1
-                          ? '1px solid #F0F4FA'
+                          ? '1px solid var(--border)'
                           : 'none',
                       display: 'flex',
                       alignItems: 'center',
@@ -1456,7 +1506,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                       style={{
                         fontSize: 14,
                         fontWeight: 700,
-                        color: '#1A202C',
+                        color: 'var(--text-primary)',
                         flexShrink: 0,
                       }}
                     >
@@ -1471,9 +1521,9 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
           {/* ALERTAS — ESTOQUE BAIXO + CONTAS A PAGAR */}
           <div
             style={{
-              background: '#fff',
+              background: 'var(--surface)',
               borderRadius: 16,
-              border: '1px solid #E2EAF4',
+              border: '1px solid var(--border-md)',
               overflow: 'hidden',
               boxShadow: '0 2px 12px rgba(24,95,165,0.06)',
               animation: 'fadeUp 0.5s ease 0.5s both',
@@ -1482,14 +1532,14 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
             <div
               style={{
                 padding: '16px 20px',
-                borderBottom: '1px solid #EEF3F9',
+                borderBottom: '1px solid var(--gray-100)',
                 background: 'linear-gradient(90deg,#F7FAFF,#fff)',
               }}
             >
-              <div style={{ fontSize: 14, fontWeight: 600, color: '#1A202C' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
                 Alertas
               </div>
-              <div style={{ fontSize: 11, color: '#9AA3B2', marginTop: 2 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                 Estoque e pagamentos
               </div>
             </div>
@@ -1499,7 +1549,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 style={{
                   padding: '24px 20px',
                   textAlign: 'center',
-                  color: '#9AA3B2',
+                  color: 'var(--text-muted)',
                   fontSize: 13,
                 }}
               >
@@ -1513,7 +1563,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 className='row-hover'
                 style={{
                   padding: '11px 20px',
-                  borderBottom: '1px solid #F0F4FA',
+                  borderBottom: '1px solid var(--border)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 12,
@@ -1525,14 +1575,14 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                     width: 34,
                     height: 34,
                     borderRadius: '50%',
-                    background: '#FFF8E6',
+                    background: 'var(--amber-50)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
                   }}
                 >
-                  <Package size={14} style={{ color: '#B7791F' }} />
+                  <Package size={14} style={{ color: 'var(--amber-500)' }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
@@ -1549,7 +1599,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                   <div
                     style={{
                       fontSize: 11,
-                      color: '#B7791F',
+                      color: 'var(--amber-500)',
                       fontWeight: 500,
                       marginTop: 1,
                     }}
@@ -1567,7 +1617,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                     padding: '5px 10px',
                     border: '1px solid #C5DEFA',
                     borderRadius: 8,
-                    background: '#EBF3FC',
+                    background: 'var(--blue-50)',
                     fontWeight: 600,
                   }}
                 >
@@ -1587,7 +1637,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                     padding: '11px 20px',
                     borderBottom:
                       i < contasPagarAlerta.length - 1
-                        ? '1px solid #F0F4FA'
+                        ? '1px solid var(--border)'
                         : 'none',
                     display: 'flex',
                     alignItems: 'center',
@@ -1600,7 +1650,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                       width: 34,
                       height: 34,
                       borderRadius: '50%',
-                      background: vencido ? '#FFF0F0' : '#EBF3FC',
+                      background: vencido ? 'var(--red-50)' : 'var(--blue-50)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -1627,7 +1677,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                     <div
                       style={{
                         fontSize: 11,
-                        color: vencido ? '#C53030' : '#9AA3B2',
+                        color: vencido ? '#C53030' : 'var(--text-muted)',
                         fontWeight: vencido ? 600 : 400,
                         marginTop: 1,
                       }}
@@ -1646,7 +1696,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                       padding: '5px 10px',
                       border: `1px solid ${vencido ? '#FECACA' : '#C5DEFA'}`,
                       borderRadius: 8,
-                      background: vencido ? '#FFF0F0' : '#EBF3FC',
+                      background: vencido ? 'var(--red-50)' : 'var(--blue-50)',
                       fontWeight: 600,
                     }}
                   >
@@ -1696,7 +1746,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
               style={{
                 height: 54,
                 background: btn.gradient,
-                color: '#fff',
+                color: 'var(--surface)',
                 borderRadius: 14,
                 fontSize: 14,
                 fontWeight: 700,

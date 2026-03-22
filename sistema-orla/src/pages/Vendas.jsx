@@ -60,19 +60,19 @@ function ModalItem({ produto, onConfirm, onClose }) {
     >
       <div
         style={{
-          background: '#fff',
+          background: 'var(--surface)',
           borderRadius: 14,
-          border: '1px solid #E2EAF4',
+          border: '1px solid var(--border-md)',
           width: 400,
           padding: 24,
           boxShadow: '0 16px 40px rgba(0,0,0,0.14)',
         }}
       >
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 11, color: '#9AA3B2', marginBottom: 2 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>
             {produto.codigo}
           </div>
-          <div style={{ fontSize: 16, fontWeight: 500, color: '#1A202C' }}>
+          <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-primary)' }}>
             {produto.descricao}
           </div>
         </div>
@@ -88,7 +88,7 @@ function ModalItem({ produto, onConfirm, onClose }) {
             <label
               style={{
                 fontSize: 11,
-                color: '#9AA3B2',
+                color: 'var(--text-muted)',
                 display: 'block',
                 marginBottom: 4,
               }}
@@ -106,7 +106,7 @@ function ModalItem({ produto, onConfirm, onClose }) {
                 height: 36,
                 padding: '0 10px',
                 borderRadius: 8,
-                border: '1px solid #E2EAF4',
+                border: '1px solid var(--border-md)',
               }}
               autoFocus
             />
@@ -115,7 +115,7 @@ function ModalItem({ produto, onConfirm, onClose }) {
             <label
               style={{
                 fontSize: 11,
-                color: '#9AA3B2',
+                color: 'var(--text-muted)',
                 display: 'block',
                 marginBottom: 4,
               }}
@@ -130,8 +130,8 @@ function ModalItem({ produto, onConfirm, onClose }) {
                 height: 36,
                 padding: '0 10px',
                 borderRadius: 8,
-                border: '1px solid #E2EAF4',
-                background: '#F7FAFF',
+                border: '1px solid var(--border-md)',
+                background: 'var(--gray-50)',
               }}
             />
           </div>
@@ -139,7 +139,7 @@ function ModalItem({ produto, onConfirm, onClose }) {
             <label
               style={{
                 fontSize: 11,
-                color: '#9AA3B2',
+                color: 'var(--text-muted)',
                 display: 'block',
                 marginBottom: 4,
               }}
@@ -157,7 +157,7 @@ function ModalItem({ produto, onConfirm, onClose }) {
                 height: 36,
                 padding: '0 10px',
                 borderRadius: 8,
-                border: '1px solid #E2EAF4',
+                border: '1px solid var(--border-md)',
               }}
             />
           </div>
@@ -165,7 +165,7 @@ function ModalItem({ produto, onConfirm, onClose }) {
             <label
               style={{
                 fontSize: 11,
-                color: '#9AA3B2',
+                color: 'var(--text-muted)',
                 display: 'block',
                 marginBottom: 4,
               }}
@@ -196,9 +196,9 @@ function ModalItem({ produto, onConfirm, onClose }) {
             style={{
               padding: '8px 18px',
               borderRadius: 8,
-              border: '1px solid #E2EAF4',
+              border: '1px solid var(--border-md)',
               fontSize: 13,
-              color: '#9AA3B2',
+              color: 'var(--text-muted)',
             }}
           >
             Cancelar (Esc)
@@ -216,7 +216,7 @@ function ModalItem({ produto, onConfirm, onClose }) {
               padding: '8px 20px',
               borderRadius: 8,
               background: '#185FA5',
-              color: '#fff',
+              color: 'var(--surface)',
               fontSize: 13,
               fontWeight: 600,
             }}
@@ -250,9 +250,9 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
     >
       <div
         style={{
-          background: '#fff',
+          background: 'var(--surface)',
           borderRadius: 14,
-          border: '1px solid #E2EAF4',
+          border: '1px solid var(--border-md)',
           width: 460,
           boxShadow: '0 20px 50px rgba(0,0,0,0.18)',
           overflow: 'hidden',
@@ -268,7 +268,7 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
           >
             Total da venda
           </div>
-          <div style={{ color: '#fff', fontSize: 28, fontWeight: 600 }}>
+          <div style={{ color: 'var(--surface)', fontSize: 28, fontWeight: 600 }}>
             {fmt(total)}
           </div>
         </div>
@@ -277,7 +277,7 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
             <div
               style={{
                 fontSize: 11,
-                color: '#9AA3B2',
+                color: 'var(--text-muted)',
                 marginBottom: 8,
                 fontWeight: 500,
               }}
@@ -304,9 +304,9 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
                     borderRadius: 8,
                     fontSize: 13,
                     border:
-                      forma === f ? '2px solid #185FA5' : '1px solid #E2EAF4',
-                    background: forma === f ? '#EBF3FC' : '#fff',
-                    color: forma === f ? '#185FA5' : '#4A5568',
+                      forma === f ? '2px solid #185FA5' : '1px solid var(--border-md)',
+                    background: forma === f ? '#EBF3FC' : 'var(--surface)',
+                    color: forma === f ? '#185FA5' : 'var(--text-secondary)',
                     fontWeight: forma === f ? 600 : 400,
                   }}
                 >
@@ -320,7 +320,7 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
               <label
                 style={{
                   fontSize: 11,
-                  color: '#9AA3B2',
+                  color: 'var(--text-muted)',
                   display: 'block',
                   marginBottom: 4,
                 }}
@@ -339,14 +339,14 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
                   fontSize: 16,
                   fontWeight: 500,
                   borderRadius: 8,
-                  border: '1px solid #E2EAF4',
+                  border: '1px solid var(--border-md)',
                 }}
               />
             </div>
           )}
           <div
             style={{
-              background: '#F7FAFF',
+              background: 'var(--gray-50)',
               borderRadius: 8,
               padding: '12px 14px',
               marginBottom: 16,
@@ -356,14 +356,14 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
               {
                 label: 'Faltam',
                 value: faltam,
-                color: faltam > 0 ? '#C53030' : '#9AA3B2',
+                color: faltam > 0 ? '#C53030' : 'var(--text-muted)',
               },
               {
                 label: 'Troco',
                 value: troco,
-                color: troco > 0 ? '#22863A' : '#9AA3B2',
+                color: troco > 0 ? '#22863A' : 'var(--text-muted)',
               },
-              { label: 'Valor pago', value: pago, color: '#1A202C' },
+              { label: 'Valor pago', value: pago, color: 'var(--text-primary)' },
             ].map((row) => (
               <div
                 key={row.label}
@@ -373,7 +373,7 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
                   marginBottom: 6,
                 }}
               >
-                <span style={{ fontSize: 12, color: '#9AA3B2' }}>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                   {row.label}
                 </span>
                 <span
@@ -390,9 +390,9 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
               style={{
                 padding: '9px 18px',
                 borderRadius: 8,
-                border: '1px solid #E2EAF4',
+                border: '1px solid var(--border-md)',
                 fontSize: 13,
-                color: '#9AA3B2',
+                color: 'var(--text-muted)',
               }}
             >
               Voltar (Esc)
@@ -403,8 +403,8 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
               style={{
                 padding: '9px 22px',
                 borderRadius: 8,
-                background: !forma || faltam > 0 ? '#E2EAF4' : '#185FA5',
-                color: !forma || faltam > 0 ? '#9AA3B2' : '#fff',
+                background: !forma || faltam > 0 ? 'var(--border-md)' : '#185FA5',
+                color: !forma || faltam > 0 ? 'var(--text-muted)' : 'var(--surface)',
                 fontSize: 13,
                 fontWeight: 600,
                 cursor: !forma || faltam > 0 ? 'not-allowed' : 'pointer',
@@ -419,7 +419,7 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
   )
 }
 
-export default function Vendas() {
+export default function Vendas({ onNavigate }) {
   const [busca, setBusca] = useState('')
   const [itens, setItens] = useState([])
   const [itemModal, setItemModal] = useState(null)
@@ -429,6 +429,7 @@ export default function Vendas() {
   const [clienteDropdown, setClienteDropdown] = useState(false)
   const [vendaFinalizada, setVendaFinalizada] = useState(false)
   const [salvando, setSalvando] = useState(false)
+  const [gerandoPdf, setGerandoPdf] = useState(false)
 
   // Dados do banco
   const [todosProds, setTodosProds] = useState([])
@@ -480,9 +481,15 @@ export default function Vendas() {
   const clientesFiltrados = useMemo(
     () =>
       clientes
-        .filter((c) =>
-          (c.nome || '').toLowerCase().includes(clienteBusca.toLowerCase()),
-        )
+        .filter((c) => {
+          const q = clienteBusca.toLowerCase()
+          return (
+            (c.nome || '').toLowerCase().includes(q) ||
+            (c.codigo || '').includes(clienteBusca) ||
+            (c.cpf || '').includes(clienteBusca) ||
+            (c.cgc || '').includes(clienteBusca)
+          )
+        })
         .slice(0, 20),
     [clientes, clienteBusca],
   )
@@ -491,6 +498,21 @@ export default function Vendas() {
 
   function addItem(item) {
     const preco = item.preco_venda_vista || item.preco_vista || 0
+
+    // Verifica se há estoque suficiente
+    if (item.controla_estoque === 'S') {
+      const qtdNoCarrinho =
+        itens.find((i) => i.codigo === item.codigo)?.qty || 0
+      const qtdTotal = qtdNoCarrinho + item.qty
+      const estoque = item.estoque_atual || 0
+      if (qtdTotal > estoque) {
+        alert(
+          `Estoque insuficiente!\nDisponível: ${estoque}\nNo carrinho: ${qtdNoCarrinho}\nSolicitado: ${item.qty}`,
+        )
+        return
+      }
+    }
+
     setItens((prev) => {
       const idx = prev.findIndex((i) => i.codigo === item.codigo)
       if (idx >= 0) {
@@ -526,8 +548,10 @@ export default function Vendas() {
         valor_troco: troco,
       }
 
+      const orcamentoAtual = numeroVenda
+
       await window.api.vendas.salvar({
-        orcamento: numeroVenda,
+        orcamento: orcamentoAtual,
         codigo_cliente: clienteSel.codigo,
         data: new Date().toISOString().slice(0, 10),
         tipo_venda: 'V',
@@ -560,7 +584,19 @@ export default function Vendas() {
       setItens([])
       setPagModal(false)
       setVendaFinalizada(true)
-      setTimeout(() => setVendaFinalizada(false), 2500)
+      setTimeout(() => setVendaFinalizada(false), 3000)
+
+      // Gera PDF automaticamente
+      if (window.api.pdf) {
+        setGerandoPdf(true)
+        try {
+          await window.api.pdf.gerarVenda(orcamentoAtual)
+        } catch (pdfErr) {
+          console.error('Erro ao gerar PDF:', pdfErr)
+        } finally {
+          setGerandoPdf(false)
+        }
+      }
     } catch (err) {
       console.error('Erro ao finalizar venda:', err)
     } finally {
@@ -570,24 +606,26 @@ export default function Vendas() {
 
   return (
     <div style={{ display: 'flex', height: '100%', position: 'relative' }}>
-      {vendaFinalizada && (
+      {(vendaFinalizada || gerandoPdf) && (
         <div
           style={{
             position: 'absolute',
             top: 20,
             left: '50%',
             transform: 'translateX(-50%)',
-            background: '#22863A',
-            color: '#fff',
+            background: gerandoPdf ? 'var(--blue-700)' : 'var(--green-500)',
+            color: 'var(--surface)',
             padding: '10px 24px',
             borderRadius: 10,
             fontSize: 14,
             fontWeight: 500,
             zIndex: 300,
             boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+            whiteSpace: 'nowrap',
+            animation: 'fadeIn 0.2s ease both',
           }}
         >
-          ✅ Venda #{numeroVenda} finalizada com sucesso!
+          {gerandoPdf ? '📄 Abrindo PDF...' : '✅ Venda finalizada! PDF gerado.'}
         </div>
       )}
 
@@ -611,8 +649,8 @@ export default function Vendas() {
         style={{
           width: 340,
           flexShrink: 0,
-          background: '#fff',
-          borderRight: '1px solid #E2EAF4',
+          background: 'var(--surface)',
+          borderRight: '1px solid var(--border-md)',
           display: 'flex',
           flexDirection: 'column',
         }}
@@ -620,14 +658,14 @@ export default function Vendas() {
         <div
           style={{
             padding: '14px 14px 10px',
-            borderBottom: '1px solid #E2EAF4',
+            borderBottom: '1px solid var(--border-md)',
           }}
         >
           <div
             style={{
               fontSize: 11,
               fontWeight: 600,
-              color: '#9AA3B2',
+              color: 'var(--text-muted)',
               marginBottom: 10,
               letterSpacing: '0.05em',
             }}
@@ -637,7 +675,7 @@ export default function Vendas() {
 
           {/* Cliente */}
           <div style={{ marginBottom: 8, position: 'relative' }}>
-            <div style={{ fontSize: 11, color: '#9AA3B2', marginBottom: 3 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>
               Cliente (F2)
             </div>
             <input
@@ -654,7 +692,7 @@ export default function Vendas() {
                 height: 32,
                 padding: '0 10px',
                 borderRadius: 8,
-                border: '1px solid #E2EAF4',
+                border: '1px solid var(--border-md)',
                 fontSize: 13,
               }}
             />
@@ -666,8 +704,8 @@ export default function Vendas() {
                   left: 0,
                   right: 0,
                   zIndex: 50,
-                  background: '#fff',
-                  border: '1px solid #E2EAF4',
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border-md)',
                   borderRadius: 8,
                   boxShadow: '0 6px 20px rgba(0,0,0,0.1)',
                   maxHeight: 180,
@@ -691,18 +729,16 @@ export default function Vendas() {
                       borderBottom: '1px solid #F0F4FA',
                     }}
                     onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = '#F7FAFF')
+                      (e.currentTarget.style.background = 'var(--gray-50)')
                     }
                     onMouseLeave={(e) =>
                       (e.currentTarget.style.background = 'transparent')
                     }
                   >
                     <div style={{ fontWeight: 500 }}>{c.nome}</div>
-                    {(c.cgc || c.cpf) && (
-                      <div style={{ fontSize: 11, color: '#9AA3B2' }}>
-                        {c.cgc || c.cpf}
-                      </div>
-                    )}
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      #{c.codigo}{(c.cgc || c.cpf) ? ` · ${c.cgc || c.cpf}` : ''}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -716,13 +752,13 @@ export default function Vendas() {
             padding: '4px 6px 2px',
             display: 'flex',
             justifyContent: 'space-between',
-            borderBottom: '1px solid #E2EAF4',
+            borderBottom: '1px solid var(--border-md)',
           }}
         >
-          <span style={{ fontSize: 10, color: '#9AA3B2', padding: '4px 8px' }}>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', padding: '4px 8px' }}>
             PRODUTO
           </span>
-          <span style={{ fontSize: 10, color: '#9AA3B2', padding: '4px 8px' }}>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', padding: '4px 8px' }}>
             VALOR
           </span>
         </div>
@@ -737,10 +773,10 @@ export default function Vendas() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 height: 120,
-                color: '#9AA3B2',
+                color: 'var(--text-muted)',
                 fontSize: 12,
                 gap: 6,
-                border: '1px dashed #E2EAF4',
+                border: '1px dashed var(--border-md)',
                 borderRadius: 8,
                 margin: 4,
               }}
@@ -758,15 +794,15 @@ export default function Vendas() {
                 gap: 8,
                 padding: '8px 10px',
                 borderRadius: 8,
-                border: '1px solid #E2EAF4',
+                border: '1px solid var(--border-md)',
                 marginBottom: 5,
-                background: '#fff',
+                background: 'var(--surface)',
               }}
               onMouseEnter={(e) =>
                 (e.currentTarget.style.borderColor = '#C5DEFA')
               }
               onMouseLeave={(e) =>
-                (e.currentTarget.style.borderColor = '#E2EAF4')
+                (e.currentTarget.style.borderColor = 'var(--border-md)')
               }
             >
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -781,7 +817,7 @@ export default function Vendas() {
                 >
                   {item.descricao}
                 </div>
-                <div style={{ fontSize: 11, color: '#9AA3B2', marginTop: 1 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
                   {item.qty} ×{' '}
                   {fmt(item.preco_venda_vista || item.preco_vista || 0)}
                   {item.desconto > 0 && (
@@ -810,7 +846,7 @@ export default function Vendas() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: '#9AA3B2',
+                  color: 'var(--text-muted)',
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = '#FFF0F0'
@@ -818,7 +854,7 @@ export default function Vendas() {
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'transparent'
-                  e.currentTarget.style.color = '#9AA3B2'
+                  e.currentTarget.style.color = 'var(--text-muted)'
                 }}
               >
                 <Trash2 size={13} />
@@ -831,8 +867,8 @@ export default function Vendas() {
         <div
           style={{
             padding: '12px 14px',
-            borderTop: '1px solid #E2EAF4',
-            background: '#F7FAFF',
+            borderTop: '1px solid var(--border-md)',
+            background: 'var(--gray-50)',
           }}
         >
           <div
@@ -842,7 +878,7 @@ export default function Vendas() {
               marginBottom: 3,
             }}
           >
-            <span style={{ fontSize: 12, color: '#9AA3B2' }}>Qtde itens</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Qtde itens</span>
             <span style={{ fontSize: 12, fontWeight: 500 }}>
               {itens.reduce((s, i) => s + i.qty, 0).toFixed(2)}
             </span>
@@ -854,7 +890,7 @@ export default function Vendas() {
               marginBottom: 10,
             }}
           >
-            <span style={{ fontSize: 12, color: '#9AA3B2' }}>Produtos</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Produtos</span>
             <span style={{ fontSize: 12, fontWeight: 500 }}>
               {itens.length}
             </span>
@@ -867,7 +903,7 @@ export default function Vendas() {
               marginBottom: 10,
             }}
           >
-            <span style={{ fontSize: 14, color: '#9AA3B2' }}>Total</span>
+            <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Total</span>
             <span style={{ fontSize: 22, fontWeight: 700, color: '#185FA5' }}>
               {fmt(total)}
             </span>
@@ -878,8 +914,8 @@ export default function Vendas() {
             style={{
               width: '100%',
               height: 42,
-              background: itens.length > 0 ? '#185FA5' : '#E2EAF4',
-              color: itens.length > 0 ? '#fff' : '#9AA3B2',
+              background: itens.length > 0 ? '#185FA5' : 'var(--border-md)',
+              color: itens.length > 0 ? 'var(--surface)' : 'var(--text-muted)',
               borderRadius: 8,
               fontSize: 14,
               fontWeight: 600,
@@ -904,8 +940,8 @@ export default function Vendas() {
         <div
           style={{
             padding: '12px 14px',
-            background: '#fff',
-            borderBottom: '1px solid #E2EAF4',
+            background: 'var(--surface)',
+            borderBottom: '1px solid var(--border-md)',
           }}
         >
           <div style={{ display: 'flex', gap: 8 }}>
@@ -917,7 +953,7 @@ export default function Vendas() {
                   left: 10,
                   top: '50%',
                   transform: 'translateY(-50%)',
-                  color: '#9AA3B2',
+                  color: 'var(--text-muted)',
                 }}
               />
               <input
@@ -929,7 +965,7 @@ export default function Vendas() {
                   height: 36,
                   paddingLeft: 32,
                   borderRadius: 8,
-                  border: '1px solid #E2EAF4',
+                  border: '1px solid var(--border-md)',
                   fontSize: 13,
                 }}
               />
@@ -941,7 +977,7 @@ export default function Vendas() {
                 height: 36,
                 padding: '0 10px',
                 borderRadius: 8,
-                border: '1px solid #E2EAF4',
+                border: '1px solid var(--border-md)',
                 fontSize: 13,
               }}
             >
@@ -959,10 +995,10 @@ export default function Vendas() {
                 display: 'flex',
                 alignItems: 'center',
                 fontSize: 12,
-                color: '#9AA3B2',
-                background: '#F7FAFF',
+                color: 'var(--text-muted)',
+                background: 'var(--gray-50)',
                 borderRadius: 8,
-                border: '1px solid #E2EAF4',
+                border: '1px solid var(--border-md)',
               }}
             >
               {prodsFiltrados.length} registros
@@ -970,7 +1006,7 @@ export default function Vendas() {
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', background: '#fff' }}>
+        <div style={{ flex: 1, overflowY: 'auto', background: 'var(--surface)' }}>
           <table
             style={{
               width: '100%',
@@ -1004,10 +1040,10 @@ export default function Vendas() {
                       padding: '8px 10px',
                       fontSize: 11,
                       fontWeight: 500,
-                      color: '#9AA3B2',
+                      color: 'var(--text-muted)',
                       textAlign: 'left',
-                      background: '#F7FAFF',
-                      borderBottom: '1px solid #E2EAF4',
+                      background: 'var(--gray-50)',
+                      borderBottom: '1px solid var(--border-md)',
                       position: 'sticky',
                       top: 0,
                     }}
@@ -1024,7 +1060,18 @@ export default function Vendas() {
                 return (
                   <tr
                     key={p.codigo}
-                    onClick={() => setItemModal(p)}
+                    onClick={() => {
+                      const semEstoque =
+                        p.controla_estoque === 'S' &&
+                        (p.estoque_atual || 0) <= 0
+                      if (semEstoque) {
+                        alert(
+                          `Produto "${p.descricao}" está sem estoque e não pode ser vendido.`,
+                        )
+                        return
+                      }
+                      setItemModal(p)
+                    }}
                     style={{
                       cursor: 'pointer',
                       transition: 'background 0.08s',
@@ -1051,10 +1098,10 @@ export default function Vendas() {
                     <td style={{ ...td, color: '#185FA5', fontWeight: 600 }}>
                       {fmt(p.preco_venda_vista)}
                     </td>
-                    <td style={{ ...td, color: '#9AA3B2' }}>
+                    <td style={{ ...td, color: 'var(--text-muted)' }}>
                       {fmt(p.preco_venda_prazo)}
                     </td>
-                    <td style={{ ...td, fontSize: 12, color: '#9AA3B2' }}>
+                    <td style={{ ...td, fontSize: 12, color: 'var(--text-muted)' }}>
                       {p.unidade}
                     </td>
                     <td style={td}>
@@ -1072,8 +1119,8 @@ export default function Vendas() {
 
         <div
           style={{
-            background: '#fff',
-            borderTop: '1px solid #E2EAF4',
+            background: 'var(--surface)',
+            borderTop: '1px solid var(--border-md)',
             padding: '8px 12px',
             display: 'flex',
             gap: 8,
@@ -1081,33 +1128,34 @@ export default function Vendas() {
           }}
         >
           {[
-            { icon: Search, label: 'Buscar pré-venda' },
-            { icon: ChevronRight, label: 'Tornar pré-venda' },
-            { icon: FileText, label: 'Consultar vendas' },
-            { icon: RotateCcw, label: 'Consulta preço (F7)' },
-          ].map(({ icon: Icon, label }) => (
+            { icon: Search, label: 'Buscar pré-venda', nav: 'pre-vendas' },
+            { icon: ChevronRight, label: 'Tornar pré-venda', nav: 'pre-vendas' },
+            { icon: FileText, label: 'Consultar vendas', nav: 'rel-vendas' },
+            { icon: RotateCcw, label: 'Consulta preço (F7)', nav: 'estoque-consulta' },
+          ].map(({ icon: Icon, label, nav }) => (
             <button
               key={label}
+              onClick={() => onNavigate?.(nav)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
                 height: 32,
                 padding: '0 12px',
-                border: '1px solid #E2EAF4',
+                border: '1px solid var(--border-md)',
                 borderRadius: 8,
                 fontSize: 12,
-                color: '#9AA3B2',
-                background: '#fff',
+                color: 'var(--text-muted)',
+                background: 'var(--surface)',
                 whiteSpace: 'nowrap',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#F7FAFF'
+                e.currentTarget.style.background = 'var(--gray-50)'
                 e.currentTarget.style.borderColor = '#C5DEFA'
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = '#fff'
-                e.currentTarget.style.borderColor = '#E2EAF4'
+                e.currentTarget.style.background = 'var(--surface)'
+                e.currentTarget.style.borderColor = 'var(--border-md)'
               }}
             >
               <Icon size={13} />

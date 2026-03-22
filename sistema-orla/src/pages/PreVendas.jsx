@@ -1,8 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Search, Plus, Trash2, Package, FileText, Printer } from 'lucide-react'
-import { produtos as todosProds, clientes } from '../data/mock'
 
-const fmt = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const fmt = v => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = d => new Date(d).toLocaleDateString('pt-BR')
 
 function StatusBadge({ status }) {
@@ -15,18 +14,14 @@ function StatusBadge({ status }) {
   return <span style={{ background: s.bg, color: s.color, padding: '2px 9px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>{s.label}</span>
 }
 
-const preVendasIniciais = [
-  { id: '00000055', numero: '00000055', tipo: 'CONDICIONAL', cliente_id: '000066', cliente_nome: 'Arnaldo Leonidas', vendedor: 'Geral', data: '2024-01-26', valor_total: 37.90, qtde_itens: 1, situacao: 'ABERTA', itens: [{ id: '00000215', codigo: '00000215', descricao: 'Calha alumínio 3m', qty: 1, preco_unitario: 37.90, total: 37.90 }] },
-  { id: '00000056', numero: '00000056', tipo: 'CONDICIONAL', cliente_id: '000066', cliente_nome: 'Arnaldo Leonidas', vendedor: 'Geral', data: '2024-01-26', valor_total: 129.00, qtde_itens: 2, situacao: 'ABERTA', itens: [{ id: '00000089', codigo: '00000089', descricao: 'Rufo simples 0,43mm', qty: 2, preco_unitario: 28.50, total: 57.00 }, { id: '00000312', codigo: '00000312', descricao: 'Chapa galvanizada 26 1,20×3m', qty: 1, preco_unitario: 72.00, total: 72.00 }] },
-]
-
 function ModalItem({ produto, onConfirm, onClose }) {
   const [qty, setQty] = useState('1')
   const [desc, setDesc] = useState('0')
-  const total = (parseFloat(qty) || 0) * produto.preco_vista * (1 - (parseFloat(desc) || 0) / 100)
+  const preco = produto.preco_venda_vista || 0
+  const total = (parseFloat(qty) || 0) * preco * (1 - (parseFloat(desc) || 0) / 100)
   return (
     <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
-      <div style={{ background: '#fff', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-md)', width: 400, padding: 24, boxShadow: '0 16px 40px rgba(0,0,0,0.14)', animation: 'fadeIn 0.15s ease both' }}>
+      <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-md)', width: 400, padding: 24, boxShadow: '0 16px 40px rgba(0,0,0,0.14)', animation: 'fadeIn 0.15s ease both' }}>
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{produto.codigo}</div>
           <div style={{ fontSize: 16, fontWeight: 500 }}>{produto.descricao}</div>
@@ -38,7 +33,7 @@ function ModalItem({ produto, onConfirm, onClose }) {
           </div>
           <div>
             <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Preço unitário</label>
-            <input value={produto.preco_vista.toFixed(2)} readOnly style={{ width: '100%', height: 36, padding: '0 10px', background: 'var(--gray-50)' }} />
+            <input value={preco.toFixed(2)} readOnly style={{ width: '100%', height: 36, padding: '0 10px', background: 'var(--gray-50)' }} />
           </div>
           <div>
             <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Desconto %</label>
@@ -51,7 +46,7 @@ function ModalItem({ produto, onConfirm, onClose }) {
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
-          <button onClick={() => onConfirm({ ...produto, qty: parseFloat(qty) || 1, desconto: parseFloat(desc) || 0, total })} style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: 'var(--blue-700)', color: '#fff', fontSize: 13, fontWeight: 500 }}>Confirmar</button>
+          <button onClick={() => onConfirm({ ...produto, qty: parseFloat(qty) || 1, desconto: parseFloat(desc) || 0, total, preco_vista: preco })} style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: 'var(--blue-700)', color: 'var(--surface)', fontSize: 13, fontWeight: 500 }}>Confirmar</button>
         </div>
       </div>
     </div>
@@ -59,7 +54,9 @@ function ModalItem({ produto, onConfirm, onClose }) {
 }
 
 export default function PreVendas() {
-  const [preVendas, setPreVendas] = useState(preVendasIniciais)
+  const [preVendas, setPreVendas] = useState([])
+  const [todosProds, setTodosProds] = useState([])
+  const [todosClientes, setTodosClientes] = useState([])
   const [view, setView] = useState('lista')
   const [editando, setEditando] = useState(null)
   const [busca, setBusca] = useState('')
@@ -67,21 +64,37 @@ export default function PreVendas() {
   const [itemModal, setItemModal] = useState(null)
   const [sucesso, setSucesso] = useState('')
 
-  const formVazio = { tipo: 'CONDICIONAL', cliente_id: '000001', cliente_nome: 'Consumidor a vista', vendedor: 'Geral', observacao: '', itens: [] }
+  const formVazio = { tipo: 'CONDICIONAL', cliente_id: '', nome_cliente: 'Consumidor a vista', vendedor: 'Geral', observacao: '', itens: [] }
   const [form, setForm] = useState(formVazio)
   const [clienteDropdown, setClienteDropdown] = useState(false)
   const [clienteBusca, setClienteBusca] = useState('')
 
+  useEffect(() => {
+    carregarLista()
+    window.api.produtos.listar({ situacao: 'A' }).then(setTodosProds).catch(console.error)
+    window.api.clientes.listar({}).then(setTodosClientes).catch(console.error)
+  }, [])
+
+  async function carregarLista() {
+    if (!window.api.preVendas) return
+    try {
+      const lista = await window.api.preVendas.listar({})
+      setPreVendas(lista)
+    } catch (err) {
+      console.error('Erro ao carregar pré-vendas:', err)
+    }
+  }
+
   const filtradas = preVendas.filter(p =>
-    p.cliente_nome.toLowerCase().includes(busca.toLowerCase()) ||
-    p.numero.includes(busca)
+    (p.nome_cliente || '').toLowerCase().includes(busca.toLowerCase()) ||
+    (p.numero || '').includes(busca)
   )
 
   const prodsFiltrados = useMemo(() =>
     todosProds.filter(p => p.descricao.toLowerCase().includes(buscaProd.toLowerCase()) || p.codigo.includes(buscaProd))
-  , [buscaProd])
+  , [buscaProd, todosProds])
 
-  const clientesFiltrados = clientes.filter(c => c.nome.toLowerCase().includes(clienteBusca.toLowerCase()))
+  const clientesFiltrados = todosClientes.filter(c => c.nome.toLowerCase().includes(clienteBusca.toLowerCase()))
   const totalForm = form.itens.reduce((s, i) => s + i.total, 0)
 
   function novaPreVenda() {
@@ -90,10 +103,30 @@ export default function PreVendas() {
     setEditando(null)
   }
 
-  function editarPreVenda(pv) {
-    setForm({ ...pv })
-    setEditando(pv.id)
-    setView('form')
+  async function editarPreVenda(pv) {
+    try {
+      const completa = await window.api.preVendas.buscar(pv.numero)
+      const itensForm = (completa.itens || []).map(i => ({
+        id: i.codigo_produto,
+        codigo: i.codigo_produto,
+        descricao: i.descricao,
+        qty: i.quantidade,
+        preco_unitario: i.preco_unitario,
+        total: i.total,
+      }))
+      setForm({
+        tipo: completa.tipo,
+        cliente_id: completa.codigo_cliente || '',
+        nome_cliente: completa.nome_cliente,
+        vendedor: completa.vendedor,
+        observacao: completa.observacao || '',
+        itens: itensForm,
+      })
+      setEditando(completa.numero)
+      setView('form')
+    } catch (err) {
+      console.error('Erro ao carregar pré-venda:', err)
+    }
   }
 
   function addItem(item) {
@@ -104,32 +137,55 @@ export default function PreVendas() {
         itens[existing] = { ...itens[existing], qty: itens[existing].qty + item.qty, total: itens[existing].total + item.total }
         return { ...prev, itens }
       }
-      return { ...prev, itens: [...prev.itens, { id: item.id, codigo: item.codigo, descricao: item.descricao, qty: item.qty, preco_unitario: item.preco_vista, total: item.total }] }
+      return { ...prev, itens: [...prev.itens, { id: item.id, codigo: item.codigo, descricao: item.descricao, qty: item.qty, preco_unitario: item.preco_vista || item.preco_venda_vista || 0, total: item.total }] }
     })
     setItemModal(null)
   }
 
   function removeItem(id) { setForm(prev => ({ ...prev, itens: prev.itens.filter(i => i.id !== id) })) }
 
-  function salvar() {
-    const numero = String(preVendas.length + 1).padStart(8, '0')
-    const nova = { ...form, id: editando || numero, numero: editando || numero, data: new Date().toISOString().split('T')[0], valor_total: totalForm, qtde_itens: form.itens.reduce((s, i) => s + i.qty, 0), situacao: 'ABERTA' }
-    if (editando) setPreVendas(prev => prev.map(p => p.id === editando ? nova : p))
-    else setPreVendas(prev => [...prev, nova])
-    setView('lista')
-    setSucesso('Pré-venda salva com sucesso!')
-    setTimeout(() => setSucesso(''), 2000)
+  async function salvar() {
+    try {
+      let numero = editando
+      if (!numero) {
+        const res = await window.api.preVendas.proximoNumero()
+        numero = res.numero
+      }
+      await window.api.preVendas.salvar({
+        numero,
+        tipo: form.tipo,
+        codigo_cliente: form.cliente_id || '',
+        nome_cliente: form.nome_cliente || 'Consumidor a vista',
+        vendedor: form.vendedor || 'Geral',
+        observacao: form.observacao || '',
+        valor_total: totalForm,
+        qtde_itens: form.itens.reduce((s, i) => s + i.qty, 0),
+        data: new Date().toISOString().split('T')[0],
+        itens: form.itens,
+      })
+      await carregarLista()
+      setView('lista')
+      setSucesso('Pré-venda salva com sucesso!')
+      setTimeout(() => setSucesso(''), 2000)
+    } catch (err) {
+      console.error('Erro ao salvar pré-venda:', err)
+    }
   }
 
-  function cancelar(id) {
-    setPreVendas(prev => prev.map(p => p.id === id ? { ...p, situacao: 'CANCELADA' } : p))
+  async function cancelar(numero) {
+    try {
+      await window.api.preVendas.cancelar(numero)
+      setPreVendas(prev => prev.map(p => p.numero === numero ? { ...p, situacao: 'CANCELADA' } : p))
+    } catch (err) {
+      console.error('Erro ao cancelar:', err)
+    }
   }
 
   if (view === 'form') return (
     <div style={{ display: 'flex', height: '100%', position: 'relative' }}>
       {itemModal && <ModalItem produto={itemModal} onConfirm={addItem} onClose={() => setItemModal(null)} />}
 
-      <div style={{ width: 340, flexShrink: 0, background: '#fff', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ width: 340, flexShrink: 0, background: 'var(--surface)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '14px 14px 10px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>
             {editando ? 'EDITAR PRÉ-VENDA' : 'NOVA PRÉ-VENDA'}
@@ -144,11 +200,11 @@ export default function PreVendas() {
           </div>
           <div style={{ marginBottom: 8, position: 'relative' }}>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>Cliente (F2)</div>
-            <input value={form.cliente_nome} onChange={e => { setClienteBusca(e.target.value); setForm(p => ({ ...p, cliente_nome: e.target.value })); setClienteDropdown(true) }} onFocus={() => setClienteDropdown(true)} style={{ width: '100%', height: 32, padding: '0 10px' }} />
+            <input value={form.nome_cliente} onChange={e => { setClienteBusca(e.target.value); setForm(p => ({ ...p, nome_cliente: e.target.value })); setClienteDropdown(true) }} onFocus={() => setClienteDropdown(true)} style={{ width: '100%', height: 32, padding: '0 10px' }} />
             {clienteDropdown && clientesFiltrados.length > 0 && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#fff', border: '1px solid var(--border-md)', borderRadius: 'var(--radius-md)', boxShadow: '0 6px 20px rgba(0,0,0,0.1)', maxHeight: 160, overflowY: 'auto' }}>
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: 'var(--surface)', border: '1px solid var(--border-md)', borderRadius: 'var(--radius-md)', boxShadow: '0 6px 20px rgba(0,0,0,0.1)', maxHeight: 160, overflowY: 'auto' }}>
                 {clientesFiltrados.map(c => (
-                  <button key={c.id} onClick={() => { setForm(p => ({ ...p, cliente_id: c.id, cliente_nome: c.nome })); setClienteDropdown(false) }} style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 13, borderBottom: '1px solid var(--border)' }}
+                  <button key={c.id} onClick={() => { setForm(p => ({ ...p, cliente_id: c.codigo, nome_cliente: c.nome })); setClienteDropdown(false) }} style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 13, borderBottom: '1px solid var(--border)' }}
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   >{c.nome}</button>
@@ -174,7 +230,7 @@ export default function PreVendas() {
             </div>
           )}
           {form.itens.map(item => (
-            <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', marginBottom: 5, background: '#fff' }}>
+            <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', marginBottom: 5, background: 'var(--surface)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.descricao}</div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.qty} × {fmt(item.preco_unitario)}</div>
@@ -195,7 +251,7 @@ export default function PreVendas() {
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => setView('lista')} style={{ flex: 1, height: 36, border: '1px solid var(--border-md)', borderRadius: 'var(--radius-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
-            <button onClick={salvar} disabled={form.itens.length === 0} style={{ flex: 2, height: 36, background: form.itens.length > 0 ? 'var(--blue-700)' : 'var(--gray-200)', color: form.itens.length > 0 ? '#fff' : 'var(--text-muted)', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500, cursor: form.itens.length > 0 ? 'pointer' : 'not-allowed' }}>
+            <button onClick={salvar} disabled={form.itens.length === 0} style={{ flex: 2, height: 36, background: form.itens.length > 0 ? 'var(--blue-700)' : 'var(--gray-200)', color: form.itens.length > 0 ? 'var(--surface)' : 'var(--text-muted)', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500, cursor: form.itens.length > 0 ? 'pointer' : 'not-allowed' }}>
               Salvar (Ctrl+S)
             </button>
           </div>
@@ -203,13 +259,13 @@ export default function PreVendas() {
       </div>
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '12px 14px', background: '#fff', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ padding: '12px 14px', background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
           <div style={{ position: 'relative' }}>
             <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input value={buscaProd} onChange={e => setBuscaProd(e.target.value)} placeholder="Pesquisar produto (F4)..." style={{ width: '100%', height: 36, paddingLeft: 32 }} />
           </div>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', background: '#fff' }}>
+        <div style={{ flex: 1, overflowY: 'auto', background: 'var(--surface)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup><col style={{ width: 88 }} /><col /><col style={{ width: 86 }} /><col style={{ width: 86 }} /><col style={{ width: 46 }} /><col style={{ width: 80 }} /></colgroup>
             <thead>
@@ -225,11 +281,11 @@ export default function PreVendas() {
                 >
                   <td style={{ padding: '9px 10px', fontSize: 11, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', fontFamily: 'monospace' }}>{p.codigo}</td>
                   <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.descricao}</td>
-                  <td style={{ padding: '9px 10px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{fmt(p.preco_vista)}</td>
-                  <td style={{ padding: '9px 10px', fontSize: 13, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{fmt(p.preco_prazo)}</td>
-                  <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{p.un}</td>
+                  <td style={{ padding: '9px 10px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{fmt(p.preco_venda_vista)}</td>
+                  <td style={{ padding: '9px 10px', fontSize: 13, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{fmt(p.preco_venda_prazo)}</td>
+                  <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{p.unidade}</td>
                   <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)' }}>
-                    <span style={{ background: p.estoque === 0 ? 'var(--red-50)' : p.estoque <= 5 ? 'var(--amber-50)' : 'var(--green-50)', color: p.estoque === 0 ? 'var(--red-500)' : p.estoque <= 5 ? 'var(--amber-500)' : 'var(--green-500)', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>{p.estoque === 0 ? 'Sem estoque' : p.estoque}</span>
+                    <span style={{ background: (p.estoque_atual ?? 0) === 0 ? 'var(--red-50)' : (p.estoque_atual ?? 0) <= 5 ? 'var(--amber-50)' : 'var(--green-50)', color: (p.estoque_atual ?? 0) === 0 ? 'var(--red-500)' : (p.estoque_atual ?? 0) <= 5 ? 'var(--amber-500)' : 'var(--green-500)', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>{(p.estoque_atual ?? 0) === 0 ? 'Sem estoque' : p.estoque_atual}</span>
                   </td>
                 </tr>
               ))}
@@ -241,9 +297,9 @@ export default function PreVendas() {
   )
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#fff', position: 'relative' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', position: 'relative' }}>
       {sucesso && (
-        <div style={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', background: 'var(--green-500)', color: '#fff', padding: '9px 22px', borderRadius: 'var(--radius-lg)', fontSize: 13, fontWeight: 500, zIndex: 300, animation: 'fadeIn 0.2s ease' }}>{sucesso}</div>
+        <div style={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', background: 'var(--green-500)', color: 'var(--surface)', padding: '9px 22px', borderRadius: 'var(--radius-lg)', fontSize: 13, fontWeight: 500, zIndex: 300, animation: 'fadeIn 0.2s ease' }}>{sucesso}</div>
       )}
 
       <div style={{ padding: '14px 14px 10px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8 }}>
@@ -257,7 +313,7 @@ export default function PreVendas() {
           <option>Baixadas</option>
           <option>Canceladas</option>
         </select>
-        <button onClick={novaPreVenda} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px', background: 'var(--blue-700)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500 }}>
+        <button onClick={novaPreVenda} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px', background: 'var(--blue-700)', color: 'var(--surface)', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500 }}>
           <Plus size={14} /> Novo (Ctrl+N)
         </button>
       </div>
@@ -278,7 +334,7 @@ export default function PreVendas() {
               >
                 <td style={{ padding: '10px 12px', fontSize: 12, fontFamily: 'monospace', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{pv.numero}</td>
                 <td style={{ padding: '10px 12px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{fmtDate(pv.data)}</td>
-                <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{pv.cliente_nome}</td>
+                <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{pv.nome_cliente}</td>
                 <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{pv.vendedor}</td>
                 <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
                   <span style={{ background: 'var(--blue-50)', color: 'var(--blue-800)', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>{pv.tipo}</span>
@@ -293,7 +349,7 @@ export default function PreVendas() {
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >Editar</button>
                     {pv.situacao === 'ABERTA' && (
-                      <button onClick={() => cancelar(pv.id)} style={{ padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--red-100)', fontSize: 12, color: 'var(--red-500)' }}
+                      <button onClick={() => cancelar(pv.numero)} style={{ padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--red-100)', fontSize: 12, color: 'var(--red-500)' }}
                         onMouseEnter={e => e.currentTarget.style.background = 'var(--red-50)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       >Cancelar</button>
@@ -308,7 +364,7 @@ export default function PreVendas() {
 
       <div style={{ padding: '8px 14px', background: 'var(--gray-50)', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
         <span>{filtradas.length} pré-venda(s)</span>
-        <span>Total em aberto: {fmt(filtradas.filter(p => p.situacao === 'ABERTA').reduce((s, p) => s + p.valor_total, 0))}</span>
+        <span>Total em aberto: {fmt(filtradas.filter(pv => pv.situacao === 'ABERTA').reduce((s, pv) => s + (pv.valor_total || 0), 0))}</span>
       </div>
     </div>
   )
