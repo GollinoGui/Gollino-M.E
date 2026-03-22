@@ -937,14 +937,21 @@ function RelProdutos() {
 function RelContasReceber() {
   const [contas, setContas] = useState([])
   const [loading, setLoading] = useState(true)
+  const [filtroSit, setFiltroSit] = useState('')
 
-  useEffect(() => {
-    window.api.contasReceber
-      .listar({})
-      .then(setContas)
-      .catch((err) => console.error('Erro ao carregar contas a receber:', err))
-      .finally(() => setLoading(false))
-  }, [])
+  async function carregar(sit) {
+    setLoading(true)
+    try {
+      const data = await window.api.contasReceber.listar(sit ? { situacao: sit } : {})
+      setContas(data)
+    } catch (err) {
+      console.error('Erro ao carregar contas a receber:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { carregar('') }, [])
 
   const hoje = new Date().toISOString().slice(0, 10)
   const abertas = contas.filter((c) => c.situacao_docto === 'A')
@@ -969,6 +976,21 @@ function RelContasReceber() {
 
   return (
     <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, alignItems: 'flex-end' }}>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>Situação</label>
+          <select value={filtroSit} onChange={e => { setFiltroSit(e.target.value); carregar(e.target.value) }}
+            style={{ height: 34, padding: '0 10px', borderRadius: 'var(--radius-md)' }}>
+            <option value=''>Todas</option>
+            <option value='A'>Abertas</option>
+            <option value='P'>Pagas</option>
+          </select>
+        </div>
+        <button onClick={() => carregar(filtroSit)} disabled={loading}
+          style={{ height: 34, padding: '0 14px', border: '1px solid var(--border-md)', borderRadius: 'var(--radius-md)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+          <RefreshCw size={12} /> Atualizar
+        </button>
+      </div>
       {loading ? (
         <Carregando />
       ) : (
@@ -1103,8 +1125,8 @@ function RelContasReceber() {
                 onClick={() =>
                   exportarCSV(
                     contas.map((c) => ({
-                      Documento: c.documento || c.orcamento || '—',
-                      Seq: c.seq_parcela || '—',
+                      Documento: c.nro_docto || '—',
+                      Seq: c.seq_docto || '—',
                       Cliente: c.nome_cliente || c.codigo_cliente || '—',
                       Vencimento: fmtDate(c.data_vencimento),
                       'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
@@ -1177,7 +1199,7 @@ function RelContasReceber() {
                           borderBottom: '1px solid var(--border)',
                         }}
                       >
-                        {c.documento || c.orcamento || '—'}
+                        {c.nro_docto || '—'}
                       </td>
                       <td
                         style={{
@@ -1188,7 +1210,7 @@ function RelContasReceber() {
                           borderBottom: '1px solid var(--border)',
                         }}
                       >
-                        {c.seq_parcela || '—'}
+                        {c.seq_docto || '—'}
                       </td>
                       <td
                         style={{
@@ -1277,14 +1299,21 @@ function RelContasReceber() {
 function RelContasPagar() {
   const [contas, setContas] = useState([])
   const [loading, setLoading] = useState(true)
+  const [filtroSit, setFiltroSit] = useState('')
 
-  useEffect(() => {
-    window.api.contasPagar
-      .listar({})
-      .then(setContas)
-      .catch((err) => console.error('Erro ao carregar contas a pagar:', err))
-      .finally(() => setLoading(false))
-  }, [])
+  async function carregar(sit) {
+    setLoading(true)
+    try {
+      const data = await window.api.contasPagar.listar(sit ? { situacao: sit } : {})
+      setContas(data)
+    } catch (err) {
+      console.error('Erro ao carregar contas a pagar:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { carregar('') }, [])
 
   const hoje = new Date().toISOString().slice(0, 10)
   const abertas = contas.filter((c) => c.situacao_docto === 'A')
@@ -1302,6 +1331,21 @@ function RelContasPagar() {
 
   return (
     <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, alignItems: 'flex-end' }}>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>Situação</label>
+          <select value={filtroSit} onChange={e => { setFiltroSit(e.target.value); carregar(e.target.value) }}
+            style={{ height: 34, padding: '0 10px', borderRadius: 'var(--radius-md)' }}>
+            <option value=''>Todas</option>
+            <option value='A'>Abertas</option>
+            <option value='P'>Pagas</option>
+          </select>
+        </div>
+        <button onClick={() => carregar(filtroSit)} disabled={loading}
+          style={{ height: 34, padding: '0 14px', border: '1px solid var(--border-md)', borderRadius: 'var(--radius-md)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+          <RefreshCw size={12} /> Atualizar
+        </button>
+      </div>
       {loading ? (
         <Carregando />
       ) : (
@@ -1404,7 +1448,7 @@ function RelContasPagar() {
                   >
                     <div>
                       <div style={{ fontSize: 12, fontWeight: 500 }}>
-                        {c.descricao_docto || c.nome_fornecedor || '—'}
+                        {c.nro_docto || c.nome_fornecedor || '—'}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                         {fmtDate(c.data_vencimento)}
@@ -1456,7 +1500,7 @@ function RelContasPagar() {
                       const hoje = new Date().toISOString().slice(0, 10)
                       const vencido = c.situacao_docto === 'A' && c.data_vencimento < hoje
                       return {
-                        Descrição: c.descricao_docto || '—',
+                        Documento: c.nro_docto || '—',
                         Fornecedor: c.nome_fornecedor || '—',
                         Vencimento: fmtDate(c.data_vencimento),
                         'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
@@ -1471,7 +1515,7 @@ function RelContasPagar() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Descrição', 'Fornecedor', 'Vencimento', 'Valor', 'Situação'].map(
+                  {['Documento', 'Fornecedor', 'Vencimento', 'Valor', 'Situação'].map(
                     (h) => (
                       <th
                         key={h}
@@ -1538,7 +1582,7 @@ function RelContasPagar() {
                           borderBottom: '1px solid var(--border)',
                         }}
                       >
-                        {c.descricao_docto || '—'}
+                        {c.nro_docto || '—'}
                       </td>
                       <td
                         style={{
@@ -1643,25 +1687,32 @@ function RelContasPagar() {
 // ── RELATÓRIO FINANCEIRO ──────────────────────────────────────────────────────
 function RelFinanceiro() {
   const { ini, fim } = mesAtual()
+  const [dataInicio, setDataInicio] = useState(ini)
+  const [dataFim, setDataFim] = useState(fim)
   const [vendas, setVendas] = useState([])
   const [contasReceber, setContasReceber] = useState([])
   const [contasPagar, setContasPagar] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    Promise.all([
-      window.api.vendas.listar({ dataInicio: ini, dataFim: fim, situacao: 'N' }),
-      window.api.contasReceber.listar({ situacao: 'P' }),
-      window.api.contasPagar.listar({ situacao: 'A' }),
-    ])
-      .then(([v, cr, cp]) => {
-        setVendas(v)
-        setContasReceber(cr)
-        setContasPagar(cp)
-      })
-      .catch((err) => console.error('Erro ao carregar financeiro:', err))
-      .finally(() => setLoading(false))
-  }, [])
+  async function carregar() {
+    setLoading(true)
+    try {
+      const [v, cr, cp] = await Promise.all([
+        window.api.vendas.listar({ dataInicio, dataFim, situacao: 'N' }),
+        window.api.contasReceber.listar({ situacao: 'P', dataInicio, dataFim }),
+        window.api.contasPagar.listar({ situacao: 'A' }),
+      ])
+      setVendas(v)
+      setContasReceber(cr)
+      setContasPagar(cp)
+    } catch (err) {
+      console.error('Erro ao carregar financeiro:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { carregar() }, [])
 
   const totalVendas = vendas.reduce((s, v) => s + (v.valor_total || 0), 0)
   const totalRecebido = contasReceber.reduce(
@@ -1693,6 +1744,20 @@ function RelFinanceiro() {
 
   return (
     <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>Data inicial</label>
+          <input type='date' value={dataInicio} onChange={e => setDataInicio(e.target.value)} style={{ height: 34, padding: '0 10px' }} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>Data final</label>
+          <input type='date' value={dataFim} onChange={e => setDataFim(e.target.value)} style={{ height: 34, padding: '0 10px' }} />
+        </div>
+        <button onClick={carregar} disabled={loading}
+          style={{ height: 34, padding: '0 14px', border: '1px solid var(--border-md)', borderRadius: 'var(--radius-md)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+          <RefreshCw size={12} /> Buscar
+        </button>
+      </div>
       {loading ? (
         <Carregando />
       ) : (
@@ -1706,7 +1771,7 @@ function RelFinanceiro() {
             }}
           >
             <CardMetrica
-              label='Total de vendas (mês)'
+              label='Total de vendas (período)'
               value={fmt(totalVendas)}
               color='var(--blue-700)'
             />
@@ -1893,7 +1958,7 @@ export default function Relatorios({ paginaAtiva }) {
         ).concat(
           contasPag.map((c) => ({
             Seção: 'A Pagar',
-            Referência: c.descricao_docto || '—',
+            Referência: c.nro_docto || '—',
             Data: fmtDate(c.data_vencimento),
             Descrição: c.nome_fornecedor || '—',
             'Forma Pagamento': '—',

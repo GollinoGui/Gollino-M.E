@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('api', {
     buscar: (orcamento) => ipcRenderer.invoke('vendas:buscar', orcamento),
     salvar: (dados) => ipcRenderer.invoke('vendas:salvar', dados),
     cancelar: (dados) => ipcRenderer.invoke('vendas:cancelar', dados),
+    devolver: (dados) => ipcRenderer.invoke('vendas:devolver', dados),
     proximoNumero: () => ipcRenderer.invoke('vendas:proximoNumero'),
   },
 
@@ -44,6 +45,7 @@ contextBridge.exposeInMainWorld('api', {
   contasPagar: {
     listar: (filtros) => ipcRenderer.invoke('contasPagar:listar', filtros),
     pagar: (dados) => ipcRenderer.invoke('contasPagar:pagar', dados),
+    salvar: (dados) => ipcRenderer.invoke('contasPagar:salvar', dados),
     totalAberto: () => ipcRenderer.invoke('contasPagar:totalAberto'),
   },
 
@@ -89,5 +91,12 @@ contextBridge.exposeInMainWorld('api', {
   // PDF
   pdf: {
     gerarVenda: (orcamento) => ipcRenderer.invoke('pdf:gerarVenda', orcamento),
+  },
+
+  // HAVER
+  haver: {
+    listar: (busca) => ipcRenderer.invoke('haver:listar', busca),
+    ajustar: (dados) => ipcRenderer.invoke('haver:ajustar', dados),
+    totalGeral: () => ipcRenderer.invoke('haver:totalGeral'),
   },
 })

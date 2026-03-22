@@ -229,187 +229,134 @@ function ModalItem({ produto, onConfirm, onClose }) {
   )
 }
 
+function gerarParcelas(total, qtde, primeiroPgto) {
+  const base = new Date(primeiroPgto + 'T12:00:00')
+  const valorBase = Math.floor((total / qtde) * 100) / 100
+  const resto = Math.round((total - valorBase * qtde) * 100) / 100
+  return Array.from({ length: qtde }, (_, i) => {
+    const d = new Date(base)
+    d.setMonth(d.getMonth() + i)
+    return {
+      seq: String(i + 1).padStart(3, '0'),
+      data_vencimento: d.toISOString().slice(0, 10),
+      valor: i === qtde - 1 ? valorBase + resto : valorBase,
+    }
+  })
+}
+
 function ModalPagamento({ total, onClose, onFinalizar }) {
   const [forma, setForma] = useState(null)
   const [valor, setValor] = useState(total.toFixed(2))
+
+  // parcelamento
+  const d30 = new Date(); d30.setDate(d30.getDate() + 30)
+  const [numParcelas, setNumParcelas] = useState(2)
+  const [primeiroPgto, setPrimeiroPgto] = useState(d30.toISOString().slice(0, 10))
+
   const pago = parseFloat(valor) || 0
   const troco = Math.max(0, pago - total)
   const faltam = Math.max(0, total - pago)
+  const ePrazo = forma === 'A Prazo'
+  const parcelas = ePrazo ? gerarParcelas(total, numParcelas, primeiroPgto) : []
+  const podeFinalizar = forma && (ePrazo || (forma === 'Convênio') || faltam === 0)
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        background: 'rgba(0,0,0,0.4)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 200,
-      }}
-    >
-      <div
-        style={{
-          background: 'var(--surface)',
-          borderRadius: 14,
-          border: '1px solid var(--border-md)',
-          width: 460,
-          boxShadow: '0 20px 50px rgba(0,0,0,0.18)',
-          overflow: 'hidden',
-        }}
-      >
+    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+      <div style={{ background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border-md)', width: ePrazo ? 520 : 460, boxShadow: '0 20px 50px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
         <div style={{ background: '#185FA5', padding: '16px 22px' }}>
-          <div
-            style={{
-              color: 'rgba(255,255,255,0.7)',
-              fontSize: 12,
-              marginBottom: 2,
-            }}
-          >
-            Total da venda
-          </div>
-          <div style={{ color: 'var(--surface)', fontSize: 28, fontWeight: 600 }}>
-            {fmt(total)}
-          </div>
+          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginBottom: 2 }}>Total da venda</div>
+          <div style={{ color: 'var(--surface)', fontSize: 28, fontWeight: 600 }}>{fmt(total)}</div>
         </div>
         <div style={{ padding: '18px 22px' }}>
           <div style={{ marginBottom: 14 }}>
-            <div
-              style={{
-                fontSize: 11,
-                color: 'var(--text-muted)',
-                marginBottom: 8,
-                fontWeight: 500,
-              }}
-            >
-              FORMA DE PAGAMENTO
-            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, fontWeight: 500 }}>FORMA DE PAGAMENTO</div>
             <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-              {[
-                'Dinheiro',
-                'Cartão Crédito',
-                'Cartão Débito',
-                'Convênio',
-                'Cheque',
-                'Haver',
-              ].map((f) => (
-                <button
-                  key={f}
-                  onClick={() => {
-                    setForma(f)
-                    setValor(total.toFixed(2))
-                  }}
-                  style={{
-                    padding: '7px 14px',
-                    borderRadius: 8,
-                    fontSize: 13,
-                    border:
-                      forma === f ? '2px solid #185FA5' : '1px solid var(--border-md)',
+              {['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'A Prazo', 'Convênio', 'Cheque', 'Haver'].map((f) => (
+                <button key={f} onClick={() => { setForma(f); setValor(total.toFixed(2)) }}
+                  style={{ padding: '7px 14px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+                    border: forma === f ? '2px solid #185FA5' : '1px solid var(--border-md)',
                     background: forma === f ? '#EBF3FC' : 'var(--surface)',
                     color: forma === f ? '#185FA5' : 'var(--text-secondary)',
-                    fontWeight: forma === f ? 600 : 400,
-                  }}
-                >
+                    fontWeight: forma === f ? 600 : 400 }}>
                   {f}
                 </button>
               ))}
             </div>
           </div>
-          {forma && (
+
+          {ePrazo ? (
             <div style={{ marginBottom: 16 }}>
-              <label
-                style={{
-                  fontSize: 11,
-                  color: 'var(--text-muted)',
-                  display: 'block',
-                  marginBottom: 4,
-                }}
-              >
-                Valor recebido
-              </label>
-              <input
-                value={valor}
-                onChange={(e) => setValor(e.target.value)}
-                type='number'
-                autoFocus
-                style={{
-                  width: '100%',
-                  height: 40,
-                  padding: '0 12px',
-                  fontSize: 16,
-                  fontWeight: 500,
-                  borderRadius: 8,
-                  border: '1px solid var(--border-md)',
-                }}
-              />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                <div>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Nº de parcelas</label>
+                  <select value={numParcelas} onChange={e => setNumParcelas(Number(e.target.value))}
+                    style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)' }}>
+                    {[2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x de {fmt(Math.floor(total / n * 100) / 100)}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>1º vencimento</label>
+                  <input type='date' value={primeiroPgto} onChange={e => setPrimeiroPgto(e.target.value)}
+                    style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)' }} />
+                </div>
+              </div>
+              <div style={{ background: 'var(--gray-50)', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      {['Parcela', 'Vencimento', 'Valor'].map(h => (
+                        <th key={h} style={{ padding: '6px 10px', fontSize: 11, color: 'var(--text-secondary)', textAlign: 'left', background: 'var(--gray-100)', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parcelas.map(p => (
+                      <tr key={p.seq}>
+                        <td style={{ padding: '5px 10px', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{p.seq}</td>
+                        <td style={{ padding: '5px 10px', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{new Date(p.data_vencimento + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
+                        <td style={{ padding: '5px 10px', fontSize: 13, fontWeight: 600, color: 'var(--blue-700)', borderBottom: '1px solid var(--border)' }}>{fmt(p.valor)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : forma === 'Convênio' ? (
+            <div style={{ background: 'var(--blue-50)', border: '1px solid var(--blue-100)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: 'var(--blue-800)' }}>
+              Venda será lançada em Contas a Receber com vencimento em 30 dias.
+            </div>
+          ) : forma ? (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Valor recebido</label>
+              <input value={valor} onChange={(e) => setValor(e.target.value)} type='number' autoFocus
+                style={{ width: '100%', height: 40, padding: '0 12px', fontSize: 16, fontWeight: 500, borderRadius: 8, border: '1px solid var(--border-md)' }} />
+            </div>
+          ) : null}
+
+          {forma && !ePrazo && forma !== 'Convênio' && (
+            <div style={{ background: 'var(--gray-50)', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
+              {[
+                { label: 'Faltam', value: faltam, color: faltam > 0 ? '#C53030' : 'var(--text-muted)' },
+                { label: 'Troco', value: troco, color: troco > 0 ? '#22863A' : 'var(--text-muted)' },
+                { label: 'Valor pago', value: pago, color: 'var(--text-primary)' },
+              ].map((row) => (
+                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{row.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: row.color }}>{fmt(row.value)}</span>
+                </div>
+              ))}
             </div>
           )}
-          <div
-            style={{
-              background: 'var(--gray-50)',
-              borderRadius: 8,
-              padding: '12px 14px',
-              marginBottom: 16,
-            }}
-          >
-            {[
-              {
-                label: 'Faltam',
-                value: faltam,
-                color: faltam > 0 ? '#C53030' : 'var(--text-muted)',
-              },
-              {
-                label: 'Troco',
-                value: troco,
-                color: troco > 0 ? '#22863A' : 'var(--text-muted)',
-              },
-              { label: 'Valor pago', value: pago, color: 'var(--text-primary)' },
-            ].map((row) => (
-              <div
-                key={row.label}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginBottom: 6,
-                }}
-              >
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {row.label}
-                </span>
-                <span
-                  style={{ fontSize: 13, fontWeight: 500, color: row.color }}
-                >
-                  {fmt(row.value)}
-                </span>
-              </div>
-            ))}
-          </div>
+
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button
-              onClick={onClose}
-              style={{
-                padding: '9px 18px',
-                borderRadius: 8,
-                border: '1px solid var(--border-md)',
-                fontSize: 13,
-                color: 'var(--text-muted)',
-              }}
-            >
+            <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer' }}>
               Voltar (Esc)
             </button>
-            <button
-              disabled={!forma || faltam > 0}
-              onClick={() => onFinalizar({ forma, valor: pago, troco })}
-              style={{
-                padding: '9px 22px',
-                borderRadius: 8,
-                background: !forma || faltam > 0 ? 'var(--border-md)' : '#185FA5',
-                color: !forma || faltam > 0 ? 'var(--text-muted)' : 'var(--surface)',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: !forma || faltam > 0 ? 'not-allowed' : 'pointer',
-              }}
-            >
+            <button disabled={!podeFinalizar}
+              onClick={() => onFinalizar({ forma, valor: ePrazo ? total : pago, troco: ePrazo ? 0 : troco, parcelas: ePrazo ? parcelas : undefined })}
+              style={{ padding: '9px 22px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: 'none', cursor: podeFinalizar ? 'pointer' : 'not-allowed',
+                background: podeFinalizar ? '#185FA5' : 'var(--border-md)',
+                color: podeFinalizar ? 'var(--surface)' : 'var(--text-muted)' }}>
               Finalizar venda (F5)
             </button>
           </div>
@@ -419,7 +366,7 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
   )
 }
 
-export default function Vendas({ onNavigate }) {
+export default function Vendas({ onNavigate, usuario }) {
   const [busca, setBusca] = useState('')
   const [itens, setItens] = useState([])
   const [itemModal, setItemModal] = useState(null)
@@ -428,6 +375,7 @@ export default function Vendas({ onNavigate }) {
   const [clienteSel, setClienteSel] = useState(null)
   const [clienteDropdown, setClienteDropdown] = useState(false)
   const [vendaFinalizada, setVendaFinalizada] = useState(false)
+  const [erroVenda, setErroVenda] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [gerandoPdf, setGerandoPdf] = useState(false)
 
@@ -533,7 +481,7 @@ export default function Vendas({ onNavigate }) {
     setItens((prev) => prev.filter((i) => i.codigo !== codigo))
   }
 
-  async function finalizarVenda({ forma, valor, troco }) {
+  async function finalizarVenda({ forma, valor, troco, parcelas }) {
     if (!clienteSel) return
     setSalvando(true)
     try {
@@ -550,7 +498,7 @@ export default function Vendas({ onNavigate }) {
 
       const orcamentoAtual = numeroVenda
 
-      await window.api.vendas.salvar({
+      const resultado = await window.api.vendas.salvar({
         orcamento: orcamentoAtual,
         codigo_cliente: clienteSel.codigo,
         data: new Date().toISOString().slice(0, 10),
@@ -558,10 +506,11 @@ export default function Vendas({ onNavigate }) {
         situacao: 'N',
         valor_total: total,
         valor_produtos: total,
-        usuario_cadastro: 'rosangela',
+        usuario_cadastro: usuario?.usuario || 'sistema',
         numero_caixa: '001',
         numero_turno: '1',
         ...pagamento,
+        ...(parcelas ? { parcelas } : {}),
         itens: itens.map((item) => ({
           codigo_produto: item.codigo,
           descricao: item.descricao,
@@ -576,6 +525,12 @@ export default function Vendas({ onNavigate }) {
           valor_total: item.total,
         })),
       })
+
+      if (!resultado.sucesso) {
+        setErroVenda(resultado.erro || 'Erro ao salvar venda.')
+        setTimeout(() => setErroVenda(''), 5000)
+        return
+      }
 
       // Pega próximo número
       const num = await window.api.vendas.proximoNumero()
@@ -606,14 +561,14 @@ export default function Vendas({ onNavigate }) {
 
   return (
     <div style={{ display: 'flex', height: '100%', position: 'relative' }}>
-      {(vendaFinalizada || gerandoPdf) && (
+      {(vendaFinalizada || gerandoPdf || erroVenda) && (
         <div
           style={{
             position: 'absolute',
             top: 20,
             left: '50%',
             transform: 'translateX(-50%)',
-            background: gerandoPdf ? 'var(--blue-700)' : 'var(--green-500)',
+            background: erroVenda ? '#C53030' : gerandoPdf ? 'var(--blue-700)' : 'var(--green-500)',
             color: 'var(--surface)',
             padding: '10px 24px',
             borderRadius: 10,
@@ -623,9 +578,11 @@ export default function Vendas({ onNavigate }) {
             boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
             whiteSpace: 'nowrap',
             animation: 'fadeIn 0.2s ease both',
+            maxWidth: 480,
+            textAlign: 'center',
           }}
         >
-          {gerandoPdf ? '📄 Abrindo PDF...' : '✅ Venda finalizada! PDF gerado.'}
+          {erroVenda ? `⚠️ ${erroVenda}` : gerandoPdf ? '📄 Abrindo PDF...' : '✅ Venda finalizada! PDF gerado.'}
         </div>
       )}
 

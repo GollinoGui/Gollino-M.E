@@ -165,12 +165,8 @@ const menus = [
     items: [
       { id: 'config-empresa', label: 'Dados da empresa', icon: Database },
       { id: 'config-sistema', label: 'Configurações', icon: Cog },
+      { id: 'manutencao', label: 'Manutenção', icon: Wrench },
     ],
-  },
-  {
-    id: 'manutencao',
-    label: 'Manutenção',
-    items: [{ id: 'manutencao', label: 'Manutenção', icon: Wrench }],
   },
 ]
 
@@ -180,6 +176,7 @@ export default function TopBar({
   caixaAberto,
   temaEscuro,
   setTemaEscuro,
+  usuario,
 }) {
   const [openMenu, setOpenMenu] = useState(null)
   const [dropdownLeft, setDropdownLeft] = useState(0)
@@ -505,7 +502,7 @@ export default function TopBar({
           </span>
         </div>
         <span className='topbar-user' style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap' }}>
-          Secretaria
+          {usuario?.nome || usuario?.usuario || ''}
         </span>
       </div>
     </div>

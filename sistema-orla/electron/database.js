@@ -25,11 +25,21 @@ function init(dbPath) {
 // ============================================================
 // UTILITÁRIOS
 // ============================================================
-function hashSenha(senha) {
-  return crypto
-    .createHash('sha256')
-    .update(senha + 'gollino_salt')
-    .digest('hex')
+function hashSenha(senha, salt) {
+  const s = salt || crypto.randomBytes(16).toString('hex')
+  const hash = crypto.pbkdf2Sync(senha, s, 100000, 64, 'sha256').toString('hex')
+  return `pbkdf2:${s}:${hash}`
+}
+
+function verificarSenha(senha, hashArmazenado) {
+  if (hashArmazenado && hashArmazenado.startsWith('pbkdf2:')) {
+    const parts = hashArmazenado.split(':')
+    const s = parts[1]
+    const h = parts[2]
+    return crypto.pbkdf2Sync(senha, s, 100000, 64, 'sha256').toString('hex') === h
+  }
+  // legado SHA256 — aceita enquanto migra
+  return crypto.createHash('sha256').update(senha + 'gollino_salt').digest('hex') === hashArmazenado
 }
 
 function hoje() {
@@ -44,25 +54,32 @@ function agora() {
 // AUTH
 // ============================================================
 function login(usuario, senha) {
-  const hash = hashSenha(senha)
-  const user = db
+  const row = db
     .prepare(
-      `
-    SELECT usuario, nome, nivel, super_usuario, codigo_vendedor
-    FROM usuarios
-    WHERE usuario = ? AND senha = ? AND ativo = 'S'
-  `,
+      `SELECT usuario, nome, nivel, super_usuario, codigo_vendedor, senha
+       FROM usuarios WHERE usuario = ? AND ativo = 'S'`,
     )
-    .get(usuario, hash)
+    .get(usuario)
 
-  if (user) {
-    db.prepare(`UPDATE usuarios SET ultima_saida = ? WHERE usuario = ?`).run(
-      new Date().toISOString(),
+  if (!row || !verificarSenha(senha, row.senha)) {
+    return { sucesso: false, erro: 'Usuário ou senha inválidos' }
+  }
+
+  // migração gradual: se ainda usa hash legado, atualiza para PBKDF2
+  if (!row.senha.startsWith('pbkdf2:')) {
+    db.prepare(`UPDATE usuarios SET senha = ? WHERE usuario = ?`).run(
+      hashSenha(senha),
       usuario,
     )
-    return { sucesso: true, usuario: user }
   }
-  return { sucesso: false, erro: 'Usuário ou senha inválidos' }
+
+  db.prepare(`UPDATE usuarios SET ultima_saida = ? WHERE usuario = ?`).run(
+    new Date().toISOString(),
+    usuario,
+  )
+
+  const { senha: _s, ...usuarioSemSenha } = row
+  return { sucesso: true, usuario: usuarioSemSenha }
 }
 
 // ============================================================
@@ -337,6 +354,18 @@ const vendas = {
         )
       }
 
+      // Valida estoque antes de salvar
+      for (const item of itens || []) {
+        const prod = db
+          .prepare(`SELECT estoque_atual, controla_estoque, descricao FROM produtos WHERE codigo = ?`)
+          .get(item.codigo_produto)
+        if (prod?.controla_estoque === 'S' && (prod.estoque_atual ?? 0) < item.quantidade) {
+          throw new Error(
+            `Estoque insuficiente: "${prod.descricao}" — disponível: ${prod.estoque_atual}, solicitado: ${item.quantidade}`,
+          )
+        }
+      }
+
       // Salva itens e atualiza estoque
       const insItem = db.prepare(`INSERT INTO vendas_itens
         (orcamento, codigo_produto, descricao, quantidade, unidade, preco_unitario, preco_custo, valor_desconto, valor_acrescimo, valor_total)
@@ -356,7 +385,6 @@ const vendas = {
           item.valor_total,
         )
 
-        // Atualiza estoque
         db.prepare(
           `UPDATE produtos SET estoque_atual = estoque_atual - ? WHERE codigo = ?`,
         ).run(item.quantidade, item.codigo_produto)
@@ -368,10 +396,52 @@ const vendas = {
           `UPDATE clientes SET haver = haver + ? WHERE codigo = ?`,
         ).run(venda.valor_deixado_em_haver, venda.codigo_cliente)
       }
+
+      // Cria contas a receber para vendas a prazo/convênio (apenas em vendas novas)
+      if (!existe && venda.situacao === 'N') {
+        const crJaExiste = db
+          .prepare(`SELECT id FROM contas_receber WHERE nro_docto = ? AND tipo_docto = 'VD'`)
+          .get(venda.orcamento)
+
+        if (!crJaExiste) {
+          const insCR = db.prepare(`
+            INSERT INTO contas_receber
+              (nro_docto, tipo_docto, seq_docto, codigo_cliente, data_docto, data_vencimento,
+               valor_docto, valor_original, situacao_docto, numero_caixa, numero_turno,
+               usuario, data_atualizacao, hora_atualizacao)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+
+          if (venda.codigo_forma_pagamento1 === 'Convênio') {
+            // Vencimento padrão: 30 dias
+            const d = new Date(); d.setDate(d.getDate() + 30)
+            const dataVenc = d.toISOString().slice(0, 10)
+            insCR.run(
+              venda.orcamento, 'VD', '001', venda.codigo_cliente, hoje(), dataVenc,
+              venda.valor_total, venda.valor_total, 'A',
+              venda.numero_caixa || '001', venda.numero_turno || '1',
+              venda.usuario_cadastro, hoje(), agora(),
+            )
+          } else if (venda.parcelas?.length > 0) {
+            // Parcelamento: uma CR por parcela
+            for (const p of venda.parcelas) {
+              insCR.run(
+                venda.orcamento, 'VD', p.seq, venda.codigo_cliente, hoje(), p.data_vencimento,
+                p.valor, p.valor, 'A',
+                venda.numero_caixa || '001', venda.numero_turno || '1',
+                venda.usuario_cadastro, hoje(), agora(),
+              )
+            }
+          }
+        }
+      }
     })
 
-    salvarVenda()
-    return { sucesso: true, orcamento: venda.orcamento }
+    try {
+      salvarVenda()
+      return { sucesso: true, orcamento: venda.orcamento }
+    } catch (e) {
+      return { sucesso: false, erro: e.message }
+    }
   },
 
   cancelar(orcamento, motivo, usuario) {
@@ -391,6 +461,63 @@ const vendas = {
     })
     cancelar()
     return { sucesso: true }
+  },
+
+  devolver(dados) {
+    // dados: { orcamento, itens: [{codigo_produto, quantidade}], usuario, motivo }
+    const devolver = db.transaction(() => {
+      const venda = db
+        .prepare(`SELECT * FROM vendas WHERE orcamento = ? AND situacao = 'N'`)
+        .get(dados.orcamento)
+      if (!venda) throw new Error('Venda não encontrada ou já cancelada/devolvida.')
+
+      const itensOriginais = db
+        .prepare(`SELECT * FROM vendas_itens WHERE orcamento = ?`)
+        .all(dados.orcamento)
+
+      let totalDevolvido = 0
+
+      for (const item of dados.itens) {
+        const orig = itensOriginais.find(i => i.codigo_produto === item.codigo_produto)
+        if (!orig) throw new Error(`Produto ${item.codigo_produto} não encontrado na venda.`)
+        if (item.quantidade > orig.quantidade)
+          throw new Error(`Quantidade a devolver (${item.quantidade}) maior que a vendida (${orig.quantidade}) para ${orig.descricao}.`)
+
+        // Reverte estoque
+        db.prepare(`UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE codigo = ?`)
+          .run(item.quantidade, item.codigo_produto)
+
+        totalDevolvido += (orig.preco_unitario || 0) * item.quantidade
+      }
+
+      // Verifica se é devolução total
+      const totalItensDevolvidos = dados.itens.reduce((s, i) => s + i.quantidade, 0)
+      const totalItensVendidos = itensOriginais.reduce((s, i) => s + i.quantidade, 0)
+      const total = totalItensDevolvidos >= totalItensVendidos
+
+      // Marca venda
+      db.prepare(`UPDATE vendas SET situacao=?, motivo_cancelamento=?, usuario_cancelamento=?, data_cancelamento=? WHERE orcamento=?`)
+        .run(total ? 'D' : 'N', dados.motivo || 'Devolução', dados.usuario, hoje(), dados.orcamento)
+
+      // Cancela CR aberto desta venda
+      db.prepare(`UPDATE contas_receber SET situacao_docto='C', data_atualizacao=?, hora_atualizacao=? WHERE nro_docto=? AND situacao_docto='A'`)
+        .run(hoje(), agora(), dados.orcamento)
+
+      // Credita haver do cliente
+      if (venda.codigo_cliente) {
+        db.prepare(`UPDATE clientes SET haver = haver + ? WHERE codigo = ?`)
+          .run(totalDevolvido, venda.codigo_cliente)
+      }
+
+      return { totalDevolvido, total }
+    })
+
+    try {
+      const resultado = devolver()
+      return { sucesso: true, ...resultado }
+    } catch (e) {
+      return { sucesso: false, erro: e.message }
+    }
   },
 }
 
@@ -638,16 +765,18 @@ const dashboard = {
 // ============================================================
 const config = {
   get(chave) {
-    if (chave)
-      return db
-        .prepare(`SELECT valor FROM configuracoes WHERE chave = ?`)
-        .get(chave)
+    if (chave) {
+      const row = db.prepare(`SELECT valor FROM configuracoes WHERE chave = ?`).get(chave)
+      if (!row) return null
+      try { return JSON.parse(row.valor) } catch { return row.valor }
+    }
     return db.prepare(`SELECT * FROM configuracoes`).all()
   },
   set(chave, valor) {
+    const valorStr = typeof valor === 'object' ? JSON.stringify(valor) : String(valor)
     db.prepare(
       `INSERT INTO configuracoes (chave, valor) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET valor=?`,
-    ).run(chave, valor, valor)
+    ).run(chave, valorStr, valorStr)
     return { sucesso: true }
   },
 }
@@ -831,6 +960,31 @@ const movimentosEstoque = {
   },
 }
 
+const haver = {
+  listar(busca) {
+    let sql = `SELECT codigo, nome, cpf_cnpj, telefone, haver FROM clientes WHERE haver > 0`
+    const params = []
+    if (busca) {
+      sql += ` AND (nome LIKE ? OR codigo LIKE ? OR cpf_cnpj LIKE ?)`
+      params.push(`%${busca}%`, `%${busca}%`, `%${busca}%`)
+    }
+    sql += ` ORDER BY haver DESC`
+    return db.prepare(sql).all(...params)
+  },
+
+  ajustar(dados) {
+    // dados: { codigo, valor (positivo=credito, negativo=debito), usuario }
+    db.prepare(`UPDATE clientes SET haver = ROUND(MAX(0, haver + ?), 2) WHERE codigo = ?`)
+      .run(dados.valor, dados.codigo)
+    return { sucesso: true }
+  },
+
+  totalGeral() {
+    const row = db.prepare(`SELECT COALESCE(SUM(haver),0) as total FROM clientes WHERE haver > 0`).get()
+    return { total: row?.total || 0 }
+  },
+}
+
 module.exports = {
   init,
   login,
@@ -844,4 +998,5 @@ module.exports = {
   config,
   preVendas,
   movimentosEstoque,
+  haver,
 }

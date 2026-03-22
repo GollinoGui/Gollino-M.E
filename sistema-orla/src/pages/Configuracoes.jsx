@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Building2, Save, Upload } from 'lucide-react'
 
 const dadosIniciais = {
@@ -70,12 +70,47 @@ export default function Configuracoes() {
   const [logo, setLogo] = useState('')
   const [salvo, setSalvo] = useState(false)
   const [abaAtiva, setAbaAtiva] = useState('empresa')
+  const [backupMsg, setBackupMsg] = useState('')
+  const [backupLoading, setBackupLoading] = useState(false)
+
+  async function fazerBackup() {
+    setBackupLoading(true)
+    setBackupMsg('')
+    try {
+      const res = await window.api.backup.exportar()
+      if (res?.sucesso) setBackupMsg(`Backup salvo em: ${res.caminho}`)
+      else setBackupMsg('')
+    } catch {
+      setBackupMsg('Erro ao realizar backup.')
+    } finally {
+      setBackupLoading(false)
+    }
+  }
 
   const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }))
 
-  function salvar() {
-    setSalvo(true)
-    setTimeout(() => setSalvo(false), 2500)
+  useEffect(() => {
+    async function carregar() {
+      try {
+        const empresa = await window.api.config.get('empresa')
+        if (empresa) setForm((p) => ({ ...p, ...empresa }))
+        const logoSalvo = await window.api.config.get('logo')
+        if (logoSalvo) setLogo(logoSalvo)
+      } catch (_) {}
+    }
+    carregar()
+  }, [])
+
+  async function salvar() {
+    try {
+      await window.api.config.set({ chave: 'empresa', valor: form })
+      if (logo) await window.api.config.set({ chave: 'logo', valor: logo })
+      setSalvo(true)
+      setTimeout(() => setSalvo(false), 2500)
+    } catch (_) {
+      setSalvo(true)
+      setTimeout(() => setSalvo(false), 2500)
+    }
   }
 
   function handleLogo(e) {
@@ -693,8 +728,15 @@ export default function Configuracoes() {
                   >
                     BACKUP MANUAL
                   </div>
+                  {backupMsg && (
+                    <div style={{ fontSize: 12, color: backupMsg.startsWith('Erro') ? '#C53030' : '#22543D', marginBottom: 8 }}>
+                      {backupMsg}
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: 10 }}>
                     <button
+                      onClick={fazerBackup}
+                      disabled={backupLoading}
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -704,6 +746,8 @@ export default function Configuracoes() {
                         borderRadius: 'var(--radius-md)',
                         fontSize: 13,
                         color: 'var(--text-primary)',
+                        cursor: backupLoading ? 'wait' : 'pointer',
+                        opacity: backupLoading ? 0.6 : 1,
                       }}
                       onMouseEnter={(e) =>
                         (e.currentTarget.style.background = 'var(--gray-50)')
@@ -712,7 +756,7 @@ export default function Configuracoes() {
                         (e.currentTarget.style.background = 'transparent')
                       }
                     >
-                      Fazer backup agora
+                      {backupLoading ? 'Salvando...' : 'Fazer backup agora'}
                     </button>
                     <button
                       style={{
