@@ -25,7 +25,6 @@ const SVGCalha = ({ style }) => (
     />
   </svg>
 )
-
 const SVGRufo = ({ style }) => (
   <svg viewBox='0 0 160 80' style={style} fill='none'>
     <path
@@ -52,7 +51,6 @@ const SVGRufo = ({ style }) => (
     />
   </svg>
 )
-
 const SVGChapa = ({ style }) => (
   <svg viewBox='0 0 180 100' style={style} fill='none'>
     <rect
@@ -92,27 +90,6 @@ const SVGChapa = ({ style }) => (
   </svg>
 )
 
-const usuarios = [
-  {
-    usuario: 'admin',
-    senha: 'admin123',
-    nome: 'Administrador',
-    perfil: 'admin',
-  },
-  {
-    usuario: 'secretaria',
-    senha: 'gollino123',
-    nome: 'Secretaria',
-    perfil: 'secretaria',
-  },
-  {
-    usuario: 'elter',
-    senha: 'gollino',
-    nome: 'Elter Gollino',
-    perfil: 'admin',
-  },
-]
-
 export default function Login({ onLogin }) {
   const [fase, setFase] = useState('splash')
   const [usuario, setUsuario] = useState('')
@@ -131,21 +108,26 @@ export default function Login({ onLogin }) {
     }
   }, [])
 
-  function handleLogin(e) {
+  async function handleLogin(e) {
     e.preventDefault()
     setErro('')
     setCarregando(true)
-    setTimeout(() => {
-      const user = usuarios.find(
-        (u) => u.usuario === usuario.toLowerCase() && u.senha === senha,
-      )
-      if (user) {
-        onLogin(user)
+    try {
+      const result = await window.api.auth.login({
+        usuario: usuario.toLowerCase(),
+        senha,
+      })
+      if (result.sucesso) {
+        onLogin(result.usuario)
       } else {
-        setErro('Usuário ou senha incorretos.')
-        setCarregando(false)
+        setErro(result.erro || 'Usuário ou senha incorretos.')
       }
-    }, 800)
+    } catch (err) {
+      setErro('Erro ao conectar com o banco de dados.')
+      console.error(err)
+    } finally {
+      setCarregando(false)
+    }
   }
 
   if (fase === 'splash')
@@ -155,7 +137,7 @@ export default function Login({ onLogin }) {
           height: '100vh',
           width: '100vw',
           background:
-            'linear-gradient(135deg, #0C3F7A 0%, #185FA5 50%, #1a56a0 100%)',
+            'linear-gradient(135deg,#0C3F7A 0%,#185FA5 50%,#1a56a0 100%)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -168,24 +150,11 @@ export default function Login({ onLogin }) {
         }}
       >
         <style>{`
-        @keyframes splashEntrada {
-          from { opacity: 0; transform: scale(0.8) translateY(20px); }
-          to   { opacity: 1; transform: scale(1) translateY(0); }
-        }
-        @keyframes float {
-          0%, 100% { transform: translateY(0px) rotate(var(--r, 0deg)); }
-          50%       { transform: translateY(-10px) rotate(var(--r, 0deg)); }
-        }
-        @keyframes barraCarregar {
-          from { width: 0%; }
-          to   { width: 100%; }
-        }
-        @keyframes pulsar {
-          0%, 100% { opacity: 1; }
-          50%       { opacity: 0.5; }
-        }
-      `}</style>
-
+          @keyframes splashEntrada{from{opacity:0;transform:scale(0.8) translateY(20px)}to{opacity:1;transform:scale(1) translateY(0)}}
+          @keyframes float{0%,100%{transform:translateY(0px) rotate(var(--r,0deg))}50%{transform:translateY(-10px) rotate(var(--r,0deg))}}
+          @keyframes barraCarregar{from{width:0%}to{width:100%}}
+          @keyframes pulsar{0%,100%{opacity:1}50%{opacity:0.5}}
+        `}</style>
         <SVGCalha
           style={{
             position: 'absolute',
@@ -221,31 +190,6 @@ export default function Login({ onLogin }) {
             animation: 'float 7s ease-in-out infinite 0.5s',
           }}
         />
-        <SVGCalha
-          style={{
-            position: 'absolute',
-            left: '5%',
-            top: 30,
-            width: 220,
-            height: 70,
-            color: 'rgba(255,255,255,0.04)',
-            animation: 'float 9s ease-in-out infinite 0.8s',
-            '--r': '8deg',
-          }}
-        />
-        <SVGRufo
-          style={{
-            position: 'absolute',
-            right: '5%',
-            top: '40%',
-            width: 160,
-            height: 80,
-            color: 'rgba(255,255,255,0.04)',
-            animation: 'float 7s ease-in-out infinite 1.5s',
-            '--r': '-3deg',
-          }}
-        />
-
         <div
           style={{
             display: 'flex',
@@ -342,7 +286,7 @@ export default function Login({ onLogin }) {
         height: '100vh',
         width: '100vw',
         background:
-          'linear-gradient(135deg, #0C3F7A 0%, #185FA5 60%, #1a6ac0 100%)',
+          'linear-gradient(135deg,#0C3F7A 0%,#185FA5 60%,#1a6ac0 100%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -353,20 +297,13 @@ export default function Login({ onLogin }) {
       }}
     >
       <style>{`
-        @keyframes loginEntrada {
-          from { opacity: 0; transform: translateY(24px) scale(0.97); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes float {
-          0%, 100% { transform: translateY(0px) rotate(var(--r, 0deg)); }
-          50%       { transform: translateY(-10px) rotate(var(--r, 0deg)); }
-        }
-        .input-login:focus { border-color: #378ADD !important; box-shadow: 0 0 0 3px rgba(55,138,221,0.15) !important; }
-        .btn-login { transition: all 0.2s; }
-        .btn-login:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(12,63,122,0.4) !important; }
-        .btn-login:active:not(:disabled) { transform: scale(0.98); }
+        @keyframes loginEntrada{from{opacity:0;transform:translateY(24px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+        @keyframes float{0%,100%{transform:translateY(0px) rotate(var(--r,0deg))}50%{transform:translateY(-10px) rotate(var(--r,0deg))}}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .input-login:focus{border-color:#378ADD !important;box-shadow:0 0 0 3px rgba(55,138,221,0.15) !important}
+        .btn-login{transition:all 0.2s}
+        .btn-login:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 8px 24px rgba(12,63,122,0.4) !important}
       `}</style>
-
       <SVGCalha
         style={{
           position: 'absolute',
@@ -400,18 +337,6 @@ export default function Login({ onLogin }) {
           height: 110,
           color: 'rgba(255,255,255,0.04)',
           animation: 'float 7s ease-in-out infinite 0.5s',
-        }}
-      />
-      <SVGCalha
-        style={{
-          position: 'absolute',
-          left: '5%',
-          top: 30,
-          width: 220,
-          height: 70,
-          color: 'rgba(255,255,255,0.04)',
-          animation: 'float 9s ease-in-out infinite 0.8s',
-          '--r': '8deg',
         }}
       />
 
@@ -567,7 +492,6 @@ export default function Login({ onLogin }) {
                 />
               </div>
             </div>
-
             <div>
               <label
                 style={{
@@ -619,20 +543,12 @@ export default function Login({ onLogin }) {
                     top: '50%',
                     transform: 'translateY(-50%)',
                     color: '#9AA3B2',
-                    transition: 'color 0.15s',
                   }}
-                  onMouseEnter={(e) =>
-                    (e.currentTarget.style.color = '#4A5568')
-                  }
-                  onMouseLeave={(e) =>
-                    (e.currentTarget.style.color = '#9AA3B2')
-                  }
                 >
                   {mostrarSenha ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
-
             <button
               type='submit'
               className='btn-login'
@@ -642,7 +558,7 @@ export default function Login({ onLogin }) {
                 background:
                   !usuario || !senha || carregando
                     ? '#DDE1E9'
-                    : 'linear-gradient(135deg, #0C3F7A, #185FA5)',
+                    : 'linear-gradient(135deg,#0C3F7A,#185FA5)',
                 color: !usuario || !senha || carregando ? '#9AA3B2' : '#fff',
                 borderRadius: 10,
                 fontSize: 14,
@@ -655,11 +571,6 @@ export default function Login({ onLogin }) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 8,
-                boxShadow:
-                  !usuario || !senha || carregando
-                    ? 'none'
-                    : '0 4px 14px rgba(12,63,122,0.25)',
-                transition: 'all 0.2s',
               }}
             >
               {carregando ? (
@@ -699,12 +610,13 @@ export default function Login({ onLogin }) {
                 marginBottom: 6,
               }}
             >
-              ACESSO DE DEMONSTRAÇÃO
+              ACESSO RÁPIDO
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {[
                 { label: 'Administrador', user: 'admin', pass: 'admin123' },
-                { label: 'Secretaria', user: 'secretaria', pass: 'gollino123' },
+                { label: 'Rosangela', user: 'rosangela', pass: 'gollino123' },
+                { label: 'Elter', user: 'elter', pass: 'gollino' },
               ].map((u) => (
                 <button
                   key={u.user}
@@ -724,7 +636,6 @@ export default function Login({ onLogin }) {
                     fontSize: 12,
                     color: '#4A5568',
                     textAlign: 'left',
-                    transition: 'all 0.1s',
                   }}
                   onMouseEnter={(e) =>
                     (e.currentTarget.style.background = '#EBF3FC')
@@ -743,7 +654,6 @@ export default function Login({ onLogin }) {
             </div>
           </div>
         </div>
-
         <div
           style={{
             textAlign: 'center',
@@ -755,8 +665,6 @@ export default function Login({ onLogin }) {
           Gollino M.E © {new Date().getFullYear()} · Sistema de Gestão
         </div>
       </div>
-
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }

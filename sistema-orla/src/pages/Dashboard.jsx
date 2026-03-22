@@ -7,7 +7,6 @@ import {
   TrendingUp,
   TrendingDown,
   Package,
-  Users,
   AlertCircle,
   ArrowRight,
   DollarSign,
@@ -16,7 +15,7 @@ import {
 } from 'lucide-react'
 
 const fmt = (v) =>
-  v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 function AnimatedNumber({ value, prefix = '', suffix = '' }) {
   const [display, setDisplay] = useState(0)
@@ -80,7 +79,6 @@ const SVGCalha = ({ style }) => (
     />
   </svg>
 )
-
 const SVGRufo = ({ style }) => (
   <svg viewBox='0 0 160 80' style={style} fill='none'>
     <path
@@ -107,7 +105,6 @@ const SVGRufo = ({ style }) => (
     />
   </svg>
 )
-
 const SVGChapa = ({ style }) => (
   <svg viewBox='0 0 180 100' style={style} fill='none'>
     <rect
@@ -146,7 +143,6 @@ const SVGChapa = ({ style }) => (
     ))}
   </svg>
 )
-
 const SVGParafuso = ({ style }) => (
   <svg viewBox='0 0 40 100' style={style} fill='none'>
     <rect
@@ -189,6 +185,21 @@ const SVGParafuso = ({ style }) => (
   </svg>
 )
 
+// ── Saudação por horário ──────────────────────────────────────
+function getSaudacao() {
+  const h = new Date().getHours()
+  if (h < 12) return 'Bom dia! 👋'
+  if (h < 18) return 'Boa tarde! 👋'
+  return 'Boa noite! 👋'
+}
+
+// ── Formatar data do banco (YYYY-MM-DD) para DD/MM ────────────
+function fmtDataCurta(dataStr) {
+  if (!dataStr) return ''
+  const [, m, d] = dataStr.split('-')
+  return `${d}/${m}`
+}
+
 export default function Dashboard({ onNavigate, caixaAberto }) {
   const hoje = new Date().toLocaleDateString('pt-BR', {
     weekday: 'long',
@@ -200,151 +211,194 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
     hour: '2-digit',
     minute: '2-digit',
   })
+
   const [periodo, setPeriodo] = useState('hoje')
   const [animKey, setAnimKey] = useState(0)
+  const [loading, setLoading] = useState(true)
 
-  const dadosPeriodo = {
-    hoje: { vendas: 1183.3, qtde: 4, crescimento: +12.4 },
-    semana: { vendas: 4820.0, qtde: 18, crescimento: +8.2 },
-    mes: { vendas: 18640.0, qtde: 67, crescimento: +5.1 },
+  // Dados do banco
+  const [resumo, setResumo] = useState({
+    vendas: { total: 0, qtde: 0 },
+    contasReceber: { total: 0 },
+    contasPagar: { total: 0 },
+    estoqueBaixo: 0,
+    grafico7dias: [],
+  })
+  const [vendasHoje, setVendasHoje] = useState([])
+  const [contasVencendo, setContasVencendo] = useState([])
+  const [contasPagarAlerta, setContasPagarAlerta] = useState([])
+  const [produtosBaixo, setProdutosBaixo] = useState([])
+  const [totalClientes, setTotalClientes] = useState(0)
+  const [totalProdutos, setTotalProdutos] = useState(0)
+
+  const META_DIARIA = 2000
+
+  // ── Carrega dados do banco ────────────────────────────────────
+  async function carregarDados(p = 'hoje') {
+    setLoading(true)
+    try {
+      // Resumo principal
+      const res = await window.api.invoke('dashboard:resumo', p)
+      setResumo(res)
+
+      // Vendas de hoje (últimas 5)
+      const dataHoje = new Date().toISOString().slice(0, 10)
+      const vendas = await window.api.invoke('vendas:listar', {
+        dataInicio: dataHoje,
+        dataFim: dataHoje,
+        situacao: 'N',
+      })
+      setVendasHoje(vendas.slice(0, 5))
+
+      // Contas a receber vencendo (próximos 7 dias)
+      const d7 = new Date()
+      d7.setDate(d7.getDate() + 7)
+      const cr = await window.api.invoke('contasReceber:listar', {
+        situacao: 'A',
+        dataFim: d7.toISOString().slice(0, 10),
+      })
+      setContasVencendo(cr.slice(0, 4))
+
+      // Contas a pagar vencendo (próximos 7 dias)
+      const cp = await window.api.invoke('contasPagar:listar', {
+        situacao: 'A',
+        dataFim: d7.toISOString().slice(0, 10),
+      })
+      setContasPagarAlerta(cp.slice(0, 3))
+
+      // Produtos com estoque baixo
+      const prods = await window.api.invoke('produtos:listar', {
+        estoqueBaixo: true,
+      })
+      setProdutosBaixo(prods.slice(0, 3))
+
+      // Totais de clientes e produtos
+      window.api.clientes.listar(filtros)
+      setTotalClientes(clientes.length)
+
+      const todosProds = await window.api.invoke('produtos:listar', {
+        situacao: 'A',
+      })
+      setTotalProdutos(todosProds.length)
+    } catch (err) {
+      console.error('Erro ao carregar dashboard:', err)
+    } finally {
+      setLoading(false)
+    }
   }
+
+  useEffect(() => {
+    carregarDados(periodo)
+  }, [])
 
   function mudarPeriodo(p) {
     setPeriodo(p)
     setAnimKey((k) => k + 1)
+    carregarDados(p)
   }
 
-  const dados = dadosPeriodo[periodo]
+  // ── Gráfico 7 dias ────────────────────────────────────────────
+  function montarGrafico() {
+    const dias = []
+    const hoje7 = new Date()
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(hoje7)
+      d.setDate(d.getDate() - i)
+      const key = d.toISOString().slice(0, 10)
+      const encontrado = resumo.grafico7dias.find((g) => g.data === key)
+      const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+      dias.push({
+        dia: i === 0 ? 'Hoje' : labels[d.getDay()],
+        valor: encontrado?.total || 0,
+        hoje: i === 0,
+      })
+    }
+    return dias
+  }
 
-  const vendasHoje = [
-    {
-      hora: '08:32',
-      cliente: 'Construtora Viver Ltda',
-      valor: 520.0,
-      forma: 'Convênio',
-    },
-    {
-      hora: '09:15',
-      cliente: 'João Carlos Ferreira',
-      valor: 187.0,
-      forma: 'Dinheiro',
-    },
-    {
-      hora: '10:44',
-      cliente: 'Consumidor a vista',
-      valor: 56.8,
-      forma: 'Dinheiro',
-    },
-    {
-      hora: '11:20',
-      cliente: 'Obras Rápidas ME',
-      valor: 419.5,
-      forma: 'Cartão',
-    },
-  ]
+  // ── Urgência das contas a receber ─────────────────────────────
+  function urgenciaVencimento(dataVenc) {
+    if (!dataVenc) return 'baixa'
+    const hoje2 = new Date().toISOString().slice(0, 10)
+    if (dataVenc <= hoje2) return 'alta'
+    const diff = Math.ceil((new Date(dataVenc) - new Date(hoje2)) / 86400000)
+    if (diff <= 2) return 'media'
+    return 'baixa'
+  }
 
-  const contasVencendo = [
-    {
-      cliente: 'Arnaldo Leonidas',
-      valor: 43.1,
-      vencimento: 'Hoje',
-      urgencia: 'alta',
-    },
-    {
-      cliente: 'Construtora Viver Ltda',
-      valor: 520.0,
-      vencimento: 'Amanhã',
-      urgencia: 'media',
-    },
-    {
-      cliente: 'João Carlos Ferreira',
-      valor: 87.5,
-      vencimento: 'Em 3 dias',
-      urgencia: 'baixa',
-    },
-  ]
+  function labelVencimento(dataVenc) {
+    if (!dataVenc) return ''
+    const hoje2 = new Date().toISOString().slice(0, 10)
+    if (dataVenc < hoje2) return 'Vencido'
+    if (dataVenc === hoje2) return 'Hoje'
+    const diff = Math.ceil((new Date(dataVenc) - new Date(hoje2)) / 86400000)
+    if (diff === 1) return 'Amanhã'
+    return `Em ${diff} dias`
+  }
 
-  const produtosBaixo = [
-    { descricao: 'Calha PVC 4m branca', estoque: 3, minimo: 10 },
-    { descricao: 'Chapa galvanizada 26', estoque: 7, minimo: 10 },
-  ]
+  const totalHoje = resumo.vendas.total || 0
+  const dias = montarGrafico()
+  const maxValor = Math.max(...dias.map((d) => d.valor), META_DIARIA)
 
-  const contasPagar = [
-    {
-      descricao: 'Fornecedor Aço Total',
-      valor: 1250.0,
-      vencimento: 'Em 5 dias',
-      vencido: false,
-    },
-    {
-      descricao: 'Aluguel do galpão',
-      valor: 2200.0,
-      vencimento: 'Vencido',
-      vencido: true,
-    },
-  ]
-
-  const formasPagamento = [
-    { forma: 'Dinheiro', valor: 244.8, pct: 21, cor: '#22863A' },
-    { forma: 'Cartão', valor: 419.5, pct: 35, cor: '#185FA5' },
-    { forma: 'Convênio', valor: 519.0, pct: 44, cor: '#B7791F' },
-  ]
-
-  const totalHoje = vendasHoje.reduce((s, v) => s + v.valor, 0)
-  const totalReceber = contasVencendo.reduce((s, c) => s + c.valor, 0)
+  // ── Formas de pagamento (calculadas das vendas de hoje) ───────
+  const formasPagamento = (() => {
+    const dinheiro = vendasHoje.reduce(
+      (s, v) => s + (v.valor_pago_dinheiro || 0),
+      0,
+    )
+    const cartaoC = vendasHoje.reduce(
+      (s, v) => s + (v.valor_pago_cartao_credito || 0),
+      0,
+    )
+    const cartaoD = vendasHoje.reduce(
+      (s, v) => s + (v.valor_pago_cartao_debito || 0),
+      0,
+    )
+    const total = dinheiro + cartaoC + cartaoD || 1
+    return [
+      {
+        forma: 'Dinheiro',
+        valor: dinheiro,
+        pct: Math.round((dinheiro / total) * 100),
+        cor: '#22863A',
+      },
+      {
+        forma: 'Cartão Crédito',
+        valor: cartaoC,
+        pct: Math.round((cartaoC / total) * 100),
+        cor: '#185FA5',
+      },
+      {
+        forma: 'Cartão Débito',
+        valor: cartaoD,
+        pct: Math.round((cartaoD / total) * 100),
+        cor: '#B7791F',
+      },
+    ].filter((f) => f.valor > 0)
+  })()
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', background: '#F0F4FA' }}>
       <style>{`
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(16px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes slideRight {
-          from { width: 0; }
-          to   { width: var(--w); }
-        }
-        @keyframes pulse-ring {
-          0%   { transform: scale(1);    opacity: 0.6; }
-          100% { transform: scale(1.6);  opacity: 0; }
-        }
-        @keyframes float {
-          0%, 100% { transform: translateY(0px) rotate(var(--r, 0deg)); }
-          50%       { transform: translateY(-8px) rotate(var(--r, 0deg)); }
-        }
-        @keyframes shimmer {
-          0%   { background-position: -200% center; }
-          100% { background-position:  200% center; }
-        }
-        .card-hover {
-          transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-        }
-        .card-hover:hover {
-          transform: translateY(-3px);
-          box-shadow: 0 8px 24px rgba(24,95,165,0.12);
-          border-color: #8BBEF4 !important;
-        }
-        .btn-action {
-          transition: transform 0.15s, opacity 0.15s, box-shadow 0.15s;
-        }
-        .btn-action:hover {
-          transform: translateY(-2px);
-          opacity: 0.93;
-          box-shadow: 0 6px 20px rgba(0,0,0,0.18);
-        }
-        .btn-action:active { transform: scale(0.97); }
-        .period-btn {
-          transition: all 0.15s ease;
-        }
-        .period-btn:hover { opacity: 0.85; }
+        @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes slideRight { from { width:0; } to { width:var(--w); } }
+        @keyframes float { 0%,100% { transform:translateY(0px) rotate(var(--r,0deg)); } 50% { transform:translateY(-8px) rotate(var(--r,0deg)); } }
+        .card-hover { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
+        .card-hover:hover { transform:translateY(-3px); box-shadow:0 8px 24px rgba(24,95,165,0.12); border-color:#8BBEF4 !important; }
+        .btn-action { transition: transform 0.15s, opacity 0.15s, box-shadow 0.15s; }
+        .btn-action:hover { transform:translateY(-2px); opacity:0.93; box-shadow:0 6px 20px rgba(0,0,0,0.18); }
+        .btn-action:active { transform:scale(0.97); }
+        .period-btn { transition: all 0.15s ease; }
+        .period-btn:hover { opacity:0.85; }
         .row-hover { transition: background 0.1s; }
-        .row-hover:hover { background: #EBF4FD !important; }
+        .row-hover:hover { background:#EBF4FD !important; }
       `}</style>
 
+      {/* ── HEADER AZUL ───────────────────────────────────────── */}
       <div
         style={{
           background:
-            'linear-gradient(135deg, #0C3F7A 0%, #185FA5 50%, #1a56a0 100%)',
+            'linear-gradient(135deg,#0C3F7A 0%,#185FA5 50%,#1a56a0 100%)',
           padding: '28px 28px 80px',
           position: 'relative',
           overflow: 'hidden',
@@ -396,18 +450,6 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
             animation: 'float 5s ease-in-out infinite 2s',
           }}
         />
-        <SVGCalha
-          style={{
-            position: 'absolute',
-            left: '55%',
-            top: 5,
-            width: 180,
-            height: 55,
-            color: 'rgba(255,255,255,0.04)',
-            animation: 'float 9s ease-in-out infinite 0.8s',
-            '--r': '8deg',
-          }}
-        />
 
         <div style={{ position: 'relative', zIndex: 2 }}>
           <div
@@ -427,7 +469,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                   letterSpacing: '-0.5px',
                 }}
               >
-                Bom dia! 👋
+                {getSaudacao()}
               </div>
               <div
                 style={{
@@ -439,7 +481,6 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 {hoje} · {hora}
               </div>
             </div>
-
             <div
               style={{
                 display: 'flex',
@@ -479,10 +520,11 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
             </div>
           </div>
 
+          {/* CARDS DO TOPO */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
+              gridTemplateColumns: 'repeat(4,1fr)',
               gap: 14,
               marginTop: 28,
               animation: 'fadeUp 0.5s ease 0.2s both',
@@ -491,34 +533,30 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
             {[
               {
                 label: 'Faturamento',
-                value: dados.vendas,
+                value: resumo.vendas.total,
                 isCurrency: true,
-                sub: `${dados.qtde} vendas no período`,
-                trend: dados.crescimento,
+                sub: `${resumo.vendas.qtde} vendas no período`,
                 nav: 'vendas',
               },
               {
                 label: 'A receber',
-                value: totalReceber,
+                value: resumo.contasReceber.total,
                 isCurrency: true,
-                sub: `${contasVencendo.length} parcelas abertas`,
-                trend: null,
+                sub: 'em aberto',
                 nav: 'contas-receber',
               },
               {
                 label: 'Produtos',
-                value: 12,
+                value: totalProdutos,
                 isCurrency: false,
-                sub: '2 com estoque baixo',
-                trend: null,
+                sub: `${resumo.estoqueBaixo} com estoque baixo`,
                 nav: 'produtos',
               },
               {
                 label: 'Clientes',
-                value: 6,
+                value: totalClientes,
                 isCurrency: false,
                 sub: 'cadastrados',
-                trend: null,
                 nav: 'clientes',
               },
             ].map((card, i) => (
@@ -547,47 +585,14 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
               >
                 <div
                   style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
+                    fontSize: 11,
+                    color: 'rgba(255,255,255,0.65)',
+                    fontWeight: 500,
+                    letterSpacing: '0.05em',
                     marginBottom: 10,
                   }}
                 >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: 'rgba(255,255,255,0.65)',
-                      fontWeight: 500,
-                      letterSpacing: '0.05em',
-                    }}
-                  >
-                    {card.label.toUpperCase()}
-                  </div>
-                  {card.trend !== null && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 3,
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: card.trend >= 0 ? '#4ade80' : '#f87171',
-                        background:
-                          card.trend >= 0
-                            ? 'rgba(74,222,128,0.15)'
-                            : 'rgba(248,113,113,0.15)',
-                        padding: '2px 7px',
-                        borderRadius: 99,
-                      }}
-                    >
-                      {card.trend >= 0 ? (
-                        <TrendingUp size={10} />
-                      ) : (
-                        <TrendingDown size={10} />
-                      )}
-                      {Math.abs(card.trend)}%
-                    </div>
-                  )}
+                  {card.label.toUpperCase()}
                 </div>
                 <div
                   style={{
@@ -630,6 +635,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
           zIndex: 10,
         }}
       >
+        {/* ALERTA CAIXA FECHADO */}
         {!caixaAberto && (
           <div
             style={{
@@ -676,7 +682,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
           </div>
         )}
 
-        {/* ── META DIÁRIA + GRÁFICO ── */}
+        {/* META + GRÁFICO */}
         <div
           style={{
             display: 'grid',
@@ -718,13 +724,13 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 style={{
                   fontSize: 11,
                   fontWeight: 700,
-                  color: totalHoje >= 2000 ? '#22863A' : '#185FA5',
-                  background: totalHoje >= 2000 ? '#EAF6EE' : '#EBF3FC',
+                  color: totalHoje >= META_DIARIA ? '#22863A' : '#185FA5',
+                  background: totalHoje >= META_DIARIA ? '#EAF6EE' : '#EBF3FC',
                   padding: '3px 10px',
                   borderRadius: 99,
                 }}
               >
-                {Math.round((totalHoje / 2000) * 100)}%
+                {Math.round((totalHoje / META_DIARIA) * 100)}%
               </div>
             </div>
             <div style={{ marginBottom: 12 }}>
@@ -753,7 +759,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                     marginBottom: 2,
                   }}
                 >
-                  de {fmt(2000)}
+                  de {fmt(META_DIARIA)}
                 </span>
               </div>
               <div
@@ -769,19 +775,19 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                     height: '100%',
                     borderRadius: 99,
                     background:
-                      totalHoje >= 2000
-                        ? 'linear-gradient(90deg, #155724, #22863A)'
-                        : 'linear-gradient(90deg, #0C3F7A, #378ADD)',
-                    width: `${Math.min((totalHoje / 2000) * 100, 100)}%`,
+                      totalHoje >= META_DIARIA
+                        ? 'linear-gradient(90deg,#155724,#22863A)'
+                        : 'linear-gradient(90deg,#0C3F7A,#378ADD)',
+                    width: `${Math.min((totalHoje / META_DIARIA) * 100, 100)}%`,
                     transition: 'width 1s ease',
                   }}
                 />
               </div>
             </div>
             <div style={{ fontSize: 12, color: '#9AA3B2' }}>
-              {totalHoje >= 2000
+              {totalHoje >= META_DIARIA
                 ? '🎉 Meta atingida! Parabéns!'
-                : `Faltam ${fmt(2000 - totalHoje)} para a meta`}
+                : `Faltam ${fmt(META_DIARIA - totalHoje)} para a meta`}
             </div>
             <div
               style={{
@@ -793,9 +799,9 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
               }}
             >
               {[
-                { label: 'Ontem', value: fmt(980.0) },
-                { label: 'Semana', value: fmt(4820.0) },
-                { label: 'Melhor', value: fmt(2340.0) },
+                { label: 'Vendas', value: resumo.vendas.qtde },
+                { label: 'A receber', value: fmt(resumo.contasReceber.total) },
+                { label: 'A pagar', value: fmt(resumo.contasPagar.total) },
               ].map((item) => (
                 <div key={item.label} style={{ textAlign: 'center' }}>
                   <div
@@ -842,139 +848,99 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                   Comparativo diário
                 </div>
               </div>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-end',
+                gap: 8,
+                height: 120,
+                position: 'relative',
+              }}
+            >
               <div
                 style={{
-                  fontSize: 12,
-                  color: '#22863A',
-                  fontWeight: 600,
-                  background: '#EAF6EE',
-                  padding: '3px 10px',
-                  borderRadius: 99,
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: `${(META_DIARIA / maxValor) * 100}%`,
+                  borderTop: '1.5px dashed #C5DEFA',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 4,
+                  justifyContent: 'flex-end',
                 }}
               >
-                <TrendingUp size={11} /> +8.2% na semana
-              </div>
-            </div>
-            {(() => {
-              const dias = [
-                { dia: 'Seg', valor: 980, hoje: false },
-                { dia: 'Ter', valor: 1240, hoje: false },
-                { dia: 'Qua', valor: 760, hoje: false },
-                { dia: 'Qui', valor: 2100, hoje: false },
-                { dia: 'Sex', valor: 1580, hoje: false },
-                { dia: 'Sáb', valor: 890, hoje: false },
-                { dia: 'Hoje', valor: totalHoje, hoje: true },
-              ]
-              const maxValor = Math.max(...dias.map((d) => d.valor))
-              const meta = 2000
-              return (
-                <div
+                <span
                   style={{
-                    display: 'flex',
-                    alignItems: 'flex-end',
-                    gap: 8,
-                    height: 120,
-                    position: 'relative',
+                    fontSize: 9,
+                    color: '#185FA5',
+                    background: '#fff',
+                    padding: '0 4px',
+                    marginTop: -8,
                   }}
                 >
+                  meta
+                </span>
+              </div>
+              {dias.map((d, i) => {
+                const altura = Math.max((d.valor / maxValor) * 100, 4)
+                const atingiu = d.valor >= META_DIARIA
+                return (
                   <div
+                    key={d.dia}
                     style={{
-                      position: 'absolute',
-                      left: 0,
-                      right: 0,
-                      bottom: `${(meta / maxValor) * 100}%`,
-                      borderTop: '1.5px dashed #C5DEFA',
+                      flex: 1,
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
+                      gap: 6,
+                      height: '100%',
                       justifyContent: 'flex-end',
                     }}
                   >
-                    <span
+                    <div
                       style={{
-                        fontSize: 9,
-                        color: '#185FA5',
-                        background: '#fff',
-                        padding: '0 4px',
-                        marginTop: -8,
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: d.hoje ? '#0C3F7A' : '#9AA3B2',
                       }}
                     >
-                      meta
-                    </span>
+                      {d.valor >= 1000
+                        ? `${(d.valor / 1000).toFixed(1)}k`
+                        : d.valor > 0
+                          ? d.valor
+                          : ''}
+                    </div>
+                    <div
+                      style={{
+                        width: '100%',
+                        borderRadius: '6px 6px 0 0',
+                        height: `${altura}%`,
+                        background: d.hoje
+                          ? 'linear-gradient(180deg,#185FA5,#0C3F7A)'
+                          : atingiu
+                            ? 'linear-gradient(180deg,#22863A99,#15572466)'
+                            : 'linear-gradient(180deg,#C5DEFA,#8BBEF4)',
+                        transition: `height 0.8s ease ${i * 0.08}s`,
+                      }}
+                    />
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: d.hoje ? '#0C3F7A' : '#9AA3B2',
+                        fontWeight: d.hoje ? 700 : 400,
+                      }}
+                    >
+                      {d.dia}
+                    </div>
                   </div>
-                  {dias.map((d, i) => {
-                    const altura = Math.max((d.valor / maxValor) * 100, 4)
-                    const atingiu = d.valor >= meta
-                    return (
-                      <div
-                        key={d.dia}
-                        style={{
-                          flex: 1,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          gap: 6,
-                          height: '100%',
-                          justifyContent: 'flex-end',
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 600,
-                            color: d.hoje ? '#0C3F7A' : '#9AA3B2',
-                          }}
-                        >
-                          {d.valor >= 1000
-                            ? `${(d.valor / 1000).toFixed(1)}k`
-                            : d.valor}
-                        </div>
-                        <div
-                          style={{
-                            width: '100%',
-                            borderRadius: '6px 6px 0 0',
-                            height: `${altura}%`,
-                            background: d.hoje
-                              ? 'linear-gradient(180deg, #185FA5, #0C3F7A)'
-                              : atingiu
-                                ? 'linear-gradient(180deg, #22863A99, #15572466)'
-                                : 'linear-gradient(180deg, #C5DEFA, #8BBEF4)',
-                            transition: `height 0.8s ease ${i * 0.08}s`,
-                            position: 'relative',
-                            overflow: 'hidden',
-                          }}
-                        >
-                          {d.hoje && (
-                            <div
-                              style={{
-                                position: 'absolute',
-                                inset: 0,
-                                background:
-                                  'linear-gradient(180deg, rgba(255,255,255,0.15), transparent)',
-                              }}
-                            />
-                          )}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 10,
-                            color: d.hoje ? '#0C3F7A' : '#9AA3B2',
-                            fontWeight: d.hoje ? 700 : 400,
-                          }}
-                        >
-                          {d.dia}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )
-            })()}
+                )
+              })}
+            </div>
           </div>
         </div>
 
+        {/* VENDAS DE HOJE + FORMAS PAGTO + RESUMO */}
         <div
           style={{
             display: 'grid',
@@ -983,6 +949,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
             marginBottom: 16,
           }}
         >
+          {/* VENDAS DE HOJE */}
           <div
             style={{
               background: '#fff',
@@ -1000,7 +967,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                background: 'linear-gradient(90deg, #F7FAFF 0%, #fff 100%)',
+                background: 'linear-gradient(90deg,#F7FAFF 0%,#fff 100%)',
               }}
             >
               <div>
@@ -1027,37 +994,60 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                   fontWeight: 500,
                   transition: 'all 0.15s',
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#EBF3FC'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent'
-                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.background = '#EBF3FC')
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.background = 'transparent')
+                }
               >
                 Ver mais <ArrowRight size={11} />
               </button>
             </div>
-            {vendasHoje.map((v, i) => (
+
+            {loading ? (
               <div
-                key={i}
-                className='row-hover'
                 style={{
-                  padding: '12px 20px',
-                  borderBottom:
-                    i < vendasHoje.length - 1 ? '1px solid #F0F4FA' : 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 14,
-                  background: 'transparent',
+                  padding: '24px 20px',
+                  textAlign: 'center',
+                  color: '#9AA3B2',
+                  fontSize: 13,
                 }}
               >
-                <div style={{ position: 'relative' }}>
+                Carregando...
+              </div>
+            ) : vendasHoje.length === 0 ? (
+              <div
+                style={{
+                  padding: '24px 20px',
+                  textAlign: 'center',
+                  color: '#9AA3B2',
+                  fontSize: 13,
+                }}
+              >
+                Nenhuma venda hoje ainda.
+              </div>
+            ) : (
+              vendasHoje.map((v, i) => (
+                <div
+                  key={i}
+                  className='row-hover'
+                  style={{
+                    padding: '12px 20px',
+                    borderBottom:
+                      i < vendasHoje.length - 1 ? '1px solid #F0F4FA' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    background: 'transparent',
+                  }}
+                >
                   <div
                     style={{
                       width: 36,
                       height: 36,
                       borderRadius: '50%',
-                      background: 'linear-gradient(135deg, #EBF3FC, #C5DEFA)',
+                      background: 'linear-gradient(135deg,#EBF3FC,#C5DEFA)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -1066,62 +1056,69 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                   >
                     <ShoppingCart size={14} style={{ color: '#185FA5' }} />
                   </div>
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 600,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      color: '#1A202C',
-                    }}
-                  >
-                    {v.cliente}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: '#9AA3B2',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      marginTop: 2,
-                    }}
-                  >
-                    <Clock size={10} /> {v.hora}
-                    <span
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
                       style={{
-                        background: '#EEF3F9',
-                        color: '#4A5568',
-                        padding: '1px 7px',
-                        borderRadius: 99,
-                        fontSize: 10,
-                        fontWeight: 500,
+                        fontSize: 13,
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        color: '#1A202C',
                       }}
                     >
-                      {v.forma}
-                    </span>
+                      {v.nome_cliente || 'Consumidor'}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: '#9AA3B2',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        marginTop: 2,
+                      }}
+                    >
+                      <Clock size={10} /> {v.hora_cadastro || '--:--'}
+                      <span
+                        style={{
+                          background: '#EEF3F9',
+                          color: '#4A5568',
+                          padding: '1px 7px',
+                          borderRadius: 99,
+                          fontSize: 10,
+                          fontWeight: 500,
+                        }}
+                      >
+                        {v.codigo_forma_pagamento1 || 'Outros'}
+                      </span>
+                    </div>
                   </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div
-                    style={{ fontSize: 14, fontWeight: 700, color: '#185FA5' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8 }}
                   >
-                    {fmt(v.valor)}
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: '#185FA5',
+                      }}
+                    >
+                      {fmt(v.valor_total)}
+                    </div>
+                    <CheckCircle
+                      size={14}
+                      style={{ color: '#22863A', flexShrink: 0 }}
+                    />
                   </div>
-                  <CheckCircle
-                    size={14}
-                    style={{ color: '#22863A', flexShrink: 0 }}
-                  />
                 </div>
-              </div>
-            ))}
+              ))
+            )}
+
             <div
               style={{
                 padding: '12px 20px',
-                background: 'linear-gradient(90deg, #F7FAFF, #EBF3FC)',
+                background: 'linear-gradient(90deg,#F7FAFF,#EBF3FC)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -1137,6 +1134,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* FORMAS DE PAGAMENTO */}
             <div
               style={{
                 background: '#fff',
@@ -1160,74 +1158,91 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
               <div style={{ fontSize: 11, color: '#9AA3B2', marginBottom: 16 }}>
                 Hoje
               </div>
-              {formasPagamento.map((fp, i) => (
+              {formasPagamento.length === 0 ? (
                 <div
-                  key={fp.forma}
                   style={{
-                    marginBottom: i < formasPagamento.length - 1 ? 12 : 0,
+                    fontSize: 12,
+                    color: '#9AA3B2',
+                    textAlign: 'center',
+                    padding: '8px 0',
                   }}
                 >
+                  Sem vendas hoje
+                </div>
+              ) : (
+                formasPagamento.map((fp, i) => (
                   <div
+                    key={fp.forma}
                     style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      marginBottom: 5,
+                      marginBottom: i < formasPagamento.length - 1 ? 12 : 0,
                     }}
                   >
                     <div
-                      style={{ display: 'flex', alignItems: 'center', gap: 7 }}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        marginBottom: 5,
+                      }}
                     >
                       <div
                         style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
-                          background: fp.cor,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 7,
                         }}
-                      />
+                      >
+                        <div
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            background: fp.cor,
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: '#4A5568',
+                            fontWeight: 500,
+                          }}
+                        >
+                          {fp.forma}
+                        </span>
+                      </div>
                       <span
                         style={{
                           fontSize: 12,
-                          color: '#4A5568',
-                          fontWeight: 500,
+                          fontWeight: 700,
+                          color: '#1A202C',
                         }}
                       >
-                        {fp.forma}
+                        {fmt(fp.valor)}
                       </span>
                     </div>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: '#1A202C',
-                      }}
-                    >
-                      {fmt(fp.valor)}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      height: 7,
-                      background: '#F0F4FA',
-                      borderRadius: 99,
-                      overflow: 'hidden',
-                    }}
-                  >
                     <div
                       style={{
-                        height: '100%',
+                        height: 7,
+                        background: '#F0F4FA',
                         borderRadius: 99,
-                        background: `linear-gradient(90deg, ${fp.cor}cc, ${fp.cor})`,
-                        animation: `slideRight 0.8s ease ${0.5 + i * 0.1}s both`,
-                        '--w': `${fp.pct}%`,
-                        width: `${fp.pct}%`,
+                        overflow: 'hidden',
                       }}
-                    />
+                    >
+                      <div
+                        style={{
+                          height: '100%',
+                          borderRadius: 99,
+                          background: `linear-gradient(90deg,${fp.cor}cc,${fp.cor})`,
+                          width: `${fp.pct}%`,
+                          transition: 'width 0.8s ease',
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
 
+            {/* RESUMO FINANCEIRO */}
             <div
               style={{
                 background: '#fff',
@@ -1259,14 +1274,14 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 },
                 {
                   label: 'A receber',
-                  value: fmt(totalReceber),
+                  value: fmt(resumo.contasReceber.total),
                   color: '#B7791F',
                   bg: '#FFF8E6',
                   icon: Clock,
                 },
                 {
                   label: 'A pagar',
-                  value: fmt(3450.0),
+                  value: fmt(resumo.contasPagar.total),
                   color: '#C53030',
                   bg: '#FFF0F0',
                   icon: TrendingDown,
@@ -1309,14 +1324,16 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
           </div>
         </div>
 
+        {/* CONTAS A VENCER + ALERTAS */}
         <div
           style={{
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
             gap: 16,
-            marginBottom: 24,
+            marginBottom: 16,
           }}
         >
+          {/* CONTAS A RECEBER VENCENDO */}
           <div
             style={{
               background: '#fff',
@@ -1334,7 +1351,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                background: 'linear-gradient(90deg, #F7FAFF, #fff)',
+                background: 'linear-gradient(90deg,#F7FAFF,#fff)',
               }}
             >
               <div style={{ fontSize: 14, fontWeight: 600, color: '#1A202C' }}>
@@ -1363,81 +1380,95 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 Ver todas <ArrowRight size={11} />
               </button>
             </div>
-            {contasVencendo.map((c, i) => {
-              const urgCores = {
-                alta: { bg: '#FFF0F0', icon: '#C53030', text: '#C53030' },
-                media: { bg: '#FFF8E6', icon: '#B7791F', text: '#B7791F' },
-                baixa: { bg: '#EAF6EE', icon: '#22863A', text: '#22863A' },
-              }
-              const uc = urgCores[c.urgencia]
-              return (
-                <div
-                  key={i}
-                  className='row-hover'
-                  style={{
-                    padding: '12px 20px',
-                    borderBottom:
-                      i < contasVencendo.length - 1
-                        ? '1px solid #F0F4FA'
-                        : 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    background: 'transparent',
-                  }}
-                >
+            {contasVencendo.length === 0 ? (
+              <div
+                style={{
+                  padding: '24px 20px',
+                  textAlign: 'center',
+                  color: '#9AA3B2',
+                  fontSize: 13,
+                }}
+              >
+                Nenhuma conta vencendo em breve. ✅
+              </div>
+            ) : (
+              contasVencendo.map((c, i) => {
+                const urg = urgenciaVencimento(c.data_vencimento)
+                const uc = {
+                  alta: { bg: '#FFF0F0', icon: '#C53030', text: '#C53030' },
+                  media: { bg: '#FFF8E6', icon: '#B7791F', text: '#B7791F' },
+                  baixa: { bg: '#EAF6EE', icon: '#22863A', text: '#22863A' },
+                }[urg]
+                return (
                   <div
+                    key={i}
+                    className='row-hover'
                     style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: '50%',
-                      background: uc.bg,
+                      padding: '12px 20px',
+                      borderBottom:
+                        i < contasVencendo.length - 1
+                          ? '1px solid #F0F4FA'
+                          : 'none',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
+                      gap: 12,
+                      background: 'transparent',
                     }}
                   >
-                    <Wallet size={14} style={{ color: uc.icon }} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
-                        fontSize: 13,
-                        fontWeight: 600,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
+                        width: 34,
+                        height: 34,
+                        borderRadius: '50%',
+                        background: uc.bg,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
                       }}
                     >
-                      {c.cliente}
+                      <Wallet size={14} style={{ color: uc.icon }} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {c.nome_cliente || c.codigo_cliente}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: uc.text,
+                          fontWeight: 500,
+                          marginTop: 1,
+                        }}
+                      >
+                        Vence: {labelVencimento(c.data_vencimento)}
+                      </div>
                     </div>
                     <div
                       style={{
-                        fontSize: 11,
-                        color: uc.text,
-                        fontWeight: 500,
-                        marginTop: 1,
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: '#1A202C',
+                        flexShrink: 0,
                       }}
                     >
-                      Vence: {c.vencimento}
+                      {fmt(c.valor_docto - (c.valor_pagamento || 0))}
                     </div>
                   </div>
-                  <div
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: '#1A202C',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {fmt(c.valor)}
-                  </div>
-                </div>
-              )
-            })}
+                )
+              })
+            )}
           </div>
 
+          {/* ALERTAS — ESTOQUE BAIXO + CONTAS A PAGAR */}
           <div
             style={{
               background: '#fff',
@@ -1452,7 +1483,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
               style={{
                 padding: '16px 20px',
                 borderBottom: '1px solid #EEF3F9',
-                background: 'linear-gradient(90deg, #F7FAFF, #fff)',
+                background: 'linear-gradient(90deg,#F7FAFF,#fff)',
               }}
             >
               <div style={{ fontSize: 14, fontWeight: 600, color: '#1A202C' }}>
@@ -1462,6 +1493,20 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 Estoque e pagamentos
               </div>
             </div>
+
+            {produtosBaixo.length === 0 && contasPagarAlerta.length === 0 && (
+              <div
+                style={{
+                  padding: '24px 20px',
+                  textAlign: 'center',
+                  color: '#9AA3B2',
+                  fontSize: 13,
+                }}
+              >
+                Nenhum alerta no momento. ✅
+              </div>
+            )}
+
             {produtosBaixo.map((p, i) => (
               <div
                 key={i}
@@ -1509,12 +1554,12 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                       marginTop: 1,
                     }}
                   >
-                    Estoque baixo: {p.estoque} un.
+                    Estoque: {p.estoque_atual} {p.unidade}
                   </div>
                 </div>
                 <button
                   className='btn-action'
-                  onClick={() => onNavigate('entrada-mercadoria')}
+                  onClick={() => onNavigate('estoque')}
                   style={{
                     fontSize: 11,
                     color: '#185FA5',
@@ -1530,85 +1575,94 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 </button>
               </div>
             ))}
-            {contasPagar.map((c, i) => (
-              <div
-                key={i}
-                className='row-hover'
-                style={{
-                  padding: '11px 20px',
-                  borderBottom:
-                    i < contasPagar.length - 1 ? '1px solid #F0F4FA' : 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  background: 'transparent',
-                }}
-              >
+
+            {contasPagarAlerta.map((c, i) => {
+              const vencido =
+                c.data_vencimento <= new Date().toISOString().slice(0, 10)
+              return (
                 <div
+                  key={i}
+                  className='row-hover'
                   style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: '50%',
-                    background: c.vencido ? '#FFF0F0' : '#EBF3FC',
+                    padding: '11px 20px',
+                    borderBottom:
+                      i < contasPagarAlerta.length - 1
+                        ? '1px solid #F0F4FA'
+                        : 'none',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
+                    gap: 12,
+                    background: 'transparent',
                   }}
                 >
-                  <DollarSign
-                    size={14}
-                    style={{ color: c.vencido ? '#C53030' : '#185FA5' }}
-                  />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
-                      fontSize: 13,
-                      fontWeight: 600,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
+                      width: 34,
+                      height: 34,
+                      borderRadius: '50%',
+                      background: vencido ? '#FFF0F0' : '#EBF3FC',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
                     }}
                   >
-                    {c.descricao}
+                    <DollarSign
+                      size={14}
+                      style={{ color: vencido ? '#C53030' : '#185FA5' }}
+                    />
                   </div>
-                  <div
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {c.nome_fornecedor || c.codigo_fornecedor}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: vencido ? '#C53030' : '#9AA3B2',
+                        fontWeight: vencido ? 600 : 400,
+                        marginTop: 1,
+                      }}
+                    >
+                      {labelVencimento(c.data_vencimento)} ·{' '}
+                      {fmt(c.valor_docto)}
+                    </div>
+                  </div>
+                  <button
+                    className='btn-action'
+                    onClick={() => onNavigate('contas-pagar')}
                     style={{
                       fontSize: 11,
-                      color: c.vencido ? '#C53030' : '#9AA3B2',
-                      fontWeight: c.vencido ? 600 : 400,
-                      marginTop: 1,
+                      color: vencido ? '#C53030' : '#185FA5',
+                      whiteSpace: 'nowrap',
+                      padding: '5px 10px',
+                      border: `1px solid ${vencido ? '#FECACA' : '#C5DEFA'}`,
+                      borderRadius: 8,
+                      background: vencido ? '#FFF0F0' : '#EBF3FC',
+                      fontWeight: 600,
                     }}
                   >
-                    {c.vencimento} · {fmt(c.valor)}
-                  </div>
+                    {vencido ? 'Urgente' : 'Ver'}
+                  </button>
                 </div>
-                <button
-                  className='btn-action'
-                  onClick={() => onNavigate('contas-pagar')}
-                  style={{
-                    fontSize: 11,
-                    color: c.vencido ? '#C53030' : '#185FA5',
-                    whiteSpace: 'nowrap',
-                    padding: '5px 10px',
-                    border: `1px solid ${c.vencido ? '#FECACA' : '#C5DEFA'}`,
-                    borderRadius: 8,
-                    background: c.vencido ? '#FFF0F0' : '#EBF3FC',
-                    fontWeight: 600,
-                  }}
-                >
-                  {c.vencido ? 'Urgente' : 'Ver'}
-                </button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
 
+        {/* BOTÕES DE AÇÃO */}
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
+            gridTemplateColumns: 'repeat(3,1fr)',
             gap: 12,
             paddingBottom: 28,
           }}
@@ -1617,21 +1671,21 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
             {
               label: 'Nova venda',
               icon: ShoppingCart,
-              gradient: 'linear-gradient(135deg, #0C3F7A, #185FA5)',
+              gradient: 'linear-gradient(135deg,#0C3F7A,#185FA5)',
               nav: 'vendas',
             },
             {
               label: 'Contas a receber',
               icon: Wallet,
-              gradient: 'linear-gradient(135deg, #155724, #22863A)',
+              gradient: 'linear-gradient(135deg,#155724,#22863A)',
               nav: 'contas-receber',
             },
             {
               label: caixaAberto ? 'Fechar caixa' : 'Abrir caixa',
               icon: caixaAberto ? X : FolderOpen,
               gradient: caixaAberto
-                ? 'linear-gradient(135deg, #2D3748, #4A5568)'
-                : 'linear-gradient(135deg, #0C3F7A, #378ADD)',
+                ? 'linear-gradient(135deg,#2D3748,#4A5568)'
+                : 'linear-gradient(135deg,#0C3F7A,#378ADD)',
               nav: caixaAberto ? 'fechar-caixa' : 'abrir-caixa',
             },
           ].map((btn) => (
@@ -1655,8 +1709,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
                 boxShadow: '0 4px 14px rgba(0,0,0,0.15)',
               }}
             >
-              <btn.icon size={18} />
-              {btn.label}
+              <btn.icon size={18} /> {btn.label}
             </button>
           ))}
         </div>

@@ -507,6 +507,18 @@ const contasPagar = {
     )
     return { sucesso: true }
   },
+
+  salvar(dados) {
+    const cols = Object.keys(dados).join(', ')
+    const phs = Object.keys(dados)
+      .map(() => '?')
+      .join(', ')
+    db.prepare(
+      `INSERT INTO contas_pagar (${cols}, data_atualizacao, hora_atualizacao)
+       VALUES (${phs}, ?, ?)`,
+    ).run(...Object.values(dados), hoje(), agora())
+    return { sucesso: true }
+  },
 }
 
 // ============================================================

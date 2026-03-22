@@ -1,47 +1,136 @@
-import { useState } from 'react'
-import { Search, Plus, Filter, DollarSign, Edit2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Search, Plus, DollarSign, RefreshCw } from 'lucide-react'
 
-const fmt = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-const fmtDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-'
+const fmt = (v) =>
+  (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const fmtDate = (d) =>
+  d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-'
 
-const dadosIniciais = [
-  { id: '1', descricao: 'Fornecedor Aço Total', categoria: 'Fornecedor', valor: 1250.00, vencimento: '2024-02-10', data_pagamento: null, situacao: 'ABERTO', forma_pagamento: '' },
-  { id: '2', descricao: 'Conta de energia elétrica', categoria: 'Utilidades', valor: 380.50, vencimento: '2024-02-15', data_pagamento: null, situacao: 'ABERTO', forma_pagamento: '' },
-  { id: '3', descricao: 'Aluguel do galpão', categoria: 'Aluguel', valor: 2200.00, vencimento: '2024-02-05', data_pagamento: null, situacao: 'VENCIDO', forma_pagamento: '' },
-  { id: '4', descricao: 'Fornecedor Calhas Brasil', categoria: 'Fornecedor', valor: 890.00, vencimento: '2024-01-20', data_pagamento: '2024-01-20', situacao: 'PAGO', forma_pagamento: 'Transferência' },
-  { id: '5', descricao: 'Internet + Telefone', categoria: 'Utilidades', valor: 199.90, vencimento: '2024-02-20', data_pagamento: null, situacao: 'ABERTO', forma_pagamento: '' },
-  { id: '6', descricao: 'Contador', categoria: 'Serviços', valor: 450.00, vencimento: '2024-02-28', data_pagamento: null, situacao: 'ABERTO', forma_pagamento: '' },
-]
+function getSituacao(c) {
+  if (c.situacao_docto === 'P') return 'PAGO'
+  if (c.situacao_docto === 'C') return 'CANCELADO'
+  const hoje = new Date().toISOString().slice(0, 10)
+  if (c.data_vencimento && c.data_vencimento < hoje) return 'VENCIDO'
+  return 'ABERTO'
+}
 
 function StatusBadge({ status }) {
   const cfg = {
-    ABERTO: { bg: 'var(--blue-50)',  color: 'var(--blue-800)',  label: 'Aberto' },
-    VENCIDO:{ bg: 'var(--red-50)',   color: 'var(--red-500)',   label: 'Vencido' },
-    PAGO:   { bg: 'var(--green-50)', color: 'var(--green-700)', label: 'Pago' },
+    ABERTO: { bg: '#EBF3FC', color: '#185FA5', label: 'Aberto' },
+    VENCIDO: { bg: '#FFF0F0', color: '#C53030', label: 'Vencido' },
+    PAGO: { bg: '#EAF6EE', color: '#22863A', label: 'Pago' },
+    CANCELADO: { bg: '#F7F7F7', color: '#9AA3B2', label: 'Cancelado' },
   }
   const s = cfg[status] || cfg.ABERTO
-  return <span style={{ background: s.bg, color: s.color, padding: '2px 9px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>{s.label}</span>
+  return (
+    <span
+      style={{
+        background: s.bg,
+        color: s.color,
+        padding: '2px 9px',
+        borderRadius: 10,
+        fontSize: 11,
+        fontWeight: 500,
+      }}
+    >
+      {s.label}
+    </span>
+  )
 }
 
 function ModalPagar({ conta, onClose, onConfirm }) {
+  const valorDocto = conta.valor_docto || 0
   const [forma, setForma] = useState('')
-  const [valor, setValor] = useState(conta.valor.toFixed(2))
-  const [data, setData] = useState(new Date().toISOString().split('T')[0])
+  const [valor, setValor] = useState(valorDocto.toFixed(2))
+  const [data, setData] = useState(new Date().toISOString().slice(0, 10))
+  const [salvando, setSalvando] = useState(false)
+
+  async function handleConfirm() {
+    if (!forma) return
+    setSalvando(true)
+    await onConfirm(conta.id, forma, parseFloat(valor), data)
+    setSalvando(false)
+  }
 
   return (
-    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
-      <div style={{ background: '#fff', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-md)', width: 420, boxShadow: '0 16px 40px rgba(0,0,0,0.14)', animation: 'fadeIn 0.15s ease both', overflow: 'hidden' }}>
-        <div style={{ background: 'var(--blue-700)', padding: '16px 20px' }}>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginBottom: 2 }}>{conta.descricao}</div>
-          <div style={{ color: '#fff', fontSize: 22, fontWeight: 600 }}>{fmt(conta.valor)}</div>
-          <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 2 }}>Vencimento: {fmtDate(conta.vencimento)}</div>
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'rgba(0,0,0,0.35)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 200,
+      }}
+    >
+      <div
+        style={{
+          background: '#fff',
+          borderRadius: 14,
+          border: '1px solid #E2EAF4',
+          width: 420,
+          boxShadow: '0 16px 40px rgba(0,0,0,0.14)',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ background: '#185FA5', padding: '16px 20px' }}>
+          <div
+            style={{
+              color: 'rgba(255,255,255,0.7)',
+              fontSize: 12,
+              marginBottom: 2,
+            }}
+          >
+            {conta.nome_fornecedor || conta.codigo_fornecedor}
+          </div>
+          <div style={{ color: '#fff', fontSize: 22, fontWeight: 600 }}>
+            {fmt(valorDocto)}
+          </div>
+          <div
+            style={{
+              color: 'rgba(255,255,255,0.6)',
+              fontSize: 11,
+              marginTop: 2,
+            }}
+          >
+            Vencimento: {fmtDate(conta.data_vencimento)}
+            {conta.nro_docto ? ` · Doc: ${conta.nro_docto}` : ''}
+          </div>
         </div>
         <div style={{ padding: '18px 20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 12,
+              marginBottom: 16,
+            }}
+          >
             <div style={{ gridColumn: '1 / -1' }}>
-              <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Forma de pagamento</label>
-              <select value={forma} onChange={e => setForma(e.target.value)} style={{ width: '100%', height: 36, padding: '0 10px' }} autoFocus>
-                <option value="">Selecione...</option>
+              <label
+                style={{
+                  fontSize: 11,
+                  color: '#9AA3B2',
+                  display: 'block',
+                  marginBottom: 4,
+                }}
+              >
+                Forma de pagamento
+              </label>
+              <select
+                value={forma}
+                onChange={(e) => setForma(e.target.value)}
+                style={{
+                  width: '100%',
+                  height: 36,
+                  padding: '0 10px',
+                  borderRadius: 8,
+                  border: '1px solid #E2EAF4',
+                }}
+                autoFocus
+              >
+                <option value=''>Selecione...</option>
                 <option>Dinheiro</option>
                 <option>Transferência</option>
                 <option>PIX</option>
@@ -50,22 +139,83 @@ function ModalPagar({ conta, onClose, onConfirm }) {
               </select>
             </div>
             <div>
-              <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Valor pago</label>
-              <input value={valor} onChange={e => setValor(e.target.value)} type="number" style={{ width: '100%', height: 36, padding: '0 10px' }} />
+              <label
+                style={{
+                  fontSize: 11,
+                  color: '#9AA3B2',
+                  display: 'block',
+                  marginBottom: 4,
+                }}
+              >
+                Valor pago
+              </label>
+              <input
+                value={valor}
+                onChange={(e) => setValor(e.target.value)}
+                type='number'
+                step='0.01'
+                style={{
+                  width: '100%',
+                  height: 36,
+                  padding: '0 10px',
+                  borderRadius: 8,
+                  border: '1px solid #E2EAF4',
+                }}
+              />
             </div>
             <div>
-              <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Data do pagamento</label>
-              <input value={data} onChange={e => setData(e.target.value)} type="date" style={{ width: '100%', height: 36, padding: '0 10px' }} />
+              <label
+                style={{
+                  fontSize: 11,
+                  color: '#9AA3B2',
+                  display: 'block',
+                  marginBottom: 4,
+                }}
+              >
+                Data do pagamento
+              </label>
+              <input
+                value={data}
+                onChange={(e) => setData(e.target.value)}
+                type='date'
+                style={{
+                  width: '100%',
+                  height: 36,
+                  padding: '0 10px',
+                  borderRadius: 8,
+                  border: '1px solid #E2EAF4',
+                }}
+              />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
-            <button disabled={!forma} onClick={() => onConfirm(conta.id, forma, parseFloat(valor), data)} style={{
-              padding: '8px 20px', borderRadius: 'var(--radius-md)',
-              background: forma ? 'var(--blue-700)' : 'var(--gray-200)',
-              color: forma ? '#fff' : 'var(--text-muted)',
-              fontSize: 13, fontWeight: 500, cursor: forma ? 'pointer' : 'not-allowed',
-            }}>Confirmar pagamento</button>
+            <button
+              onClick={onClose}
+              style={{
+                padding: '8px 18px',
+                borderRadius: 8,
+                border: '1px solid #E2EAF4',
+                fontSize: 13,
+                color: '#9AA3B2',
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              disabled={!forma || salvando}
+              onClick={handleConfirm}
+              style={{
+                padding: '8px 20px',
+                borderRadius: 8,
+                background: forma ? '#185FA5' : '#E2EAF4',
+                color: forma ? '#fff' : '#9AA3B2',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: forma ? 'pointer' : 'not-allowed',
+              }}
+            >
+              {salvando ? 'Salvando...' : 'Confirmar pagamento'}
+            </button>
           </div>
         </div>
       </div>
@@ -74,42 +224,210 @@ function ModalPagar({ conta, onClose, onConfirm }) {
 }
 
 function ModalNova({ onClose, onSalvar }) {
-  const [form, setForm] = useState({ descricao: '', categoria: 'Fornecedor', valor: '', vencimento: '', forma_pagamento: '' })
-  const f = key => e => setForm(p => ({ ...p, [key]: e.target.value }))
-  const valido = form.descricao && form.valor && form.vencimento
+  const [form, setForm] = useState({
+    codigo_fornecedor: '',
+    observacao: '',
+    nro_docto: '',
+    valor_docto: '',
+    data_vencimento: '',
+    codigo_forma_pagamento: '',
+  })
+  const [salvando, setSalvando] = useState(false)
+  const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }))
+  const valido =
+    form.codigo_fornecedor && form.valor_docto && form.data_vencimento
+
+  async function handleSalvar() {
+    setSalvando(true)
+    await onSalvar(form)
+    setSalvando(false)
+  }
 
   return (
-    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
-      <div style={{ background: '#fff', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-md)', width: 440, padding: 24, boxShadow: '0 16px 40px rgba(0,0,0,0.14)', animation: 'fadeIn 0.15s ease both' }}>
-        <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 18 }}>Nova conta a pagar</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'rgba(0,0,0,0.35)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 200,
+      }}
+    >
+      <div
+        style={{
+          background: '#fff',
+          borderRadius: 14,
+          border: '1px solid #E2EAF4',
+          width: 440,
+          padding: 24,
+          boxShadow: '0 16px 40px rgba(0,0,0,0.14)',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 600,
+            marginBottom: 18,
+            color: '#1A202C',
+          }}
+        >
+          Nova conta a pagar
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 12,
+            marginBottom: 16,
+          }}
+        >
           <div style={{ gridColumn: '1 / -1' }}>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Descrição *</label>
-            <input value={form.descricao} onChange={f('descricao')} style={{ width: '100%', height: 36, padding: '0 10px' }} autoFocus placeholder="Ex: Fornecedor, Aluguel..." />
+            <label
+              style={{
+                fontSize: 11,
+                color: '#9AA3B2',
+                display: 'block',
+                marginBottom: 4,
+              }}
+            >
+              Fornecedor / Descrição *
+            </label>
+            <input
+              value={form.codigo_fornecedor}
+              onChange={f('codigo_fornecedor')}
+              style={{
+                width: '100%',
+                height: 36,
+                padding: '0 10px',
+                borderRadius: 8,
+                border: '1px solid #E2EAF4',
+              }}
+              autoFocus
+              placeholder='Nome do fornecedor ou descrição'
+            />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label
+              style={{
+                fontSize: 11,
+                color: '#9AA3B2',
+                display: 'block',
+                marginBottom: 4,
+              }}
+            >
+              Observação / Histórico
+            </label>
+            <input
+              value={form.observacao}
+              onChange={f('observacao')}
+              style={{
+                width: '100%',
+                height: 36,
+                padding: '0 10px',
+                borderRadius: 8,
+                border: '1px solid #E2EAF4',
+              }}
+              placeholder='Ex: Ref. fatura 001/2026'
+            />
           </div>
           <div>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Categoria</label>
-            <select value={form.categoria} onChange={f('categoria')} style={{ width: '100%', height: 36, padding: '0 10px' }}>
-              <option>Fornecedor</option>
-              <option>Aluguel</option>
-              <option>Utilidades</option>
-              <option>Serviços</option>
-              <option>Impostos</option>
-              <option>Outros</option>
-            </select>
+            <label
+              style={{
+                fontSize: 11,
+                color: '#9AA3B2',
+                display: 'block',
+                marginBottom: 4,
+              }}
+            >
+              Nº Documento
+            </label>
+            <input
+              value={form.nro_docto}
+              onChange={f('nro_docto')}
+              style={{
+                width: '100%',
+                height: 36,
+                padding: '0 10px',
+                borderRadius: 8,
+                border: '1px solid #E2EAF4',
+              }}
+            />
           </div>
           <div>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Valor (R$) *</label>
-            <input value={form.valor} onChange={f('valor')} type="number" style={{ width: '100%', height: 36, padding: '0 10px' }} placeholder="0,00" />
+            <label
+              style={{
+                fontSize: 11,
+                color: '#9AA3B2',
+                display: 'block',
+                marginBottom: 4,
+              }}
+            >
+              Valor (R$) *
+            </label>
+            <input
+              value={form.valor_docto}
+              onChange={f('valor_docto')}
+              type='number'
+              step='0.01'
+              style={{
+                width: '100%',
+                height: 36,
+                padding: '0 10px',
+                borderRadius: 8,
+                border: '1px solid #E2EAF4',
+              }}
+              placeholder='0,00'
+            />
           </div>
           <div>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Vencimento *</label>
-            <input value={form.vencimento} onChange={f('vencimento')} type="date" style={{ width: '100%', height: 36, padding: '0 10px' }} />
+            <label
+              style={{
+                fontSize: 11,
+                color: '#9AA3B2',
+                display: 'block',
+                marginBottom: 4,
+              }}
+            >
+              Vencimento *
+            </label>
+            <input
+              value={form.data_vencimento}
+              onChange={f('data_vencimento')}
+              type='date'
+              style={{
+                width: '100%',
+                height: 36,
+                padding: '0 10px',
+                borderRadius: 8,
+                border: '1px solid #E2EAF4',
+              }}
+            />
           </div>
           <div>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Forma de pagamento</label>
-            <select value={form.forma_pagamento} onChange={f('forma_pagamento')} style={{ width: '100%', height: 36, padding: '0 10px' }}>
-              <option value="">A definir</option>
+            <label
+              style={{
+                fontSize: 11,
+                color: '#9AA3B2',
+                display: 'block',
+                marginBottom: 4,
+              }}
+            >
+              Forma de pagamento
+            </label>
+            <select
+              value={form.codigo_forma_pagamento}
+              onChange={f('codigo_forma_pagamento')}
+              style={{
+                width: '100%',
+                height: 36,
+                padding: '0 10px',
+                borderRadius: 8,
+                border: '1px solid #E2EAF4',
+              }}
+            >
+              <option value=''>A definir</option>
               <option>Dinheiro</option>
               <option>Transferência</option>
               <option>PIX</option>
@@ -119,13 +437,33 @@ function ModalNova({ onClose, onSalvar }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
-          <button disabled={!valido} onClick={() => onSalvar(form)} style={{
-            padding: '8px 20px', borderRadius: 'var(--radius-md)',
-            background: valido ? 'var(--blue-700)' : 'var(--gray-200)',
-            color: valido ? '#fff' : 'var(--text-muted)',
-            fontSize: 13, fontWeight: 500, cursor: valido ? 'pointer' : 'not-allowed',
-          }}>Salvar</button>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '8px 18px',
+              borderRadius: 8,
+              border: '1px solid #E2EAF4',
+              fontSize: 13,
+              color: '#9AA3B2',
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            disabled={!valido || salvando}
+            onClick={handleSalvar}
+            style={{
+              padding: '8px 20px',
+              borderRadius: 8,
+              background: valido ? '#185FA5' : '#E2EAF4',
+              color: valido ? '#fff' : '#9AA3B2',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: valido ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {salvando ? 'Salvando...' : 'Salvar'}
+          </button>
         </div>
       </div>
     </div>
@@ -133,7 +471,8 @@ function ModalNova({ onClose, onSalvar }) {
 }
 
 export default function ContasPagar() {
-  const [dados, setDados] = useState(dadosIniciais)
+  const [dados, setDados] = useState([])
+  const [loading, setLoading] = useState(true)
   const [busca, setBusca] = useState('')
   const [filtroStatus, setFiltroStatus] = useState('todos')
   const [selecionadas, setSelecionadas] = useState([])
@@ -141,137 +480,482 @@ export default function ContasPagar() {
   const [modalNova, setModalNova] = useState(false)
   const [sucesso, setSucesso] = useState('')
 
-  const filtrados = dados.filter(c => {
-    const matchBusca = c.descricao.toLowerCase().includes(busca.toLowerCase()) || c.categoria.toLowerCase().includes(busca.toLowerCase())
-    const matchStatus = filtroStatus === 'todos' || c.situacao === filtroStatus.toUpperCase()
-    return matchBusca && matchStatus
-  })
+  async function carregar() {
+    setLoading(true)
+    try {
+      const filtros = {}
+      if (filtroStatus === 'aberto') filtros.situacao = 'A'
+      if (filtroStatus === 'pago') filtros.situacao = 'P'
 
-  const totalAberto = filtrados.filter(c => c.situacao !== 'PAGO').reduce((s, c) => s + c.valor, 0)
-  const totalPago = filtrados.filter(c => c.situacao === 'PAGO').reduce((s, c) => s + c.valor, 0)
-  const totalVencido = filtrados.filter(c => c.situacao === 'VENCIDO').reduce((s, c) => s + c.valor, 0)
-
-  function toggleSel(id) { setSelecionadas(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]) }
-
-  function confirmarPagamento(id, forma, valor, data) {
-    setDados(prev => prev.map(c => c.id === id ? { ...c, situacao: 'PAGO', data_pagamento: data, forma_pagamento: forma } : c))
-    setContaPagando(null)
-    setSucesso('Pagamento registrado!')
-    setTimeout(() => setSucesso(''), 2000)
+      const result = await window.api.invoke('contasPagar:listar', filtros)
+      setDados(result)
+    } catch (err) {
+      console.error('Erro ao carregar contas a pagar:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  function salvarNova(form) {
-    const nova = { ...form, id: String(dados.length + 1), valor: parseFloat(form.valor), situacao: 'ABERTO', data_pagamento: null }
-    setDados(prev => [...prev, nova])
-    setModalNova(false)
-    setSucesso('Conta adicionada!')
-    setTimeout(() => setSucesso(''), 2000)
+  useEffect(() => {
+    carregar()
+  }, [filtroStatus])
+
+  // Filtro local por busca
+  const filtrados = dados
+    .filter((c) => {
+      if (!busca) return true
+      const b = busca.toLowerCase()
+      return (
+        (c.nome_fornecedor || '').toLowerCase().includes(b) ||
+        (c.codigo_fornecedor || '').toLowerCase().includes(b) ||
+        (c.observacao || '').toLowerCase().includes(b) ||
+        (c.nro_docto || '').includes(busca)
+      )
+    })
+    .filter((c) => {
+      if (filtroStatus === 'vencido') return getSituacao(c) === 'VENCIDO'
+      return true
+    })
+
+  // Totalizadores
+  const totalAberto = filtrados
+    .filter((c) => getSituacao(c) !== 'PAGO')
+    .reduce((s, c) => s + (c.valor_docto || 0), 0)
+  const totalPago = filtrados
+    .filter((c) => getSituacao(c) === 'PAGO')
+    .reduce((s, c) => s + (c.valor_pagamento || 0), 0)
+  const totalVencido = filtrados
+    .filter((c) => getSituacao(c) === 'VENCIDO')
+    .reduce((s, c) => s + (c.valor_docto || 0), 0)
+
+  function toggleSel(id) {
+    setSelecionadas((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
+    )
   }
 
-  const contaSel = selecionadas.length === 1 ? dados.find(c => c.id === selecionadas[0]) : null
+  async function confirmarPagamento(id, forma, valor, data) {
+    try {
+      await window.api.invoke('contasPagar:pagar', {
+        id,
+        valor_pagamento: valor,
+        data_pagamento: data,
+        usuario: 'rosangela',
+      })
+      setContaPagando(null)
+      setSelecionadas([])
+      setSucesso('✅ Pagamento registrado!')
+      setTimeout(() => setSucesso(''), 2500)
+      await carregar()
+    } catch (err) {
+      console.error('Erro ao registrar pagamento:', err)
+    }
+  }
+
+  async function salvarNova(form) {
+    try {
+      await window.api.invoke('contasPagar:salvar', {
+        codigo_fornecedor: form.codigo_fornecedor,
+        observacao: form.observacao,
+        nro_docto: form.nro_docto,
+        valor_docto: parseFloat(form.valor_docto),
+        data_vencimento: form.data_vencimento,
+        data_docto: new Date().toISOString().slice(0, 10),
+        codigo_forma_pagamento: form.codigo_forma_pagamento,
+        situacao_docto: 'A',
+        usuario: 'rosangela',
+      })
+      setModalNova(false)
+      setSucesso('✅ Conta adicionada!')
+      setTimeout(() => setSucesso(''), 2500)
+      await carregar()
+    } catch (err) {
+      console.error('Erro ao salvar conta:', err)
+    }
+  }
+
+  const contaSel =
+    selecionadas.length === 1
+      ? dados.find((c) => c.id === selecionadas[0])
+      : null
+  const podePagar = contaSel && getSituacao(contaSel) !== 'PAGO'
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#fff', position: 'relative' }}>
-
+    <div
+      style={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        background: '#fff',
+        position: 'relative',
+      }}
+    >
       {sucesso && (
-        <div style={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', background: 'var(--green-500)', color: '#fff', padding: '9px 22px', borderRadius: 'var(--radius-lg)', fontSize: 13, fontWeight: 500, zIndex: 300, animation: 'fadeIn 0.2s ease' }}>{sucesso}</div>
+        <div
+          style={{
+            position: 'absolute',
+            top: 16,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#22863A',
+            color: '#fff',
+            padding: '9px 22px',
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 500,
+            zIndex: 300,
+          }}
+        >
+          {sucesso}
+        </div>
       )}
-      {contaPagando && <ModalPagar conta={contaPagando} onClose={() => setContaPagando(null)} onConfirm={confirmarPagamento} />}
-      {modalNova && <ModalNova onClose={() => setModalNova(false)} onSalvar={salvarNova} />}
 
-      <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid var(--border)' }}>
+      {contaPagando && (
+        <ModalPagar
+          conta={contaPagando}
+          onClose={() => setContaPagando(null)}
+          onConfirm={confirmarPagamento}
+        />
+      )}
+      {modalNova && (
+        <ModalNova onClose={() => setModalNova(false)} onSalvar={salvarNova} />
+      )}
+
+      {/* ── TOPO ── */}
+      <div
+        style={{ padding: '14px 16px 10px', borderBottom: '1px solid #E2EAF4' }}
+      >
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <div style={{ position: 'relative', flex: 1 }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por descrição ou categoria..." style={{ width: '100%', height: 34, paddingLeft: 32 }} />
+            <Search
+              size={14}
+              style={{
+                position: 'absolute',
+                left: 10,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: '#9AA3B2',
+              }}
+            />
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder='Buscar por fornecedor ou documento...'
+              style={{
+                width: '100%',
+                height: 34,
+                paddingLeft: 32,
+                borderRadius: 8,
+                border: '1px solid #E2EAF4',
+                fontSize: 13,
+              }}
+            />
           </div>
-          <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)} style={{ height: 34, padding: '0 10px', borderRadius: 'var(--radius-md)' }}>
-            <option value="todos">Todos</option>
-            <option value="aberto">Aberto</option>
-            <option value="vencido">Vencido</option>
-            <option value="pago">Pago</option>
+          <select
+            value={filtroStatus}
+            onChange={(e) => setFiltroStatus(e.target.value)}
+            style={{
+              height: 34,
+              padding: '0 10px',
+              borderRadius: 8,
+              border: '1px solid #E2EAF4',
+              fontSize: 13,
+            }}
+          >
+            <option value='todos'>Todos</option>
+            <option value='aberto'>Aberto</option>
+            <option value='vencido'>Vencido</option>
+            <option value='pago'>Pago</option>
           </select>
-          <button style={{ height: 34, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 6, border: '1px solid var(--border-md)', borderRadius: 'var(--radius-md)', fontSize: 12, color: 'var(--text-secondary)' }}>
-            <Filter size={13} /> Filtrar
+          <button
+            onClick={carregar}
+            style={{
+              height: 34,
+              padding: '0 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              border: '1px solid #E2EAF4',
+              borderRadius: 8,
+              fontSize: 12,
+              color: '#9AA3B2',
+            }}
+            title='Atualizar'
+          >
+            <RefreshCw size={13} />
           </button>
-          <button onClick={() => setModalNova(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px', background: 'var(--blue-700)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500 }}>
+          <button
+            onClick={() => setModalNova(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              height: 34,
+              padding: '0 14px',
+              background: '#185FA5',
+              color: '#fff',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 600,
+              border: 'none',
+            }}
+          >
             <Plus size={14} /> Nova conta
           </button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3,1fr)',
+            gap: 10,
+          }}
+        >
           {[
-            { label: 'Em aberto', value: fmt(totalAberto), color: 'var(--blue-700)' },
-            { label: 'Vencido', value: fmt(totalVencido), color: 'var(--red-500)' },
-            { label: 'Pago no período', value: fmt(totalPago), color: 'var(--green-500)' },
-          ].map(c => (
-            <div key={c.label} style={{ background: 'var(--gray-50)', borderRadius: 'var(--radius-md)', padding: '10px 14px', border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>{c.label}</div>
-              <div style={{ fontSize: 16, fontWeight: 600, color: c.color }}>{c.value}</div>
+            { label: 'Em aberto', value: fmt(totalAberto), color: '#185FA5' },
+            { label: 'Vencido', value: fmt(totalVencido), color: '#C53030' },
+            { label: 'Pago', value: fmt(totalPago), color: '#22863A' },
+          ].map((c) => (
+            <div
+              key={c.label}
+              style={{
+                background: '#F7FAFF',
+                borderRadius: 8,
+                padding: '10px 14px',
+                border: '1px solid #E2EAF4',
+              }}
+            >
+              <div style={{ fontSize: 11, color: '#9AA3B2', marginBottom: 3 }}>
+                {c.label}
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 600, color: c.color }}>
+                {c.value}
+              </div>
             </div>
           ))}
         </div>
       </div>
 
+      {/* ── TABELA ── */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-          <colgroup>
-            <col style={{ width: 36 }} /><col /><col style={{ width: 100 }} />
-            <col style={{ width: 90 }} /><col style={{ width: 90 }} />
-            <col style={{ width: 90 }} /><col style={{ width: 110 }} /><col style={{ width: 80 }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th style={{ padding: '8px 10px', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}></th>
-              {['Descrição', 'Categoria', 'Vencimento', 'Valor', 'Dt. Pagamento', 'Forma', 'Situação'].map(h => (
-                <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', textAlign: 'left', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtrados.map(c => {
-              const sel = selecionadas.includes(c.id)
-              return (
-                <tr key={c.id} onClick={() => toggleSel(c.id)}
-                  style={{ background: sel ? 'var(--blue-50)' : c.situacao === 'VENCIDO' ? 'var(--red-50)' : 'transparent', cursor: 'pointer', transition: 'background 0.08s' }}
-                  onMouseEnter={e => { if (!sel) e.currentTarget.style.background = c.situacao === 'VENCIDO' ? '#FEE2E2' : 'var(--gray-50)' }}
-                  onMouseLeave={e => { if (!sel) e.currentTarget.style.background = c.situacao === 'VENCIDO' ? 'var(--red-50)' : 'transparent' }}
-                >
-                  <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
-                    <input type="checkbox" checked={sel} onChange={() => toggleSel(c.id)} style={{ width: 14, height: 14 }} />
-                  </td>
-                  <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.descricao}</td>
-                  <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)' }}>
-                    <span style={{ background: 'var(--gray-100)', color: 'var(--gray-600)', padding: '2px 8px', borderRadius: 10, fontSize: 11 }}>{c.categoria}</span>
-                  </td>
-                  <td style={{ padding: '9px 10px', fontSize: 12, borderBottom: '1px solid var(--border)', color: c.situacao === 'VENCIDO' ? 'var(--red-500)' : undefined, fontWeight: c.situacao === 'VENCIDO' ? 500 : 400 }}>{fmtDate(c.vencimento)}</td>
-                  <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, borderBottom: '1px solid var(--border)', color: c.situacao === 'PAGO' ? 'var(--text-muted)' : 'var(--text-primary)' }}>{fmt(c.valor)}</td>
-                  <td style={{ padding: '9px 10px', fontSize: 12, borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>{fmtDate(c.data_pagamento)}</td>
-                  <td style={{ padding: '9px 10px', fontSize: 12, borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>{c.forma_pagamento || '-'}</td>
-                  <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)' }}><StatusBadge status={c.situacao} /></td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+        {loading ? (
+          <div
+            style={{
+              padding: 40,
+              textAlign: 'center',
+              color: '#9AA3B2',
+              fontSize: 14,
+            }}
+          >
+            Carregando...
+          </div>
+        ) : filtrados.length === 0 ? (
+          <div
+            style={{
+              padding: 40,
+              textAlign: 'center',
+              color: '#9AA3B2',
+              fontSize: 14,
+            }}
+          >
+            Nenhum registro encontrado.
+          </div>
+        ) : (
+          <table
+            style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              tableLayout: 'fixed',
+            }}
+          >
+            <colgroup>
+              <col style={{ width: 36 }} />
+              <col />
+              <col style={{ width: 90 }} />
+              <col style={{ width: 90 }} />
+              <col style={{ width: 95 }} />
+              <col style={{ width: 90 }} />
+              <col style={{ width: 110 }} />
+              <col style={{ width: 85 }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th style={thStyle}></th>
+                {[
+                  'Fornecedor',
+                  'Documento',
+                  'Vencimento',
+                  'Valor',
+                  'Dt. Pagamento',
+                  'Forma',
+                  'Situação',
+                ].map((h) => (
+                  <th key={h} style={thStyle}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtrados.map((c) => {
+                const sel = selecionadas.includes(c.id)
+                const sit = getSituacao(c)
+                const vencido = sit === 'VENCIDO'
+                return (
+                  <tr
+                    key={c.id}
+                    onClick={() => toggleSel(c.id)}
+                    style={{
+                      background: sel
+                        ? '#EBF3FC'
+                        : vencido
+                          ? '#FFF5F5'
+                          : 'transparent',
+                      cursor: 'pointer',
+                      transition: 'background 0.08s',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!sel)
+                        e.currentTarget.style.background = vencido
+                          ? '#FEE2E2'
+                          : '#F7FAFF'
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!sel)
+                        e.currentTarget.style.background = vencido
+                          ? '#FFF5F5'
+                          : 'transparent'
+                    }}
+                  >
+                    <td style={{ ...tdStyle, textAlign: 'center' }}>
+                      <input
+                        type='checkbox'
+                        checked={sel}
+                        onChange={() => toggleSel(c.id)}
+                        style={{ width: 14, height: 14 }}
+                      />
+                    </td>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        fontWeight: 500,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {c.nome_fornecedor || c.codigo_fornecedor}
+                      {c.observacao && (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: '#9AA3B2',
+                            marginLeft: 6,
+                          }}
+                        >
+                          {c.observacao}
+                        </span>
+                      )}
+                    </td>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                      }}
+                    >
+                      {c.nro_docto || '-'}
+                    </td>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        fontSize: 12,
+                        color: vencido ? '#C53030' : undefined,
+                        fontWeight: vencido ? 500 : 400,
+                      }}
+                    >
+                      {fmtDate(c.data_vencimento)}
+                    </td>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        fontWeight: 600,
+                        color: sit === 'PAGO' ? '#9AA3B2' : '#1A202C',
+                      }}
+                    >
+                      {fmt(c.valor_docto)}
+                    </td>
+                    <td style={{ ...tdStyle, fontSize: 12, color: '#9AA3B2' }}>
+                      {fmtDate(c.data_pagamento)}
+                    </td>
+                    <td style={{ ...tdStyle, fontSize: 12, color: '#9AA3B2' }}>
+                      {c.codigo_forma_pagamento || '-'}
+                    </td>
+                    <td style={tdStyle}>
+                      <StatusBadge status={sit} />
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
 
-      <div style={{ background: 'var(--gray-50)', borderTop: '1px solid var(--border)', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Selecionadas: {selecionadas.length}</span>
+      {/* ── RODAPÉ ── */}
+      <div
+        style={{
+          background: '#F7FAFF',
+          borderTop: '1px solid #E2EAF4',
+          padding: '8px 14px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        <span style={{ fontSize: 12, color: '#9AA3B2' }}>
+          {filtrados.length} registro(s) · Selecionadas: {selecionadas.length}
+        </span>
         <div style={{ flex: 1 }} />
         <button
-          disabled={!contaSel || contaSel.situacao === 'PAGO'}
+          disabled={!podePagar}
           onClick={() => contaSel && setContaPagando(contaSel)}
           style={{
-            display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 16px',
-            borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500,
-            background: contaSel && contaSel.situacao !== 'PAGO' ? 'var(--blue-700)' : 'var(--gray-200)',
-            color: contaSel && contaSel.situacao !== 'PAGO' ? '#fff' : 'var(--text-muted)',
-            cursor: contaSel && contaSel.situacao !== 'PAGO' ? 'pointer' : 'not-allowed',
-          }}>
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            height: 34,
+            padding: '0 16px',
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 600,
+            background: podePagar ? '#185FA5' : '#E2EAF4',
+            color: podePagar ? '#fff' : '#9AA3B2',
+            cursor: podePagar ? 'pointer' : 'not-allowed',
+            border: 'none',
+          }}
+        >
           <DollarSign size={14} /> Registrar pagamento
         </button>
       </div>
     </div>
   )
+}
+
+const thStyle = {
+  padding: '8px 10px',
+  fontSize: 11,
+  fontWeight: 500,
+  color: '#9AA3B2',
+  textAlign: 'left',
+  background: '#F7FAFF',
+  borderBottom: '1px solid #E2EAF4',
+  position: 'sticky',
+  top: 0,
+}
+
+const tdStyle = {
+  padding: '9px 10px',
+  fontSize: 13,
+  borderBottom: '1px solid #F0F4FA',
 }
