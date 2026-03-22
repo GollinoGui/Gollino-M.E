@@ -136,6 +136,9 @@ ipcMain.handle('contasPagar:listar', (_, filtros) => {
 ipcMain.handle('contasPagar:pagar', (_, dados) => {
   return db.contasPagar.pagar(dados)
 })
+ipcMain.handle('contasPagar:salvar', (_, dados) => {
+  return db.contasPagar.salvar(dados)
+})
 ipcMain.handle('contasPagar:totalAberto', () => {
   return db.contasPagar.totalAberto()
 })

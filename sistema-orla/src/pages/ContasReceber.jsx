@@ -1,21 +1,27 @@
-import { useState } from 'react'
-import { Search, Filter, DollarSign } from 'lucide-react'
-import { contasReceber, clientes } from '../data/mock'
+import { useState, useEffect } from 'react'
+import { Search, Filter, DollarSign, RefreshCw } from 'lucide-react'
 
 const fmt = (v) =>
-  v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
 const fmtDate = (d) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-'
 
+// Calcula situação real com base na data de vencimento
+function getSituacao(c) {
+  if (c.situacao_docto === 'P') return 'BAIXADO'
+  if (c.situacao_docto === 'C') return 'CANCELADO'
+  const hoje = new Date().toISOString().slice(0, 10)
+  if (c.data_vencimento && c.data_vencimento < hoje) return 'VENCIDO'
+  return 'ABERTO'
+}
+
 function StatusBadge({ status }) {
   const cfg = {
-    ABERTO: { bg: 'var(--blue-50)', color: 'var(--blue-800)', label: 'Aberto' },
-    BAIXADO: {
-      bg: 'var(--green-50)',
-      color: 'var(--green-700)',
-      label: 'Baixado',
-    },
-    VENCIDO: { bg: 'var(--red-50)', color: 'var(--red-500)', label: 'Vencido' },
+    ABERTO: { bg: '#EBF3FC', color: '#185FA5', label: 'Aberto' },
+    BAIXADO: { bg: '#EAF6EE', color: '#22863A', label: 'Baixado' },
+    VENCIDO: { bg: '#FFF0F0', color: '#C53030', label: 'Vencido' },
+    CANCELADO: { bg: '#F7F7F7', color: '#9AA3B2', label: 'Cancelado' },
   }
   const s = cfg[status] || cfg.ABERTO
   return (
@@ -37,8 +43,17 @@ function StatusBadge({ status }) {
 }
 
 function ModalReceber({ conta, onClose, onConfirm }) {
+  const emAberto = conta.valor_docto - (conta.valor_pagamento || 0)
   const [forma, setForma] = useState(null)
-  const [valor, setValor] = useState(conta.em_aberto.toFixed(2))
+  const [valor, setValor] = useState(emAberto.toFixed(2))
+  const [salvando, setSalvando] = useState(false)
+
+  async function handleConfirm() {
+    if (!forma) return
+    setSalvando(true)
+    await onConfirm(conta.id, forma, parseFloat(valor))
+    setSalvando(false)
+  }
 
   return (
     <div
@@ -55,17 +70,16 @@ function ModalReceber({ conta, onClose, onConfirm }) {
       <div
         style={{
           background: '#fff',
-          borderRadius: 'var(--radius-lg)',
-          border: '1px solid var(--border-md)',
+          borderRadius: 14,
+          border: '1px solid #E2EAF4',
           width: 400,
           boxShadow: '0 16px 40px rgba(0,0,0,0.14)',
-          animation: 'fadeIn 0.15s ease both',
           overflow: 'hidden',
         }}
       >
-        <div style={{ background: 'var(--blue-700)', padding: '16px 20px' }}>
+        <div style={{ background: '#185FA5', padding: '16px 20px' }}>
           <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>
-            {conta.cliente_nome}
+            {conta.nome_cliente || conta.codigo_cliente}
           </div>
           <div
             style={{
@@ -75,7 +89,7 @@ function ModalReceber({ conta, onClose, onConfirm }) {
               marginTop: 2,
             }}
           >
-            {fmt(conta.em_aberto)}
+            {fmt(emAberto)}
           </div>
           <div
             style={{
@@ -84,7 +98,8 @@ function ModalReceber({ conta, onClose, onConfirm }) {
               marginTop: 2,
             }}
           >
-            Vencimento: {fmtDate(conta.vencimento)}
+            Vencimento: {fmtDate(conta.data_vencimento)} · Doc:{' '}
+            {conta.nro_docto}
           </div>
         </div>
         <div style={{ padding: '18px 20px' }}>
@@ -92,7 +107,7 @@ function ModalReceber({ conta, onClose, onConfirm }) {
             <div
               style={{
                 fontSize: 11,
-                color: 'var(--text-secondary)',
+                color: '#9AA3B2',
                 marginBottom: 8,
                 fontWeight: 500,
               }}
@@ -100,22 +115,19 @@ function ModalReceber({ conta, onClose, onConfirm }) {
               FORMA DE PAGAMENTO
             </div>
             <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-              {['Dinheiro', 'Cartão', 'Cheque', 'Haver', 'Conta'].map((f) => (
+              {['Dinheiro', 'Cartão', 'Cheque', 'Haver', 'PIX'].map((f) => (
                 <button
                   key={f}
                   onClick={() => setForma(f)}
                   style={{
                     padding: '7px 14px',
-                    borderRadius: 'var(--radius-md)',
+                    borderRadius: 8,
                     fontSize: 13,
                     border:
-                      forma === f
-                        ? '2px solid var(--blue-600)'
-                        : '1px solid var(--border-md)',
-                    background: forma === f ? 'var(--blue-50)' : '#fff',
-                    color:
-                      forma === f ? 'var(--blue-800)' : 'var(--text-primary)',
-                    fontWeight: forma === f ? 500 : 400,
+                      forma === f ? '2px solid #185FA5' : '1px solid #E2EAF4',
+                    background: forma === f ? '#EBF3FC' : '#fff',
+                    color: forma === f ? '#185FA5' : '#4A5568',
+                    fontWeight: forma === f ? 600 : 400,
                   }}
                 >
                   {f}
@@ -128,7 +140,7 @@ function ModalReceber({ conta, onClose, onConfirm }) {
               <label
                 style={{
                   fontSize: 11,
-                  color: 'var(--text-secondary)',
+                  color: '#9AA3B2',
                   display: 'block',
                   marginBottom: 4,
                 }}
@@ -139,12 +151,15 @@ function ModalReceber({ conta, onClose, onConfirm }) {
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
                 type='number'
+                step='0.01'
                 style={{
                   width: '100%',
                   height: 38,
                   padding: '0 12px',
                   fontSize: 15,
                   fontWeight: 500,
+                  borderRadius: 8,
+                  border: '1px solid #E2EAF4',
                 }}
                 autoFocus
               />
@@ -155,28 +170,28 @@ function ModalReceber({ conta, onClose, onConfirm }) {
               onClick={onClose}
               style={{
                 padding: '8px 18px',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-md)',
+                borderRadius: 8,
+                border: '1px solid #E2EAF4',
                 fontSize: 13,
-                color: 'var(--text-secondary)',
+                color: '#9AA3B2',
               }}
             >
               Cancelar
             </button>
             <button
-              disabled={!forma}
-              onClick={() => onConfirm(conta.id, forma, parseFloat(valor))}
+              disabled={!forma || salvando}
+              onClick={handleConfirm}
               style={{
                 padding: '8px 20px',
-                borderRadius: 'var(--radius-md)',
-                background: forma ? 'var(--blue-700)' : 'var(--gray-200)',
-                color: forma ? '#fff' : 'var(--text-muted)',
+                borderRadius: 8,
+                background: forma ? '#185FA5' : '#E2EAF4',
+                color: forma ? '#fff' : '#9AA3B2',
                 fontSize: 13,
-                fontWeight: 500,
+                fontWeight: 600,
                 cursor: forma ? 'pointer' : 'not-allowed',
               }}
             >
-              Finalizar (F5)
+              {salvando ? 'Salvando...' : 'Confirmar (F5)'}
             </button>
           </div>
         </div>
@@ -186,29 +201,57 @@ function ModalReceber({ conta, onClose, onConfirm }) {
 }
 
 export default function ContasReceber() {
-  const [dados, setDados] = useState(contasReceber)
+  const [dados, setDados] = useState([])
+  const [loading, setLoading] = useState(true)
   const [busca, setBusca] = useState('')
   const [filtroStatus, setFiltroStatus] = useState('todos')
   const [selecionadas, setSelecionadas] = useState([])
   const [contaRecebendo, setContaRecebendo] = useState(null)
   const [sucesso, setSucesso] = useState(false)
 
+  // ── Carrega do banco ─────────────────────────────────────────
+  async function carregar() {
+    setLoading(true)
+    try {
+      const filtros = {}
+      if (filtroStatus === 'aberto') filtros.situacao = 'A'
+      if (filtroStatus === 'baixado') filtros.situacao = 'P'
+      if (busca) filtros.cliente = busca
+
+      const result = await window.api.invoke('contasReceber:listar', filtros)
+      setDados(result)
+    } catch (err) {
+      console.error('Erro ao carregar contas a receber:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    carregar()
+  }, [filtroStatus])
+
+  // Busca local (já filtra pelo banco quando muda status)
   const filtrados = dados.filter((c) => {
-    const matchBusca =
-      c.cliente_nome.toLowerCase().includes(busca.toLowerCase()) ||
-      c.documento.includes(busca)
-    const matchStatus =
-      filtroStatus === 'todos' || c.situacao === filtroStatus.toUpperCase()
-    return matchBusca && matchStatus
+    if (!busca) return true
+    const b = busca.toLowerCase()
+    return (
+      (c.nome_cliente || '').toLowerCase().includes(b) ||
+      (c.nro_docto || '').includes(busca) ||
+      (c.codigo_cliente || '').includes(busca)
+    )
   })
 
+  // Totalizadores
   const totalEmAberto = filtrados
-    .filter((c) => c.situacao === 'ABERTO')
-    .reduce((s, c) => s + c.em_aberto, 0)
+    .filter((c) => c.situacao_docto === 'A')
+    .reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
+
   const totalPago = filtrados
-    .filter((c) => c.situacao === 'BAIXADO')
-    .reduce((s, c) => s + c.valor_pago, 0)
-  const totalDocto = filtrados.reduce((s, c) => s + c.valor_docto, 0)
+    .filter((c) => c.situacao_docto === 'P')
+    .reduce((s, c) => s + (c.valor_pagamento || 0), 0)
+
+  const totalDocto = filtrados.reduce((s, c) => s + (c.valor_docto || 0), 0)
 
   function toggleSel(id) {
     setSelecionadas((prev) =>
@@ -216,18 +259,27 @@ export default function ContasReceber() {
     )
   }
 
-  function confirmarRecebimento(id, forma, valor) {
-    setDados((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? { ...c, situacao: 'BAIXADO', valor_pago: valor, em_aberto: 0 }
-          : c,
-      ),
-    )
-    setContaRecebendo(null)
-    setSucesso(true)
-    setTimeout(() => setSucesso(false), 2000)
+  async function confirmarRecebimento(id, forma, valor) {
+    try {
+      await window.api.invoke('contasReceber:receber', {
+        id,
+        valor_pagamento: valor,
+        data_pagamento: new Date().toISOString().slice(0, 10),
+        usuario: 'rosangela',
+      })
+      setContaRecebendo(null)
+      setSelecionadas([])
+      setSucesso(true)
+      setTimeout(() => setSucesso(false), 2500)
+      await carregar()
+    } catch (err) {
+      console.error('Erro ao receber conta:', err)
+    }
   }
+
+  const contaSelecionada = dados.find((c) => c.id === selecionadas[0])
+  const podeReceber =
+    selecionadas.length === 1 && contaSelecionada?.situacao_docto === 'A'
 
   return (
     <div
@@ -239,6 +291,7 @@ export default function ContasReceber() {
         position: 'relative',
       }}
     >
+      {/* Toast de sucesso */}
       {sucesso && (
         <div
           style={{
@@ -246,17 +299,16 @@ export default function ContasReceber() {
             top: 16,
             left: '50%',
             transform: 'translateX(-50%)',
-            background: 'var(--green-500)',
+            background: '#22863A',
             color: '#fff',
             padding: '9px 22px',
-            borderRadius: 'var(--radius-lg)',
+            borderRadius: 10,
             fontSize: 13,
             fontWeight: 500,
             zIndex: 300,
-            animation: 'fadeIn 0.2s ease',
           }}
         >
-          Parcela recebida com sucesso!
+          ✅ Parcela recebida com sucesso!
         </div>
       )}
 
@@ -268,11 +320,9 @@ export default function ContasReceber() {
         />
       )}
 
+      {/* ── TOPO: busca + filtros + totais ── */}
       <div
-        style={{
-          padding: '14px 16px 10px',
-          borderBottom: '1px solid var(--border)',
-        }}
+        style={{ padding: '14px 16px 10px', borderBottom: '1px solid #E2EAF4' }}
       >
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
           <div style={{ position: 'relative', flex: 1 }}>
@@ -283,14 +333,22 @@ export default function ContasReceber() {
                 left: 10,
                 top: '50%',
                 transform: 'translateY(-50%)',
-                color: 'var(--text-muted)',
+                color: '#9AA3B2',
               }}
             />
             <input
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && carregar()}
               placeholder='Buscar por cliente ou documento...'
-              style={{ width: '100%', height: 34, paddingLeft: 32 }}
+              style={{
+                width: '100%',
+                height: 34,
+                paddingLeft: 32,
+                borderRadius: 8,
+                border: '1px solid #E2EAF4',
+                fontSize: 13,
+              }}
             />
           </div>
           <select
@@ -299,7 +357,9 @@ export default function ContasReceber() {
             style={{
               height: 34,
               padding: '0 10px',
-              borderRadius: 'var(--radius-md)',
+              borderRadius: 8,
+              border: '1px solid #E2EAF4',
+              fontSize: 13,
             }}
           >
             <option value='todos'>Todos</option>
@@ -307,62 +367,46 @@ export default function ContasReceber() {
             <option value='baixado'>Baixado</option>
           </select>
           <button
+            onClick={carregar}
             style={{
               height: 34,
-              padding: '0 14px',
+              padding: '0 12px',
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              border: '1px solid var(--border-md)',
-              borderRadius: 'var(--radius-md)',
+              border: '1px solid #E2EAF4',
+              borderRadius: 8,
               fontSize: 12,
-              color: 'var(--text-secondary)',
+              color: '#9AA3B2',
             }}
+            title='Atualizar'
           >
-            <Filter size={13} /> Filtrar (F3)
+            <RefreshCw size={13} />
           </button>
         </div>
 
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
+            gridTemplateColumns: 'repeat(3,1fr)',
             gap: 10,
           }}
         >
           {[
-            {
-              label: 'Em aberto',
-              value: fmt(totalEmAberto),
-              color: 'var(--blue-700)',
-            },
-            {
-              label: 'Recebido',
-              value: fmt(totalPago),
-              color: 'var(--green-500)',
-            },
-            {
-              label: 'Total documentos',
-              value: fmt(totalDocto),
-              color: 'var(--text-primary)',
-            },
+            { label: 'Em aberto', value: fmt(totalEmAberto), color: '#185FA5' },
+            { label: 'Recebido', value: fmt(totalPago), color: '#22863A' },
+            { label: 'Total docs', value: fmt(totalDocto), color: '#1A202C' },
           ].map((c) => (
             <div
               key={c.label}
               style={{
-                background: 'var(--gray-50)',
-                borderRadius: 'var(--radius-md)',
+                background: '#F7FAFF',
+                borderRadius: 8,
                 padding: '10px 14px',
-                border: '1px solid var(--border)',
+                border: '1px solid #E2EAF4',
               }}
             >
-              <div
-                style={{
-                  fontSize: 11,
-                  color: 'var(--text-muted)',
-                  marginBottom: 3,
-                }}
-              >
+              <div style={{ fontSize: 11, color: '#9AA3B2', marginBottom: 3 }}>
                 {c.label}
               </div>
               <div style={{ fontSize: 16, fontWeight: 600, color: c.color }}>
@@ -373,253 +417,203 @@ export default function ContasReceber() {
         </div>
       </div>
 
+      {/* ── TABELA ── */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        <table
-          style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            tableLayout: 'fixed',
-          }}
-        >
-          <colgroup>
-            <col style={{ width: 36 }} />
-            <col style={{ width: 90 }} />
-            <col style={{ width: 36 }} />
-            <col />
-            <col style={{ width: 90 }} />
-            <col style={{ width: 90 }} />
-            <col style={{ width: 90 }} />
-            <col style={{ width: 90 }} />
-            <col style={{ width: 80 }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th
-                style={{
-                  padding: '8px 10px',
-                  background: 'var(--gray-50)',
-                  borderBottom: '1px solid var(--border)',
-                  position: 'sticky',
-                  top: 0,
-                }}
-              ></th>
-              {[
-                'Documento',
-                'Seq',
-                'Cliente',
-                'Data',
-                'Vencimento',
-                'Valor doc.',
-                'Em aberto',
-                'Situação',
-              ].map((h) => (
-                <th
-                  key={h}
-                  style={{
-                    padding: '8px 10px',
-                    fontSize: 11,
-                    fontWeight: 500,
-                    color: 'var(--text-secondary)',
-                    textAlign: 'left',
-                    background: 'var(--gray-50)',
-                    borderBottom: '1px solid var(--border)',
-                    position: 'sticky',
-                    top: 0,
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtrados.map((c) => {
-              const sel = selecionadas.includes(c.id)
-              const vencido =
-                c.situacao === 'ABERTO' && new Date(c.vencimento) < new Date()
-              return (
-                <tr
-                  key={c.id}
-                  onClick={() => toggleSel(c.id)}
-                  style={{
-                    background: sel
-                      ? 'var(--blue-50)'
-                      : vencido
-                        ? 'var(--red-50)'
-                        : 'transparent',
-                    cursor: 'pointer',
-                    transition: 'background 0.08s',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!sel)
-                      e.currentTarget.style.background = vencido
-                        ? '#FEE2E2'
-                        : 'var(--gray-50)'
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!sel)
-                      e.currentTarget.style.background = vencido
-                        ? 'var(--red-50)'
-                        : 'transparent'
-                  }}
-                >
-                  <td
+        {loading ? (
+          <div
+            style={{
+              padding: 40,
+              textAlign: 'center',
+              color: '#9AA3B2',
+              fontSize: 14,
+            }}
+          >
+            Carregando...
+          </div>
+        ) : filtrados.length === 0 ? (
+          <div
+            style={{
+              padding: 40,
+              textAlign: 'center',
+              color: '#9AA3B2',
+              fontSize: 14,
+            }}
+          >
+            Nenhum registro encontrado.
+          </div>
+        ) : (
+          <table
+            style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              tableLayout: 'fixed',
+            }}
+          >
+            <colgroup>
+              <col style={{ width: 36 }} />
+              <col style={{ width: 100 }} />
+              <col style={{ width: 36 }} />
+              <col />
+              <col style={{ width: 90 }} />
+              <col style={{ width: 90 }} />
+              <col style={{ width: 95 }} />
+              <col style={{ width: 95 }} />
+              <col style={{ width: 85 }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th style={thStyle}></th>
+                {[
+                  'Documento',
+                  'Seq',
+                  'Cliente',
+                  'Data',
+                  'Vencimento',
+                  'Valor doc.',
+                  'Em aberto',
+                  'Situação',
+                ].map((h) => (
+                  <th key={h} style={thStyle}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtrados.map((c) => {
+                const sel = selecionadas.includes(c.id)
+                const sit = getSituacao(c)
+                const vencido = sit === 'VENCIDO'
+                const emAberto = c.valor_docto - (c.valor_pagamento || 0)
+                return (
+                  <tr
+                    key={c.id}
+                    onClick={() => toggleSel(c.id)}
                     style={{
-                      padding: '9px 10px',
-                      borderBottom: '1px solid var(--border)',
-                      textAlign: 'center',
+                      background: sel
+                        ? '#EBF3FC'
+                        : vencido
+                          ? '#FFF5F5'
+                          : 'transparent',
+                      cursor: 'pointer',
+                      transition: 'background 0.08s',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!sel)
+                        e.currentTarget.style.background = vencido
+                          ? '#FEE2E2'
+                          : '#F7FAFF'
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!sel)
+                        e.currentTarget.style.background = vencido
+                          ? '#FFF5F5'
+                          : 'transparent'
                     }}
                   >
-                    <input
-                      type='checkbox'
-                      checked={sel}
-                      onChange={() => toggleSel(c.id)}
-                      style={{ width: 14, height: 14 }}
-                    />
-                  </td>
-                  <td
-                    style={{
-                      padding: '9px 10px',
-                      fontSize: 12,
-                      fontFamily: 'monospace',
-                      borderBottom: '1px solid var(--border)',
-                    }}
-                  >
-                    {c.documento}
-                  </td>
-                  <td
-                    style={{
-                      padding: '9px 10px',
-                      fontSize: 12,
-                      color: 'var(--text-muted)',
-                      borderBottom: '1px solid var(--border)',
-                      textAlign: 'center',
-                      fontWeight: 600,
-                    }}
-                  >
-                    {c.seq}
-                  </td>
-                  <td
-                    style={{
-                      padding: '9px 10px',
-                      fontSize: 13,
-                      fontWeight: 500,
-                      borderBottom: '1px solid var(--border)',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {c.cliente_nome}
-                  </td>
-                  <td
-                    style={{
-                      padding: '9px 10px',
-                      fontSize: 12,
-                      borderBottom: '1px solid var(--border)',
-                    }}
-                  >
-                    {fmtDate(c.data_docto)}
-                  </td>
-                  <td
-                    style={{
-                      padding: '9px 10px',
-                      fontSize: 12,
-                      borderBottom: '1px solid var(--border)',
-                      color: vencido ? 'var(--red-500)' : undefined,
-                      fontWeight: vencido ? 500 : 400,
-                    }}
-                  >
-                    {fmtDate(c.vencimento)}
-                  </td>
-                  <td
-                    style={{
-                      padding: '9px 10px',
-                      fontSize: 13,
-                      borderBottom: '1px solid var(--border)',
-                    }}
-                  >
-                    {fmt(c.valor_docto)}
-                  </td>
-                  <td
-                    style={{
-                      padding: '9px 10px',
-                      fontSize: 13,
-                      fontWeight: 500,
-                      borderBottom: '1px solid var(--border)',
-                      color:
-                        c.em_aberto > 0
-                          ? 'var(--blue-700)'
-                          : 'var(--text-muted)',
-                    }}
-                  >
-                    {fmt(c.em_aberto)}
-                  </td>
-                  <td
-                    style={{
-                      padding: '9px 10px',
-                      borderBottom: '1px solid var(--border)',
-                    }}
-                  >
-                    <StatusBadge
-                      status={
-                        vencido && c.situacao === 'ABERTO'
-                          ? 'VENCIDO'
-                          : c.situacao
-                      }
-                    />
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+                    <td style={tdStyle}>
+                      <input
+                        type='checkbox'
+                        checked={sel}
+                        onChange={() => toggleSel(c.id)}
+                        style={{ width: 14, height: 14 }}
+                      />
+                    </td>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                      }}
+                    >
+                      {c.nro_docto}
+                    </td>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        textAlign: 'center',
+                        fontSize: 12,
+                        color: '#9AA3B2',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {c.seq_docto || '-'}
+                    </td>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        fontWeight: 500,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {c.nome_cliente || c.codigo_cliente}
+                    </td>
+                    <td style={{ ...tdStyle, fontSize: 12 }}>
+                      {fmtDate(c.data_docto)}
+                    </td>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        fontSize: 12,
+                        color: vencido ? '#C53030' : undefined,
+                        fontWeight: vencido ? 500 : 400,
+                      }}
+                    >
+                      {fmtDate(c.data_vencimento)}
+                    </td>
+                    <td style={tdStyle}>{fmt(c.valor_docto)}</td>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        fontWeight: 500,
+                        color: emAberto > 0 ? '#185FA5' : '#9AA3B2',
+                      }}
+                    >
+                      {fmt(emAberto)}
+                    </td>
+                    <td style={tdStyle}>
+                      <StatusBadge status={sit} />
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
 
+      {/* ── RODAPÉ ── */}
       <div
         style={{
-          background: 'var(--gray-50)',
-          borderTop: '1px solid var(--border)',
+          background: '#F7FAFF',
+          borderTop: '1px solid #E2EAF4',
           padding: '8px 14px',
           display: 'flex',
           alignItems: 'center',
           gap: 10,
         }}
       >
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          Selecionadas: {selecionadas.length}
+        <span style={{ fontSize: 12, color: '#9AA3B2' }}>
+          {filtrados.length} registro(s) · Selecionadas: {selecionadas.length}
         </span>
         <div style={{ flex: 1 }} />
         <button
-          disabled={
-            selecionadas.length !== 1 ||
-            dados.find((c) => c.id === selecionadas[0])?.situacao === 'BAIXADO'
-          }
-          onClick={() =>
-            setContaRecebendo(dados.find((c) => c.id === selecionadas[0]))
-          }
+          disabled={!podeReceber}
+          onClick={() => setContaRecebendo(contaSelecionada)}
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 6,
             height: 34,
             padding: '0 16px',
-            borderRadius: 'var(--radius-md)',
+            borderRadius: 8,
             fontSize: 13,
-            fontWeight: 500,
-            background:
-              selecionadas.length === 1 &&
-              dados.find((c) => c.id === selecionadas[0])?.situacao !==
-                'BAIXADO'
-                ? 'var(--blue-700)'
-                : 'var(--gray-200)',
-            color:
-              selecionadas.length === 1 &&
-              dados.find((c) => c.id === selecionadas[0])?.situacao !==
-                'BAIXADO'
-                ? '#fff'
-                : 'var(--text-muted)',
-            cursor: selecionadas.length === 1 ? 'pointer' : 'not-allowed',
+            fontWeight: 600,
+            background: podeReceber ? '#185FA5' : '#E2EAF4',
+            color: podeReceber ? '#fff' : '#9AA3B2',
+            cursor: podeReceber ? 'pointer' : 'not-allowed',
           }}
         >
           <DollarSign size={14} /> Receber
@@ -627,4 +621,22 @@ export default function ContasReceber() {
       </div>
     </div>
   )
+}
+
+const thStyle = {
+  padding: '8px 10px',
+  fontSize: 11,
+  fontWeight: 500,
+  color: '#9AA3B2',
+  textAlign: 'left',
+  background: '#F7FAFF',
+  borderBottom: '1px solid #E2EAF4',
+  position: 'sticky',
+  top: 0,
+}
+
+const tdStyle = {
+  padding: '9px 10px',
+  fontSize: 13,
+  borderBottom: '1px solid #F0F4FA',
 }
