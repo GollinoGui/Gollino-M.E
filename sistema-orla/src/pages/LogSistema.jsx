@@ -53,7 +53,7 @@ export default function LogSistema() {
       if (filtro.dataFim) f.dataFim = filtro.dataFim
       if (filtro.categoria) f.categoria = filtro.categoria
       const dados = await window.api.log.listar(f)
-      setEntradas(dados || [])
+      setEntradas(Array.isArray(dados) ? dados : [])
     } finally {
       setCarregando(false)
     }

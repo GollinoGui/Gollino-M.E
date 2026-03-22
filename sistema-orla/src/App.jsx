@@ -18,6 +18,8 @@ import Configuracoes from './pages/Configuracoes'
 import Manutencao from './pages/Manutencao'
 import LogSistema from './pages/LogSistema'
 import NotaFiscal from './pages/NotaFiscal'
+import Cheques from './pages/Cheques'
+import LancamentosExtras from './pages/LancamentosExtras'
 import Assistente from './components/Assistente'
 import BuscaGlobal from './components/BuscaGlobal'
 import Login from './pages/Login'
@@ -246,6 +248,18 @@ export default function App() {
       case 'nfe':
       case 'documentos-fiscais':
         return <NotaFiscal />
+
+      // Financeiro
+      case 'cheques-receber':
+        return <Cheques tipo='R' />
+      case 'cheques-pagar':
+        return <Cheques tipo='P' />
+      case 'outras-receitas':
+        return <LancamentosExtras tipo='RECEITA' />
+      case 'vales':
+        return <LancamentosExtras tipo='VALE' />
+      case 'despesas':
+        return <LancamentosExtras tipo='DESPESA' />
 
       // Telas ainda não construídas
       default:
