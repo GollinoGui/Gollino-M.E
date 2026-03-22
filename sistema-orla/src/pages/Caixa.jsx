@@ -75,7 +75,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario }) {
       await window.api.caixa.abrir({
         numero_caixa: '001',
         numero_turno: '1',
-        usuario: usuario?.usuario || 'sistema',
+        usuario: usuario?.nome || 'sistema',
         valor_abertura: 0,
       })
       setCaixaAberto(true)
@@ -94,7 +94,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario }) {
     setSalvando(true)
     try {
       await window.api.caixa.fechar({
-        usuario: usuario?.usuario || 'sistema',
+        usuario: usuario?.nome || 'sistema',
         valor_fechamento: totalVendas,
         valor_dinheiro: totalDinheiro,
         valor_cheque: totalCheque,

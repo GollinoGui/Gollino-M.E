@@ -395,7 +395,7 @@ export default function ContasReceber({ usuario }) {
           {[
             { label: 'Em aberto', value: fmt(totalEmAberto), color: '#185FA5' },
             { label: 'Recebido', value: fmt(totalPago), color: '#22863A' },
-            { label: 'Total docs', value: fmt(totalDocto), color: 'var(--text-primary)' },
+            { label: 'Total faturado', value: fmt(totalDocto), color: 'var(--text-primary)' },
           ].map((c) => (
             <div
               key={c.label}

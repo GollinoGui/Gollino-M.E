@@ -354,7 +354,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
     return `Em ${diff} dias`
   }
 
-  const totalHoje = resumo.vendas.total || 0
+  const totalHoje = resumo.entradasCaixa || 0
   const dias = montarGrafico()
   const maxValor = Math.max(...dias.map((d) => d.valor), META_DIARIA)
 

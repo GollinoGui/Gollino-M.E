@@ -73,168 +73,104 @@ ipcMain.handle('auth:login', async (_, { usuario, senha }) => {
   }
 })
 
+// Helper: wraps handler with try/catch, retorna { sucesso: false, erro } em caso de falha
+function handle(channel, fn) {
+  ipcMain.handle(channel, async (event, ...args) => {
+    try {
+      return await fn(event, ...args)
+    } catch (e) {
+      console.error(`[IPC:${channel}]`, e.message)
+      return { sucesso: false, erro: e.message }
+    }
+  })
+}
+
 // --- CLIENTES ---
-ipcMain.handle('clientes:listar', (_, filtros) => {
-  return db.clientes.listar(filtros)
-})
-ipcMain.handle('clientes:buscar', (_, codigo) => {
-  return db.clientes.buscar(codigo)
-})
-ipcMain.handle('clientes:salvar', (_, dados) => {
-  return db.clientes.salvar(dados)
-})
-ipcMain.handle('clientes:excluir', (_, codigo) => {
-  return db.clientes.excluir(codigo)
-})
+handle('clientes:listar', (_, filtros) => db.clientes.listar(filtros))
+handle('clientes:buscar', (_, codigo) => db.clientes.buscar(codigo))
+handle('clientes:salvar', (_, dados) => db.clientes.salvar(dados))
+handle('clientes:excluir', (_, codigo) => db.clientes.excluir(codigo))
 
 // --- PRODUTOS ---
-ipcMain.handle('produtos:listar', (_, filtros) => {
-  return db.produtos.listar(filtros)
-})
-ipcMain.handle('produtos:buscar', (_, codigo) => {
-  return db.produtos.buscar(codigo)
-})
-ipcMain.handle('produtos:salvar', (_, dados) => {
-  return db.produtos.salvar(dados)
-})
-ipcMain.handle('produtos:excluir', (_, codigo) => {
-  return db.produtos.excluir(codigo)
-})
+handle('produtos:listar', (_, filtros) => db.produtos.listar(filtros))
+handle('produtos:buscar', (_, codigo) => db.produtos.buscar(codigo))
+handle('produtos:salvar', (_, dados) => db.produtos.salvar(dados))
+handle('produtos:excluir', (_, codigo) => db.produtos.excluir(codigo))
 
 // --- VENDAS ---
-ipcMain.handle('vendas:listar', (_, filtros) => {
-  return db.vendas.listar(filtros)
-})
-ipcMain.handle('vendas:buscar', (_, orcamento) => {
-  return db.vendas.buscar(orcamento)
-})
-ipcMain.handle('vendas:salvar', (_, dados) => {
-  return db.vendas.salvar(dados)
-})
-ipcMain.handle('vendas:cancelar', (_, { orcamento, motivo, usuario }) => {
-  return db.vendas.cancelar(orcamento, motivo, usuario)
-})
-ipcMain.handle('vendas:devolver', (_, dados) => {
-  return db.vendas.devolver(dados)
-})
-ipcMain.handle('vendas:proximoNumero', () => {
-  return db.vendas.proximoNumero()
-})
+handle('vendas:listar', (_, filtros) => db.vendas.listar(filtros))
+handle('vendas:buscar', (_, orcamento) => db.vendas.buscar(orcamento))
+handle('vendas:salvar', (_, dados) => db.vendas.salvar(dados))
+handle('vendas:cancelar', (_, { orcamento, motivo, usuario }) => db.vendas.cancelar(orcamento, motivo, usuario))
+handle('vendas:devolver', (_, dados) => db.vendas.devolver(dados))
+handle('vendas:proximoNumero', () => db.vendas.proximoNumero())
 
 // --- CONTAS A RECEBER ---
-ipcMain.handle('contasReceber:listar', (_, filtros) => {
-  return db.contasReceber.listar(filtros)
-})
-ipcMain.handle('contasReceber:receber', (_, dados) => {
-  return db.contasReceber.receber(dados)
-})
-ipcMain.handle('contasReceber:totalAberto', () => {
-  return db.contasReceber.totalAberto()
-})
+handle('contasReceber:listar', (_, filtros) => db.contasReceber.listar(filtros))
+handle('contasReceber:receber', (_, dados) => db.contasReceber.receber(dados))
+handle('contasReceber:totalAberto', () => db.contasReceber.totalAberto())
 
 // --- CONTAS A PAGAR ---
-ipcMain.handle('contasPagar:listar', (_, filtros) => {
-  return db.contasPagar.listar(filtros)
-})
-ipcMain.handle('contasPagar:pagar', (_, dados) => {
-  return db.contasPagar.pagar(dados)
-})
-ipcMain.handle('contasPagar:salvar', (_, dados) => {
-  return db.contasPagar.salvar(dados)
-})
-ipcMain.handle('contasPagar:totalAberto', () => {
-  return db.contasPagar.totalAberto()
-})
+handle('contasPagar:listar', (_, filtros) => db.contasPagar.listar(filtros))
+handle('contasPagar:pagar', (_, dados) => db.contasPagar.pagar(dados))
+handle('contasPagar:salvar', (_, dados) => db.contasPagar.salvar(dados))
+handle('contasPagar:totalAberto', () => db.contasPagar.totalAberto())
 
 // --- CAIXA ---
-ipcMain.handle('caixa:status', () => {
-  return db.caixa.status()
-})
-ipcMain.handle('caixa:abrir', (_, dados) => {
-  return db.caixa.abrir(dados)
-})
-ipcMain.handle('caixa:fechar', (_, dados) => {
-  return db.caixa.fechar(dados)
-})
-ipcMain.handle('caixa:sessoesHoje', () => {
-  return db.caixa.sessoesHoje()
-})
-ipcMain.handle('manutencao:corrigirCR', () => {
-  return db.manutencao.corrigirCROrfaos()
-})
+handle('caixa:status', () => db.caixa.status())
+handle('caixa:abrir', (_, dados) => db.caixa.abrir(dados))
+handle('caixa:fechar', (_, dados) => db.caixa.fechar(dados))
+handle('caixa:sessoesHoje', () => db.caixa.sessoesHoje())
+handle('manutencao:corrigirCR', () => db.manutencao.corrigirCROrfaos())
 
 // --- LOG DO SISTEMA ---
-ipcMain.handle('log:listar', (_, filtros) => {
-  return db.log.listar(filtros)
-})
+handle('log:listar', (_, filtros) => db.log.listar(filtros))
 
 // --- NF-e ---
-ipcMain.handle('nfe:listar', (_, filtros) => db.nfe.listar(filtros))
-ipcMain.handle('nfe:registrar', (_, { orcamento, numero_nfe }) => db.nfe.registrar(orcamento, numero_nfe))
+handle('nfe:listar', (_, filtros) => db.nfe.listar(filtros))
+handle('nfe:registrar', (_, { orcamento, numero_nfe }) => db.nfe.registrar(orcamento, numero_nfe))
 
 // --- PEDIDOS DE COMPRA ---
-ipcMain.handle('pedidosCompra:listar', (_, filtros) => db.pedidosCompra.listar(filtros))
-ipcMain.handle('pedidosCompra:salvar', (_, dados) => db.pedidosCompra.salvar(dados))
-ipcMain.handle('pedidosCompra:cancelar', (_, numero) => db.pedidosCompra.cancelar(numero))
-ipcMain.handle('pedidosCompra:receber', (_, numero) => db.pedidosCompra.receber(numero))
-ipcMain.handle('pedidosCompra:proximoNumero', () => db.pedidosCompra.proximoNumero())
+handle('pedidosCompra:listar', (_, filtros) => db.pedidosCompra.listar(filtros))
+handle('pedidosCompra:salvar', (_, dados) => db.pedidosCompra.salvar(dados))
+handle('pedidosCompra:cancelar', (_, numero) => db.pedidosCompra.cancelar(numero))
+handle('pedidosCompra:receber', (_, numero) => db.pedidosCompra.receber(numero))
+handle('pedidosCompra:proximoNumero', () => db.pedidosCompra.proximoNumero())
 
 // --- CHEQUES ---
-ipcMain.handle('cheques:listar', (_, filtros) => db.cheques.listar(filtros))
-ipcMain.handle('cheques:salvar', (_, dados) => db.cheques.salvar(dados))
-ipcMain.handle('cheques:baixar', (_, { id, data_compensacao, usuario }) => db.cheques.baixar(id, data_compensacao, usuario))
-ipcMain.handle('cheques:devolver', (_, { id, usuario }) => db.cheques.devolver(id, usuario))
+handle('cheques:listar', (_, filtros) => db.cheques.listar(filtros))
+handle('cheques:salvar', (_, dados) => db.cheques.salvar(dados))
+handle('cheques:baixar', (_, { id, data_compensacao, usuario }) => db.cheques.baixar(id, data_compensacao, usuario))
+handle('cheques:devolver', (_, { id, usuario }) => db.cheques.devolver(id, usuario))
 
 // --- LANÇAMENTOS EXTRAS ---
-ipcMain.handle('lancamentosExtras:listar', (_, filtros) => db.lancamentosExtras.listar(filtros))
-ipcMain.handle('lancamentosExtras:salvar', (_, dados) => db.lancamentosExtras.salvar(dados))
-ipcMain.handle('lancamentosExtras:pagar', (_, { id, usuario }) => db.lancamentosExtras.pagar(id, usuario))
-ipcMain.handle('lancamentosExtras:cancelar', (_, id) => db.lancamentosExtras.cancelar(id))
+handle('lancamentosExtras:listar', (_, filtros) => db.lancamentosExtras.listar(filtros))
+handle('lancamentosExtras:salvar', (_, dados) => db.lancamentosExtras.salvar(dados))
+handle('lancamentosExtras:pagar', (_, { id, usuario }) => db.lancamentosExtras.pagar(id, usuario))
+handle('lancamentosExtras:cancelar', (_, id) => db.lancamentosExtras.cancelar(id))
 
 // --- REAJUSTES DE PREÇO ---
-ipcMain.handle('reajustesPreco:listar', (_, filtros) => db.reajustesPreco.listar(filtros))
-ipcMain.handle('reajustesPreco:aplicar', (_, { codigos, percentual, usuario }) => db.reajustesPreco.aplicar(codigos, percentual, usuario))
+handle('reajustesPreco:listar', (_, filtros) => db.reajustesPreco.listar(filtros))
+handle('reajustesPreco:aplicar', (_, { codigos, percentual, usuario }) => db.reajustesPreco.aplicar(codigos, percentual, usuario))
 
 // --- DASHBOARD ---
-ipcMain.handle('dashboard:resumo', (_, periodo) => {
-  return db.dashboard.resumo(periodo)
-})
+handle('dashboard:resumo', (_, periodo) => db.dashboard.resumo(periodo))
 
 // --- CONFIGURACOES ---
-ipcMain.handle('config:get', (_, chave) => {
-  return db.config.get(chave)
-})
-ipcMain.handle('config:set', (_, { chave, valor }) => {
-  return db.config.set(chave, valor)
-})
+handle('config:get', (_, chave) => db.config.get(chave))
+handle('config:set', (_, { chave, valor }) => db.config.set(chave, valor))
 
 // --- PRÉ-VENDAS ---
-ipcMain.handle('preVendas:listar', (_, filtros) => {
-  return db.preVendas.listar(filtros)
-})
-ipcMain.handle('preVendas:buscar', (_, numero) => {
-  return db.preVendas.buscar(numero)
-})
-ipcMain.handle('preVendas:salvar', (_, dados) => {
-  return db.preVendas.salvar(dados)
-})
-ipcMain.handle('preVendas:cancelar', (_, numero) => {
-  return db.preVendas.cancelar(numero)
-})
-ipcMain.handle('preVendas:baixar', (_, numero) => {
-  return db.preVendas.baixar(numero)
-})
-ipcMain.handle('preVendas:proximoNumero', () => {
-  return db.preVendas.proximoNumero()
-})
+handle('preVendas:listar', (_, filtros) => db.preVendas.listar(filtros))
+handle('preVendas:buscar', (_, numero) => db.preVendas.buscar(numero))
+handle('preVendas:salvar', (_, dados) => db.preVendas.salvar(dados))
+handle('preVendas:cancelar', (_, numero) => db.preVendas.cancelar(numero))
+handle('preVendas:baixar', (_, numero) => db.preVendas.baixar(numero))
+handle('preVendas:proximoNumero', () => db.preVendas.proximoNumero())
 
 // --- MOVIMENTOS DE ESTOQUE ---
-ipcMain.handle('movimentosEstoque:listar', (_, filtros) => {
-  return db.movimentosEstoque.listar(filtros)
-})
-ipcMain.handle('movimentosEstoque:salvar', (_, dados) => {
-  return db.movimentosEstoque.salvar(dados)
-})
+handle('movimentosEstoque:listar', (_, filtros) => db.movimentosEstoque.listar(filtros))
+handle('movimentosEstoque:salvar', (_, dados) => db.movimentosEstoque.salvar(dados))
 
 // --- PDF ---
 function getVendasDir() {
@@ -578,9 +514,9 @@ ipcMain.handle('backup:importar', async () => {
 })
 
 // --- HAVER ---
-ipcMain.handle('haver:listar', (_, busca) => db.haver.listar(busca))
-ipcMain.handle('haver:ajustar', (_, dados) => db.haver.ajustar(dados))
-ipcMain.handle('haver:totalGeral', () => db.haver.totalGeral())
+handle('haver:listar', (_, busca) => db.haver.listar(busca))
+handle('haver:ajustar', (_, dados) => db.haver.ajustar(dados))
+handle('haver:totalGeral', () => db.haver.totalGeral())
 
 // --- IMPORTAÇÃO CSV ---
 ipcMain.handle('importar:abrirArquivo', async () => {
@@ -593,10 +529,5 @@ ipcMain.handle('importar:abrirArquivo', async () => {
   return fs.readFileSync(filePaths[0], 'utf-8')
 })
 
-ipcMain.handle('importar:produtos', (_, linhas) => {
-  return db.importar.produtos(linhas)
-})
-
-ipcMain.handle('importar:clientes', (_, linhas) => {
-  return db.importar.clientes(linhas)
-})
+handle('importar:produtos', (_, linhas) => db.importar.produtos(linhas))
+handle('importar:clientes', (_, linhas) => db.importar.clientes(linhas))

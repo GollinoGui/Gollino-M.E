@@ -759,6 +759,19 @@ const dashboard = {
         `SELECT COALESCE(SUM(valor_total),0) as total, COUNT(*) as qtde FROM vendas WHERE data >= ? AND situacao = 'N'`,
       )
       .get(dataInicio)
+    // Entradas de caixa = somente o que efetivamente entrou (dinheiro + cartão + cheque)
+    // Exclui a parcela que foi para contas a receber (prazo, convênio)
+    const entradasCaixa = db
+      .prepare(
+        `SELECT COALESCE(SUM(
+          COALESCE(valor_pago_dinheiro,0) +
+          COALESCE(valor_pago_cartao_credito,0) +
+          COALESCE(valor_pago_cartao_debito,0) +
+          COALESCE(valor_pago_cheque,0) +
+          COALESCE(valor_pago_haver,0)
+        ),0) as total FROM vendas WHERE data = ? AND situacao = 'N'`,
+      )
+      .get(hoje())
     const crAberto = db
       .prepare(
         `SELECT COALESCE(SUM(valor_docto - COALESCE(valor_pagamento,0)),0) as total FROM contas_receber WHERE situacao_docto = 'A'`,
@@ -786,6 +799,7 @@ const dashboard = {
 
     return {
       vendas: { total: vendaTotal.total, qtde: vendaTotal.qtde },
+      entradasCaixa: entradasCaixa.total,
       contasReceber: { total: crAberto.total },
       contasPagar: { total: cpAberto.total },
       estoqueBaixo: estoqueBaixo.qtde,
@@ -1066,7 +1080,7 @@ const importar = {
         data_atualizacao = @data_cadastro
     `)
 
-    const existentes = new Set(db.prepare('SELECT codigo FROM produtos').all().map(r => r.codigo))
+    const verificarProduto = db.prepare('SELECT 1 FROM produtos WHERE codigo = ?')
 
     const run = db.transaction(() => {
       for (const row of rows) {
@@ -1097,7 +1111,7 @@ const importar = {
             data_cadastro: hoje(),
             usuario_cadastro: 'importacao',
           })
-          resultados.push({ codigo, descricao, status: existentes.has(codigo) ? 'atualizado' : 'inserido' })
+          resultados.push({ codigo, descricao, status: verificarProduto.get(codigo) ? 'atualizado' : 'inserido' })
         } catch (e) {
           resultados.push({ codigo, descricao, status: 'erro', motivo: e.message })
         }
@@ -1133,7 +1147,7 @@ const importar = {
         data_atualizacao = @data_cadastro
     `)
 
-    const existentes = new Set(db.prepare('SELECT codigo FROM clientes').all().map(r => r.codigo))
+    const verificarCliente = db.prepare('SELECT 1 FROM clientes WHERE codigo = ?')
 
     const run = db.transaction(() => {
       for (const row of rows) {
@@ -1166,7 +1180,7 @@ const importar = {
             data_cadastro: hoje(),
             usuario_cadastro: 'importacao',
           })
-          resultados.push({ codigo, nome, status: existentes.has(codigo) ? 'atualizado' : 'inserido' })
+          resultados.push({ codigo, nome, status: verificarCliente.get(codigo) ? 'atualizado' : 'inserido' })
         } catch (e) {
           resultados.push({ codigo, nome, status: 'erro', motivo: e.message })
         }
@@ -1217,7 +1231,16 @@ const pedidosCompra = {
     if (filtros.busca) { sql += ` AND (fornecedor LIKE ? OR numero LIKE ?)`; const b = `%${filtros.busca}%`; params.push(b, b) }
     sql += ` ORDER BY id DESC LIMIT 200`
     const rows = db.prepare(sql).all(...params)
-    return rows.map(r => ({ ...r, itens: db.prepare(`SELECT * FROM pedidos_compra_itens WHERE numero = ?`).all(r.numero) }))
+    if (rows.length === 0) return []
+    const placeholders = rows.map(() => '?').join(',')
+    const numeros = rows.map(r => r.numero)
+    const itensAll = db.prepare(`SELECT * FROM pedidos_compra_itens WHERE numero IN (${placeholders})`).all(...numeros)
+    const itensPorNumero = {}
+    for (const item of itensAll) {
+      if (!itensPorNumero[item.numero]) itensPorNumero[item.numero] = []
+      itensPorNumero[item.numero].push(item)
+    }
+    return rows.map(r => ({ ...r, itens: itensPorNumero[r.numero] || [] }))
   },
   salvar(dados) {
     const { itens, ...pc } = dados
@@ -1336,16 +1359,18 @@ const reajustesPreco = {
   aplicar(codigos, percentual, usuario) {
     // codigos: array de código de produto; percentual: float (ex: 10 = +10%, -5 = -5%)
     const fator = 1 + (percentual / 100)
+    const selProd = db.prepare(`SELECT codigo, descricao, preco_venda_vista, preco_venda_prazo FROM produtos WHERE codigo = ?`)
+    const updProd = db.prepare(`UPDATE produtos SET preco_venda_vista=?,preco_venda_prazo=?,data_atualizacao=? WHERE codigo=?`)
     const insLog = db.prepare(`INSERT INTO reajustes_preco (codigo_produto,produto,preco_anterior,preco_novo,percentual,data,usuario) VALUES (?,?,?,?,?,?,?)`)
+    const dataHoje = hoje()
     db.transaction(() => {
       for (const codigo of codigos) {
-        const prod = db.prepare(`SELECT codigo, descricao, preco_venda_vista, preco_venda_prazo FROM produtos WHERE codigo = ?`).get(codigo)
+        const prod = selProd.get(codigo)
         if (!prod) continue
         const novoVista = Math.round(prod.preco_venda_vista * fator * 100) / 100
         const novoPrazo = Math.round(prod.preco_venda_prazo * fator * 100) / 100
-        db.prepare(`UPDATE produtos SET preco_venda_vista=?,preco_venda_prazo=?,data_atualizacao=? WHERE codigo=?`)
-          .run(novoVista, novoPrazo, hoje(), codigo)
-        insLog.run(codigo, prod.descricao, prod.preco_venda_vista, novoVista, percentual, hoje(), usuario||'')
+        updProd.run(novoVista, novoPrazo, dataHoje, codigo)
+        insLog.run(codigo, prod.descricao, prod.preco_venda_vista, novoVista, percentual, dataHoje, usuario||'')
       }
     })()
     return { sucesso: true, atualizados: codigos.length }
@@ -1410,7 +1435,7 @@ const log = {
           COALESCE(c.nome, 'Consumidor'),
           v.valor_total,
           COALESCE(v.data_cancelamento, v.data),
-          COALESCE(v.hora_cancelamento, v.hora_cadastro),
+          v.hora_cadastro,
           COALESCE(v.usuario_cancelamento,''),
           COALESCE(v.motivo_cancelamento,'')
         FROM vendas v LEFT JOIN clientes c ON v.codigo_cliente = c.codigo
