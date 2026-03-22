@@ -200,7 +200,7 @@ function fmtDataCurta(dataStr) {
   return `${d}/${m}`
 }
 
-export default function Dashboard({ onNavigate, caixaAberto }) {
+export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
   const hoje = new Date().toLocaleDateString('pt-BR', {
     weekday: 'long',
     year: 'numeric',
@@ -305,7 +305,7 @@ export default function Dashboard({ onNavigate, caixaAberto }) {
       await window.api.vendas.cancelar({
         orcamento,
         motivo: 'Cancelado pelo usuário',
-        usuario: 'rosangela',
+        usuario: usuario?.nome || 'sistema',
       })
       await carregarDados(periodo)
     } catch (err) {

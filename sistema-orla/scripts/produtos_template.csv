@@ -1,0 +1,13 @@
+# Template de importação de produtos — Gollino M.E
+# Linhas começando com # são ignoradas
+# Separador: ponto-e-vírgula (;)
+# Colunas obrigatórias: codigo, descricao
+# Preços: use ponto ou vírgula como decimal (ex: 12.50 ou 12,50)
+# controla_estoque: S = controla estoque / N = não controla
+# situacao: A = ativo / I = inativo
+codigo;descricao;unidade;preco_venda_vista;preco_venda_prazo;custo_preco_unitario;estoque_atual;estoque_minimo;controla_estoque;codigo_grupo;codigo_linha;referencia;situacao
+001;CHAPA GALVANIZADA 1,20x2,40;PC;125.00;130.00;85.00;50;5;S;001;001;;A
+002;CHAPA GALVANIZADA 1,00x2,00;PC;95.00;99.00;65.00;30;5;S;001;001;;A
+003;ARAME RECOZIDO N12 ROLO 5KG;RL;45.00;47.00;30.00;20;3;S;001;003;;A
+004;SELANTE NEUTRO BRANCO 280ML;PC;18.50;19.50;11.00;100;10;S;001;004;;A
+005;PRODUTO EXEMPLO SEM ESTOQUE;UN;10.00;10.50;6.00;0;0;N;;;; A

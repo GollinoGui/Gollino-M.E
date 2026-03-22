@@ -590,16 +590,16 @@ export default function Estoque() {
               </tr>
             </thead>
             <tbody>
-              {movFiltrados.map((m) => (
+              {movFiltrados.map((m) => {
+                const bgBase = m.tipo === 'ENTRADA' ? '#F0FDF4' : m.tipo === 'SAIDA' ? '#FFF5F5' : '#EFF6FF'
+                const bgHover = m.tipo === 'ENTRADA' ? '#DCFCE7' : m.tipo === 'SAIDA' ? '#FFE4E4' : '#DBEAFE'
+                const borderL = m.tipo === 'ENTRADA' ? '#22C55E' : m.tipo === 'SAIDA' ? '#EF4444' : '#60A5FA'
+                return (
                 <tr
                   key={m.id}
-                  style={{ transition: 'background 0.08s' }}
-                  onMouseEnter={(e) =>
-                    (e.currentTarget.style.background = 'var(--gray-50)')
-                  }
-                  onMouseLeave={(e) =>
-                    (e.currentTarget.style.background = 'transparent')
-                  }
+                  style={{ background: bgBase, borderLeft: `3px solid ${borderL}`, transition: 'background 0.08s' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = bgHover)}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = bgBase)}
                 >
                   <td
                     style={{
@@ -619,29 +619,16 @@ export default function Estoque() {
                   >
                     <span
                       style={{
-                        background:
-                          m.tipo === 'ENTRADA'
-                            ? 'var(--green-50)'
-                            : m.tipo === 'SAIDA'
-                              ? 'var(--red-50)'
-                              : 'var(--blue-50)',
-                        color:
-                          m.tipo === 'ENTRADA'
-                            ? 'var(--green-700)'
-                            : m.tipo === 'SAIDA'
-                              ? 'var(--red-500)'
-                              : 'var(--blue-700)',
-                        padding: '2px 8px',
+                        background: m.tipo === 'ENTRADA' ? '#ECFDF5' : m.tipo === 'SAIDA' ? '#FEF2F2' : '#EFF6FF',
+                        color:     m.tipo === 'ENTRADA' ? '#065F46' : m.tipo === 'SAIDA' ? '#991B1B' : '#1E40AF',
+                        border: `1px solid ${m.tipo === 'ENTRADA' ? '#6EE7B7' : m.tipo === 'SAIDA' ? '#FCA5A5' : '#BFDBFE'}`,
+                        padding: '2px 10px',
                         borderRadius: 10,
                         fontSize: 11,
-                        fontWeight: 500,
+                        fontWeight: 700,
                       }}
                     >
-                      {m.tipo === 'ENTRADA'
-                        ? '↓ Entrada'
-                        : m.tipo === 'SAIDA'
-                          ? '↑ Saída'
-                          : '⟳ Acerto'}
+                      {m.tipo === 'ENTRADA' ? '+ Entrada' : m.tipo === 'SAIDA' ? '− Saída' : '⟳ Acerto'}
                     </span>
                   </td>
                   <td
@@ -692,8 +679,10 @@ export default function Estoque() {
                       borderBottom: '1px solid var(--border)',
                       color:
                         m.tipo === 'ENTRADA'
-                          ? 'var(--green-500)'
-                          : 'var(--text-muted)',
+                          ? '#15803D'
+                          : m.tipo === 'SAIDA'
+                            ? '#B91C1C'
+                            : 'var(--blue-600)',
                     }}
                   >
                     {m.total > 0 ? fmt(m.total) : '-'}
@@ -725,7 +714,8 @@ export default function Estoque() {
                     {m.obs}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>

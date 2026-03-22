@@ -489,6 +489,7 @@ export default function ContasReceber({ usuario }) {
                   <tr
                     key={c.id}
                     onClick={() => toggleSel(c.id)}
+                    onDoubleClick={() => c.situacao_docto === 'A' && setContaRecebendo(c)}
                     style={{
                       background: sel
                         ? '#EBF3FC'

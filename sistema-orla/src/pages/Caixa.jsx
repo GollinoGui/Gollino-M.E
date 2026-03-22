@@ -14,6 +14,7 @@ const fmt = (v) =>
 export default function Caixa({ caixaAberto, setCaixaAberto, usuario }) {
   const [confirmando, setConfirmando] = useState(false)
   const [statusCaixa, setStatusCaixa] = useState(null)
+  const [sessoesHoje, setSessoesHoje] = useState([])
   const [vendasHoje, setVendasHoje] = useState([])
   const [loading, setLoading] = useState(true)
   const [salvando, setSalvando] = useState(false)
@@ -25,6 +26,9 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario }) {
     try {
       const status = await window.api.caixa.status()
       setStatusCaixa(status)
+
+      const sessoes = await window.api.caixa.sessoesHoje()
+      setSessoesHoje(sessoes || [])
 
       const hoje = new Date().toISOString().slice(0, 10)
       const vendas = await window.api.vendas.listar({
@@ -109,31 +113,23 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario }) {
     }
   }
 
-  // Monta histórico a partir das vendas reais
+  // Monta histórico: todas as sessões do dia intercaladas com as vendas
   const historico = [
-    statusCaixa
-      ? {
-          tipo: 'abertura',
-          hora: statusCaixa.hora_abertura || '--:--',
-          descricao: 'Abertura de caixa',
-          valor: 0,
-        }
-      : null,
+    ...sessoesHoje.flatMap((s) => [
+      { tipo: 'abertura', hora: s.hora_abertura || '--:--', descricao: 'Abertura de caixa', valor: 0 },
+      s.situacao === 'F' && s.hora_fechamento
+        ? { tipo: 'fechamento', hora: s.hora_fechamento, descricao: 'Fechamento de caixa', valor: s.valor_fechamento || 0 }
+        : null,
+    ]),
     ...vendasHoje.map((v) => ({
       tipo: 'venda',
       hora: v.hora_cadastro || '--:--',
       descricao: `Venda #${v.orcamento} — ${v.nome_cliente || 'Consumidor'}`,
       valor: v.valor_total || 0,
     })),
-    !caixaAberto && statusCaixa?.hora_fechamento
-      ? {
-          tipo: 'fechamento',
-          hora: statusCaixa.hora_fechamento,
-          descricao: 'Fechamento de caixa',
-          valor: totalVendas,
-        }
-      : null,
-  ].filter(Boolean)
+  ]
+    .filter(Boolean)
+    .sort((a, b) => (a.hora > b.hora ? 1 : -1))
 
   return (
     <div
@@ -225,7 +221,11 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario }) {
               {caixaAberto ? 'Aberto' : 'Fechado'}
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-              {caixaAberto ? `Aberto às ${horaAbertura}` : 'Caixa não iniciado'}
+              {caixaAberto
+                ? `Aberto às ${horaAbertura}`
+                : statusCaixa?.hora_fechamento
+                  ? `Fechado às ${statusCaixa.hora_fechamento}`
+                  : 'Caixa não iniciado'}
             </div>
           </div>
         </div>

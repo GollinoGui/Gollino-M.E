@@ -100,7 +100,7 @@ function ModalItem({ produto, onConfirm, onClose }) {
               onChange={(e) => setQty(e.target.value)}
               type='number'
               min='0.001'
-              step='0.001'
+              step='1'
               style={{
                 width: '100%',
                 height: 36,
@@ -378,6 +378,9 @@ export default function Vendas({ onNavigate, usuario }) {
   const [erroVenda, setErroVenda] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [gerandoPdf, setGerandoPdf] = useState(false)
+  const [observacao, setObservacao] = useState('')
+  const [ultimasVendas, setUltimasVendas] = useState([])
+  const [cancelando, setCancelando] = useState(null)
 
   // Dados do banco
   const [todosProds, setTodosProds] = useState([])
@@ -412,7 +415,30 @@ export default function Vendas({ onNavigate, usuario }) {
       }
     }
     carregar()
+    carregarUltimas()
   }, [])
+
+  async function carregarUltimas() {
+    try {
+      const hoje = new Date()
+      const d = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}-${String(hoje.getDate()).padStart(2,'0')}`
+      const vendas = await window.api.vendas.listar({ dataInicio: d, dataFim: d, situacao: 'N' })
+      setUltimasVendas((vendas || []).slice(-5).reverse())
+    } catch (_) {}
+  }
+
+  async function cancelarVenda(orcamento) {
+    if (!window.confirm(`Cancelar venda #${orcamento}? O estoque será revertido.`)) return
+    setCancelando(orcamento)
+    try {
+      await window.api.vendas.cancelar({ orcamento, motivo: 'Cancelado pelo operador', usuario: usuario?.usuario || 'sistema' })
+      await carregarUltimas()
+    } catch (e) {
+      alert('Erro ao cancelar: ' + e.message)
+    } finally {
+      setCancelando(null)
+    }
+  }
 
   const prodsFiltrados = useMemo(() => {
     return todosProds.filter((p) => {
@@ -498,6 +524,8 @@ export default function Vendas({ onNavigate, usuario }) {
 
       const orcamentoAtual = numeroVenda
 
+      const vendedorLabel = [usuario?.codigo_vendedor, usuario?.nome || usuario?.usuario].filter(Boolean).join(' - ')
+
       const resultado = await window.api.vendas.salvar({
         orcamento: orcamentoAtual,
         codigo_cliente: clienteSel.codigo,
@@ -506,7 +534,8 @@ export default function Vendas({ onNavigate, usuario }) {
         situacao: 'N',
         valor_total: total,
         valor_produtos: total,
-        usuario_cadastro: usuario?.usuario || 'sistema',
+        observacao,
+        usuario_cadastro: vendedorLabel || 'sistema',
         numero_caixa: '001',
         numero_turno: '1',
         ...pagamento,
@@ -537,8 +566,10 @@ export default function Vendas({ onNavigate, usuario }) {
       setNumeroVenda(num.numero)
 
       setItens([])
+      setObservacao('')
       setPagModal(false)
       setVendaFinalizada(true)
+      carregarUltimas()
       setTimeout(() => setVendaFinalizada(false), 3000)
 
       // Gera PDF automaticamente
@@ -653,7 +684,7 @@ export default function Vendas({ onNavigate, usuario }) {
                 fontSize: 13,
               }}
             />
-            {clienteDropdown && clientesFiltrados.length > 0 && (
+            {clienteDropdown && clienteBusca.trim().length > 0 && clientesFiltrados.length > 0 && (
               <div
                 style={{
                   position: 'absolute',
@@ -700,6 +731,26 @@ export default function Vendas({ onNavigate, usuario }) {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Observação */}
+          <div style={{ marginBottom: 4 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>
+              Observação
+            </div>
+            <input
+              value={observacao}
+              onChange={(e) => setObservacao(e.target.value)}
+              placeholder="Cortes, tamanhos, instruções..."
+              style={{
+                width: '100%',
+                height: 32,
+                padding: '0 10px',
+                borderRadius: 8,
+                border: '1px solid var(--border-md)',
+                fontSize: 13,
+              }}
+            />
           </div>
         </div>
 
@@ -883,6 +934,33 @@ export default function Vendas({ onNavigate, usuario }) {
             {salvando ? 'Salvando...' : 'Total (F5) — Finalizar venda'}
           </button>
         </div>
+
+        {/* Últimas vendas do dia */}
+        {ultimasVendas.length > 0 && (
+          <div style={{ borderTop: '1px solid var(--border-md)', padding: '8px 14px' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.05em' }}>
+              VENDAS RECENTES
+            </div>
+            {ultimasVendas.map((v) => (
+              <div key={v.orcamento} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-primary)' }}>#{v.orcamento}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {v.nome_cliente || 'Consumidor'} · {fmt(v.valor_total)}
+                  </div>
+                </div>
+                <button
+                  onClick={() => cancelarVenda(v.orcamento)}
+                  disabled={cancelando === v.orcamento}
+                  title="Cancelar venda"
+                  style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6, border: '1px solid #FECACA', background: '#FFF0F0', color: '#C53030', cursor: 'pointer', flexShrink: 0 }}
+                >
+                  {cancelando === v.orcamento ? '...' : 'Cancelar'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── PAINEL DIREITO — produtos ── */}

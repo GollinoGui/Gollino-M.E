@@ -27,6 +27,7 @@ import {
   ArrowDownCircle,
   Search,
   AlertCircle,
+  ScrollText,
 } from 'lucide-react'
 import { Sun, Moon } from 'lucide-react'
 const menus = [
@@ -165,7 +166,9 @@ const menus = [
     items: [
       { id: 'config-empresa', label: 'Dados da empresa', icon: Database },
       { id: 'config-sistema', label: 'Configurações', icon: Cog },
+      { id: 'importacao', label: 'Importar CSV', icon: ArrowDownCircle },
       { id: 'manutencao', label: 'Manutenção', icon: Wrench },
+      { id: 'log-sistema', label: 'Log do sistema', icon: ScrollText },
     ],
   },
 ]

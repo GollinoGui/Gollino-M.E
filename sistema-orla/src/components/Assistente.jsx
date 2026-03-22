@@ -57,7 +57,8 @@ export default function Assistente({ caixaAberto }) {
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
-  const hojeStr = new Date().toISOString().slice(0, 10)
+  const hoje = new Date()
+  const hojeStr = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}-${String(hoje.getDate()).padStart(2,'0')}`
   const crVencidos = dados.contasReceber.filter(
     (r) => r.data_vencimento <= hojeStr,
   )
@@ -162,7 +163,9 @@ export default function Assistente({ caixaAberto }) {
 
   useEffect(() => {
     carregarDados()
-  }, [])
+    const intervalo = setInterval(carregarDados, 2 * 60 * 1000) // refresh a cada 2 minutos
+    return () => clearInterval(intervalo)
+  }, [caixaAberto])
 
   useEffect(() => {
     if (aberto) {

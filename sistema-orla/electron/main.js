@@ -156,6 +156,44 @@ ipcMain.handle('caixa:abrir', (_, dados) => {
 ipcMain.handle('caixa:fechar', (_, dados) => {
   return db.caixa.fechar(dados)
 })
+ipcMain.handle('caixa:sessoesHoje', () => {
+  return db.caixa.sessoesHoje()
+})
+ipcMain.handle('manutencao:corrigirCR', () => {
+  return db.manutencao.corrigirCROrfaos()
+})
+
+// --- LOG DO SISTEMA ---
+ipcMain.handle('log:listar', (_, filtros) => {
+  return db.log.listar(filtros)
+})
+
+// --- NF-e ---
+ipcMain.handle('nfe:listar', (_, filtros) => db.nfe.listar(filtros))
+ipcMain.handle('nfe:registrar', (_, { orcamento, numero_nfe }) => db.nfe.registrar(orcamento, numero_nfe))
+
+// --- PEDIDOS DE COMPRA ---
+ipcMain.handle('pedidosCompra:listar', (_, filtros) => db.pedidosCompra.listar(filtros))
+ipcMain.handle('pedidosCompra:salvar', (_, dados) => db.pedidosCompra.salvar(dados))
+ipcMain.handle('pedidosCompra:cancelar', (_, numero) => db.pedidosCompra.cancelar(numero))
+ipcMain.handle('pedidosCompra:receber', (_, numero) => db.pedidosCompra.receber(numero))
+ipcMain.handle('pedidosCompra:proximoNumero', () => db.pedidosCompra.proximoNumero())
+
+// --- CHEQUES ---
+ipcMain.handle('cheques:listar', (_, filtros) => db.cheques.listar(filtros))
+ipcMain.handle('cheques:salvar', (_, dados) => db.cheques.salvar(dados))
+ipcMain.handle('cheques:baixar', (_, { id, data_compensacao, usuario }) => db.cheques.baixar(id, data_compensacao, usuario))
+ipcMain.handle('cheques:devolver', (_, { id, usuario }) => db.cheques.devolver(id, usuario))
+
+// --- LANÇAMENTOS EXTRAS ---
+ipcMain.handle('lancamentosExtras:listar', (_, filtros) => db.lancamentosExtras.listar(filtros))
+ipcMain.handle('lancamentosExtras:salvar', (_, dados) => db.lancamentosExtras.salvar(dados))
+ipcMain.handle('lancamentosExtras:pagar', (_, { id, usuario }) => db.lancamentosExtras.pagar(id, usuario))
+ipcMain.handle('lancamentosExtras:cancelar', (_, id) => db.lancamentosExtras.cancelar(id))
+
+// --- REAJUSTES DE PREÇO ---
+ipcMain.handle('reajustesPreco:listar', (_, filtros) => db.reajustesPreco.listar(filtros))
+ipcMain.handle('reajustesPreco:aplicar', (_, { codigos, percentual, usuario }) => db.reajustesPreco.aplicar(codigos, percentual, usuario))
 
 // --- DASHBOARD ---
 ipcMain.handle('dashboard:resumo', (_, periodo) => {
@@ -208,166 +246,223 @@ function getVendasDir() {
   return dir
 }
 
-function gerarHtmlVenda(venda, empresa) {
-  const fmt = (v) =>
-    (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-  const fmtDate = (d) =>
-    d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : ''
+function fmtPhone(v) {
+  const d = (v || '').replace(/\D/g, '').slice(0, 11)
+  if (d.length <= 2) return d
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
+}
 
-  const formas = []
-  if ((venda.valor_pago_dinheiro || 0) > 0)
-    formas.push(`Dinheiro: ${fmt(venda.valor_pago_dinheiro)}`)
-  if ((venda.valor_pago_cartao_credito || 0) > 0)
-    formas.push(`Cartão Crédito: ${fmt(venda.valor_pago_cartao_credito)}`)
-  if ((venda.valor_pago_cartao_debito || 0) > 0)
-    formas.push(`Cartão Débito: ${fmt(venda.valor_pago_cartao_debito)}`)
-  if ((venda.valor_pago_cheque || 0) > 0)
-    formas.push(`Cheque: ${fmt(venda.valor_pago_cheque)}`)
-  if ((venda.valor_pago_haver || 0) > 0)
-    formas.push(`Haver: ${fmt(venda.valor_pago_haver)}`)
-  if ((venda.valor_troco || 0) > 0)
-    formas.push(`Troco: ${fmt(venda.valor_troco)}`)
+function gerarHtmlVenda(venda, empresa, cliente, saldoCR, vencimentos) {
+  const fmtV = (v) => (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const fmtDate = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : ''
+  const now = new Date()
+  const impresso = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR')
 
-  const linhasVazias = Math.max(0, 6 - (venda.itens || []).length)
+  // Endereço da empresa
+  const endEmpresa = [empresa.endereco, empresa.numero].filter(Boolean).join(', ')
+  const cidEmpresa = [empresa.bairro, empresa.cidade, empresa.uf, empresa.cep].filter(Boolean).join(' ')
+  const telEmpresa = [empresa.telefone, empresa.celular].filter(Boolean).map(fmtPhone).join(' / ')
 
-  const itensHtml = (venda.itens || [])
-    .map(
-      (item, i) => `
+  // Endereço do cliente
+  const endCliente = cliente
+    ? [cliente.logradouro, cliente.numero].filter(Boolean).join(', ') + (cliente.bairro ? ' ' + cliente.bairro : '') + ' ' + (cliente.cidade || '') + (cliente.uf ? '-' + cliente.uf : '') + (cliente.cep ? ' ' + cliente.cep : '')
+    : ''
+  const cnpjCliente = cliente ? [cliente.cgc ? `CNPJ: ${cliente.cgc}` : (cliente.cpf ? `CPF: ${cliente.cpf}` : ''), cliente.ie ? `IE: ${cliente.ie}` : ''].filter(Boolean).join(' ') : ''
+  const telCliente = cliente ? [cliente.telefone, cliente.celular].filter(Boolean).map(fmtPhone).join(' / ') : ''
+
+  // Itens
+  const itens = venda.itens || []
+  const totalQtde = itens.reduce((s, i) => s + (i.quantidade || 0), 0)
+  const totalDescto = itens.reduce((s, i) => s + (i.valor_desconto || 0), 0)
+  const totalProd = itens.reduce((s, i) => s + (i.valor_total || 0), 0)
+
+  const linhasVazias = Math.max(0, 5 - itens.length)
+  const itensHtml = itens.map(item => `
     <tr>
-      <td style="text-align:center">${i + 1}</td>
-      <td style="text-align:center;font-family:monospace">${item.codigo_produto}</td>
+      <td style="font-family:monospace">${item.codigo_produto}</td>
       <td>${item.descricao || ''}</td>
-      <td style="text-align:center">${item.quantidade}</td>
       <td style="text-align:center">${item.unidade || 'UN'}</td>
-      <td style="text-align:right">${fmt(item.preco_unitario)}</td>
-      <td style="text-align:right">${(item.valor_desconto || 0) > 0 ? fmt(item.valor_desconto) : '-'}</td>
-      <td style="text-align:right;font-weight:600">${fmt(item.valor_total)}</td>
-    </tr>`,
-    )
-    .join('')
+      <td style="text-align:right">${fmtV(item.quantidade)}</td>
+      <td style="text-align:right">${fmtV(item.preco_unitario)}</td>
+      <td style="text-align:right">${fmtV(item.valor_desconto)}</td>
+      <td style="text-align:right;font-weight:600">${fmtV(item.valor_total)}</td>
+    </tr>`).join('')
+  const vaziosHtml = Array(linhasVazias).fill('<tr><td colspan="7" style="height:18px">&nbsp;</td></tr>').join('')
 
-  const vaziosHtml = Array(linhasVazias)
-    .fill(
-      '<tr><td colspan="8" style="height:22px;border-color:#e5e5e5">&nbsp;</td></tr>',
-    )
-    .join('')
+  // Vencimentos
+  const vencHtml = (vencimentos || []).length > 0
+    ? vencimentos.map(v => `<tr><td>${fmtDate(v.data_vencimento)}</td><td style="text-align:right">${fmtV(v.valor_docto)}</td></tr>`).join('')
+    : '<tr><td colspan="2" style="color:#666">-</td></tr>'
+
+  // Vendedor
+  const vendedor = venda.usuario_cadastro || '-'
 
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#111;padding:18px 22px}
-  .topo{text-align:center;padding-bottom:10px;margin-bottom:10px;border-bottom:2px solid #111}
-  .topo h1{font-size:17px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
-  .topo p{font-size:10px;color:#444;margin-top:3px}
-  .titulo-doc{text-align:center;font-size:13px;font-weight:700;text-transform:uppercase;
-    border:1px solid #111;padding:5px;margin-bottom:10px;letter-spacing:1px}
-  .bloco{border:1px solid #bbb;padding:7px 10px;margin-bottom:8px;border-radius:2px}
-  .label{font-size:9px;color:#666;text-transform:uppercase;font-weight:600;margin-bottom:2px}
-  .row-info{display:flex;gap:20px}
-  .col-info{flex:1}
-  table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:10px}
-  thead th{background:#f0f0f0;border:1px solid #999;padding:5px 6px;font-size:10px;font-weight:700}
-  tbody td{border:1px solid #ccc;padding:4px 6px}
-  tbody tr:nth-child(even){background:#fafafa}
-  .totais{display:flex;justify-content:flex-end;margin-bottom:8px}
-  .totais-box{width:240px;border:1px solid #bbb}
-  .totais-row{display:flex;justify-content:space-between;padding:4px 10px;border-bottom:1px solid #e5e5e5;font-size:11px}
-  .totais-row.total-final{background:#f0f0f0;font-weight:700;font-size:13px;border-bottom:none}
-  .pagto{border:1px solid #bbb;padding:7px 10px;margin-bottom:8px;border-radius:2px}
-  .assinaturas{display:flex;gap:24px;margin-top:24px}
-  .ass{flex:1;border-top:1px solid #111;padding-top:5px;text-align:center;font-size:10px;color:#555}
-  .rodape{text-align:center;font-size:8px;color:#aaa;margin-top:14px;padding-top:6px;border-top:1px solid #e5e5e5}
-  @media print{body{padding:6px 10px}@page{margin:8mm;size:A4}}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;font-size:10px;color:#000;padding:10px 14px}
+table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:4px}
+th,td{border:1px solid #000;padding:2px 5px;vertical-align:top}
+th{background:#f0f0f0;font-weight:700;font-size:9px}
+.nb{border:none}
+.bb{border-bottom:1px solid #000}
+.bt{border-top:1px solid #000}
+.br{border-right:1px solid #000}
+.bl{border-left:1px solid #000}
+.outer{border:1px solid #000;margin-bottom:4px}
+@page{margin:8mm;size:A4}
 </style></head>
 <body>
 
-<div class="topo">
-  <h1>${empresa.empresa_razao_social || 'ELTER GOLLINO'}</h1>
-  <p>${empresa.empresa_nome_fantasia || 'GOLLINO M.E'} &nbsp;|&nbsp; CNPJ: ${empresa.empresa_cnpj || ''} &nbsp;|&nbsp; ${empresa.empresa_cidade || 'Orlândia'} - ${empresa.empresa_uf || 'SP'}</p>
-  <p>Regime: ${empresa.empresa_regime || 'Simples Nacional'}</p>
-</div>
+<!-- CABEÇALHO: empresa esquerda, doc direita -->
+<table style="margin-bottom:6px">
+  <tr>
+    <td class="nb" style="width:36px;vertical-align:middle;padding-right:6px">
+      <svg width="34" height="34" viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg">
+        <rect width="34" height="34" rx="4" fill="#1a56db"/>
+        <path d="M6 8h3l3 12h12l2-8H10" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="14" cy="24" r="2" fill="#fff"/><circle cx="22" cy="24" r="2" fill="#fff"/>
+      </svg>
+    </td>
+    <td class="nb" style="vertical-align:top;line-height:1.5">
+      <strong style="font-size:13px">${empresa.razao_social}</strong><br>
+      ${endEmpresa ? `Endereço: ${endEmpresa} ${cidEmpresa}<br>` : ''}
+      CNPJ: ${empresa.cnpj || '—'}${empresa.ie ? ` &nbsp; IE: ${empresa.ie}` : ''}<br>
+      ${telEmpresa ? `Telefone(s): ${telEmpresa}<br>` : ''}
+      ${empresa.email ? `Email: ${empresa.email}` : ''}
+    </td>
+    <td class="nb" style="text-align:right;vertical-align:top;line-height:1.6;font-size:9px;white-space:nowrap">
+      Impresso em: ${impresso}<br>
+      Página: 1<br>
+      <strong>Pedido de Venda</strong><br>
+      <strong style="font-size:14px">${venda.orcamento}</strong>
+    </td>
+  </tr>
+</table>
 
-<div class="titulo-doc">Pedido de Venda &nbsp; Nº ${venda.orcamento}</div>
+<!-- CLIENTE -->
+<table style="margin-bottom:4px">
+  <tr>
+    <td style="border:1px solid #000;padding:3px 5px">
+      <table style="margin:0;border:none">
+        <tr>
+          <td class="nb" style="width:100%">
+            <strong>Cliente: ${venda.codigo_cliente || ''} - ${venda.nome_cliente || 'Consumidor'}</strong>
+          </td>
+          <td class="nb" style="white-space:nowrap;text-align:right;padding-left:16px">
+            <strong>Saldo CR (dívida): ${fmtV(saldoCR)}</strong>
+          </td>
+        </tr>
+        ${endCliente ? `<tr><td class="nb" colspan="2">Endereço: ${endCliente.trim()}</td></tr>` : ''}
+        ${cnpjCliente ? `<tr><td class="nb" colspan="2">${cnpjCliente}</td></tr>` : ''}
+        <tr>
+          <td class="nb">${telCliente ? `Telefone(s): ${telCliente}` : ''}</td>
+          <td class="nb" style="text-align:right;white-space:nowrap;padding-left:16px"><strong>Haver (crédito): ${fmtV(cliente?.haver || 0)}</strong></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
 
-<div class="bloco">
-  <div class="row-info" style="margin-bottom:7px">
-    <div class="col-info">
-      <div class="label">Data</div>
-      <strong>${fmtDate(venda.data)}</strong>
-    </div>
-    <div class="col-info">
-      <div class="label">Tipo de Venda</div>
-      <strong>${venda.tipo_venda === 'C' ? 'Convênio / Prazo' : 'À Vista'}</strong>
-    </div>
-    <div class="col-info">
-      <div class="label">Operador</div>
-      <strong>${venda.usuario_cadastro || '-'}</strong>
-    </div>
-    <div class="col-info">
-      <div class="label">Caixa</div>
-      <strong>${venda.numero_caixa || '001'}</strong>
-    </div>
-  </div>
-  <div class="row-info">
-    <div class="col-info" style="flex:2">
-      <div class="label">Cliente</div>
-      <strong style="font-size:13px">${venda.nome_cliente || venda.codigo_cliente}</strong>
-    </div>
-    <div class="col-info">
-      <div class="label">Código</div>
-      <strong style="font-family:monospace">${venda.codigo_cliente}</strong>
-    </div>
-  </div>
-</div>
+<!-- VENDEDOR / DATA -->
+<table style="margin-bottom:4px">
+  <tr>
+    <td style="border:1px solid #000;padding:3px 5px">
+      <strong>Vendedor: ${vendedor}</strong>
+      &nbsp;&nbsp;&nbsp; ${fmtDate(venda.data)}
+      &nbsp;&nbsp;&nbsp; ${venda.orcamento}
+    </td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #000;padding:3px 5px">
+      <strong>Observação:</strong> ${venda.observacao || ''}
+    </td>
+  </tr>
+</table>
 
+<!-- PRODUTOS -->
 <table>
   <thead>
     <tr>
-      <th style="width:28px;text-align:center">Nº</th>
-      <th style="width:80px;text-align:center">Código</th>
+      <th style="width:80px">Produto</th>
       <th>Descrição</th>
-      <th style="width:48px;text-align:center">Qtde</th>
-      <th style="width:36px;text-align:center">UN</th>
-      <th style="width:88px;text-align:right">Preço Unit.</th>
-      <th style="width:72px;text-align:right">Desconto</th>
-      <th style="width:88px;text-align:right">Total</th>
+      <th style="width:36px;text-align:center">UN.</th>
+      <th style="width:50px;text-align:right">Qtde</th>
+      <th style="width:72px;text-align:right">Unitário</th>
+      <th style="width:60px;text-align:right">Descto</th>
+      <th style="width:80px;text-align:right">Total</th>
     </tr>
   </thead>
   <tbody>
     ${itensHtml}
     ${vaziosHtml}
+    <tr style="background:#f0f0f0;font-weight:700">
+      <td colspan="3" style="text-align:right">Total Produtos:</td>
+      <td style="text-align:right">${fmtV(totalQtde)}</td>
+      <td></td>
+      <td style="text-align:right">${fmtV(totalDescto)}</td>
+      <td style="text-align:right">${fmtV(totalProd)}</td>
+    </tr>
   </tbody>
 </table>
 
-<div style="display:flex;gap:12px;margin-bottom:8px;align-items:flex-start">
-  <div class="pagto" style="flex:1">
-    <div class="label" style="margin-bottom:5px">Forma de Pagamento</div>
-    ${formas.length > 0 ? formas.map((f) => `<div style="font-weight:600;margin-bottom:2px">${f}</div>`).join('') : '<div style="color:#888">-</div>'}
-  </div>
-  <div class="bloco" style="flex:1;margin-bottom:0">
-    <div class="label" style="margin-bottom:4px">Observação</div>
-    <div style="min-height:32px">${venda.observacao || ''}</div>
-  </div>
-</div>
+<!-- FORMAS DE PAGAMENTO + TOTAIS -->
+<table>
+  <thead>
+    <tr>
+      <th colspan="8" style="text-align:left">Formas de Pagamento</th>
+      <th colspan="4" style="text-align:right">Totais</th>
+    </tr>
+    <tr>
+      <th style="text-align:right">Dinheiro</th>
+      <th style="text-align:right">Cheque</th>
+      <th style="text-align:right">C. Crédito</th>
+      <th style="text-align:right">C. Débito</th>
+      <th style="text-align:right">Haver (crédito)</th>
+      <th style="text-align:right">Outros</th>
+      <th style="text-align:right">Convênio</th>
+      <th style="text-align:right">Troco</th>
+      <th style="text-align:right">Frete</th>
+      <th style="text-align:right">Acréscimos</th>
+      <th style="text-align:right">Descontos</th>
+      <th style="text-align:right;font-weight:700">Total Venda</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align:right">${fmtV(venda.valor_pago_dinheiro)}</td>
+      <td style="text-align:right">${fmtV(venda.valor_pago_cheque)}</td>
+      <td style="text-align:right">${fmtV(venda.valor_pago_cartao_credito)}</td>
+      <td style="text-align:right">${fmtV(venda.valor_pago_cartao_debito)}</td>
+      <td style="text-align:right">${fmtV(venda.valor_pago_haver)}</td>
+      <td style="text-align:right">0,00</td>
+      <td style="text-align:right">${fmtV(venda.codigo_forma_pagamento1 === 'Convênio' ? venda.valor_total : 0)}</td>
+      <td style="text-align:right">${fmtV(venda.valor_troco)}</td>
+      <td style="text-align:right">${fmtV(venda.taxa_entrega)}</td>
+      <td style="text-align:right">${fmtV(venda.valor_acrescimo)}</td>
+      <td style="text-align:right">${fmtV(venda.valor_descontos_itens)}</td>
+      <td style="text-align:right;font-weight:700">${fmtV(venda.valor_total)}</td>
+    </tr>
+  </tbody>
+</table>
 
-<div class="totais">
-  <div class="totais-box">
-    <div class="totais-row"><span>Subtotal dos produtos</span><span>${fmt(venda.valor_produtos || venda.valor_total)}</span></div>
-    ${(venda.valor_descontos_itens || 0) > 0 ? `<div class="totais-row"><span>Desc. itens</span><span>- ${fmt(venda.valor_descontos_itens)}</span></div>` : ''}
-    ${(venda.valor_desconto_final || 0) > 0 ? `<div class="totais-row"><span>Desc. geral</span><span>- ${fmt(venda.valor_desconto_final)}</span></div>` : ''}
-    ${(venda.taxa_entrega || 0) > 0 ? `<div class="totais-row"><span>Taxa de entrega</span><span>+ ${fmt(venda.taxa_entrega)}</span></div>` : ''}
-    <div class="totais-row total-final"><span>TOTAL</span><span>${fmt(venda.valor_total)}</span></div>
-  </div>
-</div>
+<!-- VENCIMENTOS -->
+<table style="width:200px;margin-bottom:6px">
+  <thead>
+    <tr><th colspan="2" style="text-align:left">Vencimento(s)</th></tr>
+  </thead>
+  <tbody>${vencHtml}</tbody>
+</table>
 
-<div class="assinaturas">
-  <div class="ass">Assinatura do Vendedor / Responsável</div>
-  <div class="ass">Assinatura do Cliente / Responsável</div>
-</div>
-
-<div class="rodape">
-  Emitido em ${new Date().toLocaleString('pt-BR')} &nbsp;|&nbsp; ${empresa.empresa_nome_fantasia || 'GOLLINO M.E'} &nbsp;|&nbsp; CNPJ: ${empresa.empresa_cnpj || ''}
-</div>
+<!-- ASSINATURAS -->
+<table style="margin-top:20px">
+  <tr>
+    <td style="border:none;border-top:1px solid #000;width:50%;text-align:center;padding-top:3px;font-size:9px">Retirado Por:</td>
+    <td style="border:none;border-top:1px solid #000;width:50%;text-align:center;padding-top:3px;font-size:9px">Conferido Por:</td>
+  </tr>
+</table>
 
 </body></html>`
 }
@@ -377,11 +472,49 @@ ipcMain.handle('pdf:gerarVenda', async (_, orcamento) => {
     const venda = db.vendas.buscar(orcamento)
     if (!venda) return { sucesso: false, erro: 'Venda não encontrada' }
 
+    // Empresa: tenta JSON blob primeiro, depois fallback nos campos individuais
     const configs = db.config.get()
-    const empresa = {}
-    for (const c of configs) empresa[c.chave] = c.valor
+    const cfgMap = {}
+    for (const c of configs) cfgMap[c.chave] = c.valor
+    const blob = cfgMap['empresa'] ? (() => { try { return JSON.parse(cfgMap['empresa']) } catch { return null } })() : null
+    const empresa = blob ? {
+      razao_social: blob.razao_social || cfgMap['empresa_razao_social'] || 'ELTER GOLLINO',
+      nome_fantasia: blob.nome_fantasia || cfgMap['empresa_nome_fantasia'] || 'GOLLINO M.E',
+      cnpj: blob.cnpj || cfgMap['empresa_cnpj'] || '',
+      ie: blob.ie || '',
+      telefone: blob.telefone || '',
+      celular: blob.celular || '',
+      email: blob.email || '',
+      endereco: blob.endereco || '',
+      numero: blob.numero || '',
+      bairro: blob.bairro || '',
+      cidade: blob.cidade || cfgMap['empresa_cidade'] || 'Orlândia',
+      uf: blob.uf || cfgMap['empresa_uf'] || 'SP',
+      cep: blob.cep || '',
+    } : {
+      razao_social: cfgMap['empresa_razao_social'] || 'ELTER GOLLINO',
+      nome_fantasia: cfgMap['empresa_nome_fantasia'] || 'GOLLINO M.E',
+      cnpj: cfgMap['empresa_cnpj'] || '',
+      ie: '', telefone: '', celular: '', email: '',
+      endereco: '', numero: '', bairro: '',
+      cidade: cfgMap['empresa_cidade'] || 'Orlândia',
+      uf: cfgMap['empresa_uf'] || 'SP', cep: '',
+    }
 
-    const html = gerarHtmlVenda(venda, empresa)
+    // Cliente completo
+    const cliente = venda.codigo_cliente ? db.clientes.buscar(venda.codigo_cliente) : null
+
+    // Saldo CR em aberto do cliente
+    let saldoCR = 0
+    if (venda.codigo_cliente) {
+      try { saldoCR = db.contasReceber.saldoCliente(venda.codigo_cliente) } catch (_) {}
+    }
+
+    // Vencimentos desta venda
+    let vencimentos = []
+    try { vencimentos = db.contasReceber.porOrcamento(venda.orcamento) } catch (_) {}
+
+    const html = gerarHtmlVenda(venda, empresa, cliente, saldoCR, vencimentos)
 
     const win = new BrowserWindow({
       show: false,
@@ -428,7 +561,42 @@ ipcMain.handle('backup:exportar', async () => {
   return { sucesso: false }
 })
 
+ipcMain.handle('backup:importar', async () => {
+  const { filePaths } = await dialog.showOpenDialog({
+    title: 'Selecionar arquivo de backup',
+    filters: [{ name: 'Banco de Dados', extensions: ['db'] }],
+    properties: ['openFile'],
+  })
+  if (!filePaths || filePaths.length === 0) return { sucesso: false }
+  const origem = filePaths[0]
+  const destino = getDbPath()
+  // Cria cópia de segurança do banco atual antes de sobrescrever
+  const seguranca = destino.replace('.db', `_antes_restauracao_${new Date().toISOString().slice(0,10)}.db`)
+  fs.copyFileSync(destino, seguranca)
+  fs.copyFileSync(origem, destino)
+  return { sucesso: true, seguranca }
+})
+
 // --- HAVER ---
 ipcMain.handle('haver:listar', (_, busca) => db.haver.listar(busca))
 ipcMain.handle('haver:ajustar', (_, dados) => db.haver.ajustar(dados))
 ipcMain.handle('haver:totalGeral', () => db.haver.totalGeral())
+
+// --- IMPORTAÇÃO CSV ---
+ipcMain.handle('importar:abrirArquivo', async () => {
+  const { filePaths } = await dialog.showOpenDialog({
+    title: 'Selecionar arquivo CSV',
+    filters: [{ name: 'CSV', extensions: ['csv', 'txt'] }],
+    properties: ['openFile'],
+  })
+  if (!filePaths || filePaths.length === 0) return null
+  return fs.readFileSync(filePaths[0], 'utf-8')
+})
+
+ipcMain.handle('importar:produtos', (_, linhas) => {
+  return db.importar.produtos(linhas)
+})
+
+ipcMain.handle('importar:clientes', (_, linhas) => {
+  return db.importar.clientes(linhas)
+})

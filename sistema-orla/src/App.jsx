@@ -12,8 +12,12 @@ import Estoque from './pages/Estoque'
 import Relatorios from './pages/Relatorios'
 import Devolucao from './pages/Devolucao'
 import Haver from './pages/Haver'
+import Importacao from './pages/Importacao'
 import EmBreve from './pages/EmBreve'
 import Configuracoes from './pages/Configuracoes'
+import Manutencao from './pages/Manutencao'
+import LogSistema from './pages/LogSistema'
+import NotaFiscal from './pages/NotaFiscal'
 import Assistente from './components/Assistente'
 import BuscaGlobal from './components/BuscaGlobal'
 import Login from './pages/Login'
@@ -69,14 +73,20 @@ const titulos = {
   'config-empresa': 'Configurações — Dados da empresa',
   'config-sistema': 'Configurações',
   manutencao: 'Manutenção',
+  'log-sistema': 'Log do Sistema',
 }
 
 export default function App() {
   const [pagina, setPagina] = useState('dashboard')
-  const [caixaAberto, setCaixaAberto] = useState(true)
+  const [caixaAberto, setCaixaAberto] = useState(false)
   const [buscaAberta, setBuscaAberta] = useState(false)
   const [usuario, setUsuario] = useState(null)
   const [temaEscuro, setTemaEscuro] = useState(false)
+
+  useEffect(() => {
+    window.api.caixa.status().then((s) => setCaixaAberto(s?.situacao === 'A')).catch(() => {})
+  }, [])
+
   useEffect(() => {
     function handler(e) {
       const tag = document.activeElement?.tagName
@@ -175,7 +185,7 @@ export default function App() {
     switch (pagina) {
       // Dashboard
       case 'dashboard':
-        return <Dashboard onNavigate={setPagina} caixaAberto={caixaAberto} />
+        return <Dashboard onNavigate={setPagina} caixaAberto={caixaAberto} usuario={usuario} />
 
       // Operacional
       case 'vendas':
@@ -191,6 +201,8 @@ export default function App() {
         return <ContasPagar usuario={usuario} />
       case 'haver':
         return <Haver usuario={usuario} />
+      case 'importacao':
+        return <Importacao />
       case 'abrir-caixa':
       case 'fechar-caixa':
         return (
@@ -227,6 +239,13 @@ export default function App() {
       case 'config-empresa':
       case 'config-sistema':
         return <Configuracoes />
+      case 'manutencao':
+        return <Manutencao />
+      case 'log-sistema':
+        return <LogSistema />
+      case 'nfe':
+      case 'documentos-fiscais':
+        return <NotaFiscal />
 
       // Telas ainda não construídas
       default:

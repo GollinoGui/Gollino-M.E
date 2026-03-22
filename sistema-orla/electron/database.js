@@ -43,11 +43,13 @@ function verificarSenha(senha, hashArmazenado) {
 }
 
 function hoje() {
-  return new Date().toISOString().slice(0, 10)
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
 function agora() {
-  return new Date().toISOString().slice(11, 19)
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`
 }
 
 // ============================================================
@@ -329,8 +331,8 @@ const vendas = {
           valor_total, valor_descontos_itens, valor_acrescimo, valor_desconto_final,
           valor_entrada, valor_restante, codigo_forma_pagamento1, valor_pago_dinheiro,
           valor_pago_cartao_credito, valor_pago_cartao_debito, valor_pago_cheque,
-          usuario_cadastro, data_cadastro, hora_cadastro)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          observacao, usuario_cadastro, data_cadastro, hora_cadastro)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         ).run(
           venda.orcamento,
           venda.codigo_cliente,
@@ -348,6 +350,7 @@ const vendas = {
           venda.valor_pago_cartao_credito || 0,
           venda.valor_pago_cartao_debito || 0,
           venda.valor_pago_cheque || 0,
+          venda.observacao || '',
           venda.usuario_cadastro,
           hoje(),
           agora(),
@@ -385,9 +388,14 @@ const vendas = {
           item.valor_total,
         )
 
-        db.prepare(
-          `UPDATE produtos SET estoque_atual = estoque_atual - ? WHERE codigo = ?`,
-        ).run(item.quantidade, item.codigo_produto)
+        db.prepare(`UPDATE produtos SET estoque_atual = estoque_atual - ? WHERE codigo = ?`)
+          .run(item.quantidade, item.codigo_produto)
+
+        // Registra saída no movimento de estoque
+        db.prepare(`INSERT INTO movimentos_estoque (tipo, produto_id, produto, quantidade, valor_unitario, total, data, obs, usuario, data_atualizacao, hora_atualizacao)
+          VALUES ('SAIDA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(item.codigo_produto, item.descricao, item.quantidade, item.preco_unitario || 0, item.valor_total || 0,
+            hoje(), `Venda #${venda.orcamento}`, venda.usuario_cadastro || 'sistema', hoje(), agora())
       }
 
       // Atualiza haver do cliente se necessário
@@ -446,18 +454,32 @@ const vendas = {
 
   cancelar(orcamento, motivo, usuario) {
     const cancelar = db.transaction(() => {
-      // Reverte estoque
-      const itens = db
-        .prepare(`SELECT * FROM vendas_itens WHERE orcamento = ?`)
-        .all(orcamento)
+      const venda = db.prepare(`SELECT * FROM vendas WHERE orcamento = ?`).get(orcamento)
+
+      // Reverte estoque e registra movimento
+      const itens = db.prepare(`SELECT * FROM vendas_itens WHERE orcamento = ?`).all(orcamento)
       for (const item of itens) {
-        db.prepare(
-          `UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE codigo = ?`,
-        ).run(item.quantidade, item.codigo_produto)
+        db.prepare(`UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE codigo = ?`)
+          .run(item.quantidade, item.codigo_produto)
+
+        db.prepare(`INSERT INTO movimentos_estoque (tipo, produto_id, produto, quantidade, valor_unitario, total, data, obs, usuario, data_atualizacao, hora_atualizacao)
+          VALUES ('ENTRADA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(item.codigo_produto, item.descricao, item.quantidade, item.preco_unitario || 0, item.valor_total || 0,
+            hoje(), `Cancelamento venda #${orcamento}`, usuario, hoje(), agora())
       }
-      db.prepare(
-        `UPDATE vendas SET situacao='C', usuario_cancelamento=?, data_cancelamento=?, motivo_cancelamento=? WHERE orcamento=?`,
-      ).run(usuario, hoje(), motivo, orcamento)
+
+      // Cancela contas a receber em aberto desta venda
+      db.prepare(`UPDATE contas_receber SET situacao_docto='C', data_atualizacao=?, hora_atualizacao=? WHERE nro_docto=? AND tipo_docto='VD' AND situacao_docto='A'`)
+        .run(hoje(), agora(), orcamento)
+
+      // Devolve haver ao cliente se a venda foi paga com haver
+      if (venda?.valor_pago_haver > 0 && venda?.codigo_cliente) {
+        db.prepare(`UPDATE clientes SET haver = haver + ? WHERE codigo = ?`)
+          .run(venda.valor_pago_haver, venda.codigo_cliente)
+      }
+
+      db.prepare(`UPDATE vendas SET situacao='C', usuario_cancelamento=?, data_cancelamento=?, motivo_cancelamento=? WHERE orcamento=?`)
+        .run(usuario, hoje(), motivo, orcamento)
     })
     cancelar()
     return { sucesso: true }
@@ -565,6 +587,15 @@ const contasReceber = {
     return { total: row?.total || 0 }
   },
 
+  porOrcamento(orcamento) {
+    return db.prepare(`SELECT * FROM contas_receber WHERE nro_docto = ? AND tipo_docto = 'VD' ORDER BY seq_docto`).all(String(orcamento))
+  },
+
+  saldoCliente(codigo_cliente) {
+    const row = db.prepare(`SELECT COALESCE(SUM(valor_docto - COALESCE(valor_pagamento,0)),0) as total FROM contas_receber WHERE codigo_cliente = ? AND situacao_docto = 'A'`).get(codigo_cliente)
+    return row?.total || 0
+  },
+
   receber(dados) {
     db.prepare(
       `UPDATE contas_receber SET situacao_docto='P', data_pagamento=?, valor_pagamento=?,
@@ -656,11 +687,10 @@ const contasPagar = {
 // ============================================================
 const caixa = {
   status() {
-    return db
-      .prepare(
-        `SELECT * FROM movimentos_caixa WHERE situacao = 'A' ORDER BY id DESC LIMIT 1`,
-      )
-      .get()
+    // Retorna o caixa aberto, ou se não houver, o último do dia (para mostrar o fechamento no log)
+    const aberto = db.prepare(`SELECT * FROM movimentos_caixa WHERE situacao = 'A' ORDER BY id DESC LIMIT 1`).get()
+    if (aberto) return aberto
+    return db.prepare(`SELECT * FROM movimentos_caixa WHERE data_abertura = ? ORDER BY id DESC LIMIT 1`).get(hoje())
   },
 
   abrir(dados) {
@@ -679,6 +709,10 @@ const caixa = {
       `UPDATE configuracoes SET valor = 'S' WHERE chave = 'caixa_aberto'`,
     ).run()
     return { sucesso: true }
+  },
+
+  sessoesHoje() {
+    return db.prepare(`SELECT * FROM movimentos_caixa WHERE data_abertura = ? ORDER BY id ASC`).all(hoje())
   },
 
   fechar(dados) {
@@ -960,6 +994,189 @@ const movimentosEstoque = {
   },
 }
 
+// ============================================================
+// IMPORTAÇÃO CSV
+// ============================================================
+function parseCSV(conteudo) {
+  const lines = conteudo.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    .split('\n')
+    .filter(l => l.trim() && !l.startsWith('#'))
+  if (lines.length < 2) return []
+  const sep = lines[0].includes(';') ? ';' : ','
+  const headers = lines[0].split(sep).map(h => h.trim().replace(/^"|"$/g, '').toLowerCase())
+  return lines.slice(1).map(line => {
+    const values = []
+    let cur = '', inQ = false
+    for (const ch of line) {
+      if (ch === '"') { inQ = !inQ }
+      else if (ch === sep && !inQ) { values.push(cur); cur = '' }
+      else cur += ch
+    }
+    values.push(cur)
+    const obj = {}
+    headers.forEach((h, i) => { obj[h] = (values[i] || '').trim().replace(/^"|"$/g, '') })
+    return obj
+  }).filter(r => Object.values(r).some(v => v))
+}
+
+function num(v, d = 0) { const n = parseFloat(String(v || '').replace(',', '.')); return isNaN(n) ? d : n }
+function str(v, d = '') { return String(v || d).trim() }
+function yn(v, d = 'N') {
+  const s = String(v || '').trim().toUpperCase()
+  return (s === 'S' || s === 'SIM' || s === '1') ? 'S' : (s === 'N' || s === 'NAO' || s === 'NÃO' || s === '0') ? 'N' : d
+}
+
+const importar = {
+  produtos(conteudo) {
+    const rows = parseCSV(conteudo)
+    const resultados = []
+
+    const stmt = db.prepare(`
+      INSERT INTO produtos (
+        codigo, descricao, descricao_menor, referencia, unidade,
+        codigo_grupo, codigo_linha,
+        preco_venda_vista, preco_venda_prazo, preco_venda_minimo,
+        custo_preco_unitario, preco_custo_atual,
+        estoque_atual, estoque_minimo, controla_estoque,
+        situacao_produto, data_cadastro, usuario_cadastro
+      ) VALUES (
+        @codigo, @descricao, @descricao_menor, @referencia, @unidade,
+        @codigo_grupo, @codigo_linha,
+        @preco_venda_vista, @preco_venda_prazo, @preco_venda_minimo,
+        @custo_preco_unitario, @preco_custo_atual,
+        @estoque_atual, @estoque_minimo, @controla_estoque,
+        @situacao_produto, @data_cadastro, @usuario_cadastro
+      )
+      ON CONFLICT(codigo) DO UPDATE SET
+        descricao = excluded.descricao,
+        descricao_menor = excluded.descricao_menor,
+        referencia = excluded.referencia,
+        unidade = excluded.unidade,
+        codigo_grupo = excluded.codigo_grupo,
+        codigo_linha = excluded.codigo_linha,
+        preco_venda_vista = excluded.preco_venda_vista,
+        preco_venda_prazo = excluded.preco_venda_prazo,
+        preco_venda_minimo = excluded.preco_venda_minimo,
+        custo_preco_unitario = excluded.custo_preco_unitario,
+        preco_custo_atual = excluded.preco_custo_atual,
+        estoque_atual = excluded.estoque_atual,
+        estoque_minimo = excluded.estoque_minimo,
+        controla_estoque = excluded.controla_estoque,
+        situacao_produto = excluded.situacao_produto,
+        data_atualizacao = @data_cadastro
+    `)
+
+    const existentes = new Set(db.prepare('SELECT codigo FROM produtos').all().map(r => r.codigo))
+
+    const run = db.transaction(() => {
+      for (const row of rows) {
+        const codigo = str(row['codigo'] || row['cod'])
+        const descricao = str(row['descricao'] || row['nome'] || row['produto'])
+        if (!codigo || !descricao) {
+          resultados.push({ codigo: codigo || '?', status: 'erro', motivo: 'código ou descrição ausente' })
+          continue
+        }
+        try {
+          stmt.run({
+            codigo,
+            descricao,
+            descricao_menor: str(row['descricao_menor'] || descricao.substring(0, 30)),
+            referencia: str(row['referencia'] || row['ref'] || row['ean'] || row['codigo_barras']),
+            unidade: str(row['unidade'] || row['un'] || 'UN'),
+            codigo_grupo: str(row['codigo_grupo'] || row['grupo']),
+            codigo_linha: str(row['codigo_linha'] || row['linha']),
+            preco_venda_vista: num(row['preco_venda_vista'] || row['preco_vista'] || row['preco'] || row['valor']),
+            preco_venda_prazo: num(row['preco_venda_prazo'] || row['preco_prazo'] || row['preco'] || row['valor']),
+            preco_venda_minimo: num(row['preco_venda_minimo'] || row['preco_minimo']),
+            custo_preco_unitario: num(row['custo_preco_unitario'] || row['custo'] || row['preco_custo']),
+            preco_custo_atual: num(row['preco_custo_atual'] || row['custo'] || row['preco_custo']),
+            estoque_atual: num(row['estoque_atual'] || row['estoque'] || row['saldo']),
+            estoque_minimo: num(row['estoque_minimo'] || row['minimo']),
+            controla_estoque: yn(row['controla_estoque'] || row['controla'], 'S'),
+            situacao_produto: str(row['situacao'], 'A'),
+            data_cadastro: hoje(),
+            usuario_cadastro: 'importacao',
+          })
+          resultados.push({ codigo, descricao, status: existentes.has(codigo) ? 'atualizado' : 'inserido' })
+        } catch (e) {
+          resultados.push({ codigo, descricao, status: 'erro', motivo: e.message })
+        }
+      }
+    })
+    run()
+    return { sucesso: true, resultados, total: rows.length }
+  },
+
+  clientes(conteudo) {
+    const rows = parseCSV(conteudo)
+    const resultados = []
+
+    const stmt = db.prepare(`
+      INSERT INTO clientes (
+        codigo, nome, nome_fantasia, cpf, rg, cgc, ie,
+        logradouro, numero, bairro, cep, cidade, uf,
+        telefone, celular, email, limite_credito, haver,
+        situacao_cliente, data_cadastro, usuario_cadastro
+      ) VALUES (
+        @codigo, @nome, @nome_fantasia, @cpf, @rg, @cgc, @ie,
+        @logradouro, @numero, @bairro, @cep, @cidade, @uf,
+        @telefone, @celular, @email, @limite_credito, @haver,
+        @situacao_cliente, @data_cadastro, @usuario_cadastro
+      )
+      ON CONFLICT(codigo) DO UPDATE SET
+        nome = excluded.nome, nome_fantasia = excluded.nome_fantasia,
+        cpf = excluded.cpf, cgc = excluded.cgc, ie = excluded.ie,
+        logradouro = excluded.logradouro, numero = excluded.numero,
+        bairro = excluded.bairro, cep = excluded.cep, cidade = excluded.cidade, uf = excluded.uf,
+        telefone = excluded.telefone, celular = excluded.celular, email = excluded.email,
+        limite_credito = excluded.limite_credito, situacao_cliente = excluded.situacao_cliente,
+        data_atualizacao = @data_cadastro
+    `)
+
+    const existentes = new Set(db.prepare('SELECT codigo FROM clientes').all().map(r => r.codigo))
+
+    const run = db.transaction(() => {
+      for (const row of rows) {
+        const codigo = str(row['codigo'] || row['cod'])
+        const nome = str(row['nome'] || row['nome_cliente'] || row['cliente'] || row['razao_social'])
+        if (!codigo || !nome) {
+          resultados.push({ codigo: codigo || '?', status: 'erro', motivo: 'código ou nome ausente' })
+          continue
+        }
+        try {
+          stmt.run({
+            codigo, nome,
+            nome_fantasia: str(row['nome_fantasia'] || row['fantasia']),
+            cpf: str(row['cpf']),
+            rg: str(row['rg']),
+            cgc: str(row['cgc'] || row['cnpj'] || row['cpf_cnpj']),
+            ie: str(row['ie'] || row['inscricao_estadual']),
+            logradouro: str(row['logradouro'] || row['endereco'] || row['rua']),
+            numero: str(row['numero'] || row['num']),
+            bairro: str(row['bairro']),
+            cep: str(row['cep']),
+            cidade: str(row['cidade']),
+            uf: str(row['uf'] || row['estado']),
+            telefone: str(row['telefone'] || row['fone'] || row['tel']),
+            celular: str(row['celular'] || row['cel']),
+            email: str(row['email']),
+            limite_credito: num(row['limite_credito'] || row['limite']),
+            haver: num(row['haver'] || row['credito'] || row['saldo_haver']),
+            situacao_cliente: str(row['situacao'], 'A'),
+            data_cadastro: hoje(),
+            usuario_cadastro: 'importacao',
+          })
+          resultados.push({ codigo, nome, status: existentes.has(codigo) ? 'atualizado' : 'inserido' })
+        } catch (e) {
+          resultados.push({ codigo, nome, status: 'erro', motivo: e.message })
+        }
+      }
+    })
+    run()
+    return { sucesso: true, resultados, total: rows.length }
+  },
+}
+
 const haver = {
   listar(busca) {
     let sql = `SELECT codigo, nome, cpf_cnpj, telefone, haver FROM clientes WHERE haver > 0`
@@ -985,6 +1202,276 @@ const haver = {
   },
 }
 
+// ============================================================
+// PEDIDOS DE COMPRA
+// ============================================================
+const pedidosCompra = {
+  proximoNumero() {
+    const row = db.prepare(`SELECT MAX(CAST(numero AS INTEGER)) as ultimo FROM pedidos_compra`).get()
+    return { numero: ((row?.ultimo || 0) + 1).toString().padStart(6, '0') }
+  },
+  listar(filtros = {}) {
+    let sql = `SELECT * FROM pedidos_compra WHERE 1=1`
+    const params = []
+    if (filtros.situacao && filtros.situacao !== 'todos') { sql += ` AND situacao = ?`; params.push(filtros.situacao) }
+    if (filtros.busca) { sql += ` AND (fornecedor LIKE ? OR numero LIKE ?)`; const b = `%${filtros.busca}%`; params.push(b, b) }
+    sql += ` ORDER BY id DESC LIMIT 200`
+    const rows = db.prepare(sql).all(...params)
+    return rows.map(r => ({ ...r, itens: db.prepare(`SELECT * FROM pedidos_compra_itens WHERE numero = ?`).all(r.numero) }))
+  },
+  salvar(dados) {
+    const { itens, ...pc } = dados
+    db.transaction(() => {
+      const existe = db.prepare(`SELECT id FROM pedidos_compra WHERE numero = ?`).get(pc.numero)
+      if (existe) {
+        db.prepare(`UPDATE pedidos_compra SET fornecedor=?,data=?,data_previsao=?,situacao=?,valor_total=?,observacao=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE numero=?`)
+          .run(pc.fornecedor, pc.data, pc.data_previsao||null, pc.situacao||'ABERTO', pc.valor_total||0, pc.observacao||'', pc.usuario||'', hoje(), agora(), pc.numero)
+        db.prepare(`DELETE FROM pedidos_compra_itens WHERE numero = ?`).run(pc.numero)
+      } else {
+        db.prepare(`INSERT INTO pedidos_compra (numero,fornecedor,data,data_previsao,situacao,valor_total,observacao,usuario,data_atualizacao,hora_atualizacao) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+          .run(pc.numero, pc.fornecedor, pc.data||hoje(), pc.data_previsao||null, 'ABERTO', pc.valor_total||0, pc.observacao||'', pc.usuario||'', hoje(), agora())
+      }
+      const ins = db.prepare(`INSERT INTO pedidos_compra_itens (numero,codigo_produto,descricao,quantidade,preco_unitario,total) VALUES (?,?,?,?,?,?)`)
+      for (const item of itens || []) ins.run(pc.numero, item.codigo_produto, item.descricao, item.quantidade, item.preco_unitario||0, item.total||0)
+    })()
+    return { sucesso: true, numero: pc.numero }
+  },
+  cancelar(numero) {
+    db.prepare(`UPDATE pedidos_compra SET situacao='CANCELADO',data_atualizacao=?,hora_atualizacao=? WHERE numero=?`).run(hoje(), agora(), numero)
+    return { sucesso: true }
+  },
+  receber(numero) {
+    db.prepare(`UPDATE pedidos_compra SET situacao='RECEBIDO',data_atualizacao=?,hora_atualizacao=? WHERE numero=?`).run(hoje(), agora(), numero)
+    return { sucesso: true }
+  },
+}
+
+// ============================================================
+// CHEQUES
+// ============================================================
+const cheques = {
+  listar(filtros = {}) {
+    let sql = `SELECT * FROM cheques WHERE 1=1`
+    const params = []
+    if (filtros.tipo) { sql += ` AND tipo = ?`; params.push(filtros.tipo) }
+    if (filtros.situacao && filtros.situacao !== 'todos') { sql += ` AND situacao = ?`; params.push(filtros.situacao) }
+    if (filtros.busca) { sql += ` AND (nome_pessoa LIKE ? OR numero LIKE ?)`; const b = `%${filtros.busca}%`; params.push(b, b) }
+    if (filtros.dataInicio) { sql += ` AND data_vencimento >= ?`; params.push(filtros.dataInicio) }
+    if (filtros.dataFim) { sql += ` AND data_vencimento <= ?`; params.push(filtros.dataFim) }
+    sql += ` ORDER BY data_vencimento ASC, id DESC LIMIT 300`
+    return db.prepare(sql).all(...params)
+  },
+  salvar(dados) {
+    if (dados.id) {
+      db.prepare(`UPDATE cheques SET tipo=?,numero=?,banco=?,valor=?,data_emissao=?,data_vencimento=?,codigo_pessoa=?,nome_pessoa=?,nro_docto=?,situacao=?,observacao=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`)
+        .run(dados.tipo, dados.numero||'', dados.banco||'', dados.valor||0, dados.data_emissao||null, dados.data_vencimento||null, dados.codigo_pessoa||'', dados.nome_pessoa||'', dados.nro_docto||'', dados.situacao||'A', dados.observacao||'', dados.usuario||'', hoje(), agora(), dados.id)
+    } else {
+      db.prepare(`INSERT INTO cheques (tipo,numero,banco,valor,data_emissao,data_vencimento,codigo_pessoa,nome_pessoa,nro_docto,situacao,observacao,usuario,data_atualizacao,hora_atualizacao) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(dados.tipo, dados.numero||'', dados.banco||'', dados.valor||0, dados.data_emissao||null, dados.data_vencimento||null, dados.codigo_pessoa||'', dados.nome_pessoa||'', dados.nro_docto||'', 'A', dados.observacao||'', dados.usuario||'', hoje(), agora())
+    }
+    return { sucesso: true }
+  },
+  baixar(id, data_compensacao, usuario) {
+    db.prepare(`UPDATE cheques SET situacao='C',data_compensacao=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`)
+      .run(data_compensacao || hoje(), usuario||'', hoje(), agora(), id)
+    return { sucesso: true }
+  },
+  devolver(id, usuario) {
+    db.prepare(`UPDATE cheques SET situacao='D',usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`)
+      .run(usuario||'', hoje(), agora(), id)
+    return { sucesso: true }
+  },
+}
+
+// ============================================================
+// LANÇAMENTOS EXTRAS (receitas, despesas, vales)
+// ============================================================
+const lancamentosExtras = {
+  listar(filtros = {}) {
+    let sql = `SELECT * FROM lancamentos_extras WHERE 1=1`
+    const params = []
+    if (filtros.tipo) { sql += ` AND tipo = ?`; params.push(filtros.tipo) }
+    if (filtros.situacao && filtros.situacao !== 'todos') { sql += ` AND situacao = ?`; params.push(filtros.situacao) }
+    if (filtros.busca) { sql += ` AND (descricao LIKE ? OR nome_pessoa LIKE ?)`; const b = `%${filtros.busca}%`; params.push(b, b) }
+    if (filtros.dataInicio) { sql += ` AND data >= ?`; params.push(filtros.dataInicio) }
+    if (filtros.dataFim) { sql += ` AND data <= ?`; params.push(filtros.dataFim) }
+    sql += ` ORDER BY data DESC, id DESC LIMIT 300`
+    return db.prepare(sql).all(...params)
+  },
+  salvar(dados) {
+    if (dados.id) {
+      db.prepare(`UPDATE lancamentos_extras SET tipo=?,descricao=?,valor=?,data=?,nome_pessoa=?,forma_pagamento=?,situacao=?,observacao=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`)
+        .run(dados.tipo, dados.descricao, dados.valor||0, dados.data, dados.nome_pessoa||'', dados.forma_pagamento||'', dados.situacao||'A', dados.observacao||'', dados.usuario||'', hoje(), agora(), dados.id)
+    } else {
+      db.prepare(`INSERT INTO lancamentos_extras (tipo,descricao,valor,data,nome_pessoa,forma_pagamento,situacao,observacao,usuario,data_atualizacao,hora_atualizacao) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(dados.tipo, dados.descricao, dados.valor||0, dados.data||hoje(), dados.nome_pessoa||'', dados.forma_pagamento||'', 'A', dados.observacao||'', dados.usuario||'', hoje(), agora())
+    }
+    return { sucesso: true }
+  },
+  pagar(id, usuario) {
+    db.prepare(`UPDATE lancamentos_extras SET situacao='P',data_pagamento=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`)
+      .run(hoje(), usuario||'', hoje(), agora(), id)
+    return { sucesso: true }
+  },
+  cancelar(id) {
+    db.prepare(`UPDATE lancamentos_extras SET situacao='C',data_atualizacao=?,hora_atualizacao=? WHERE id=?`)
+      .run(hoje(), agora(), id)
+    return { sucesso: true }
+  },
+}
+
+// ============================================================
+// REAJUSTE DE PREÇOS
+// ============================================================
+const reajustesPreco = {
+  listar(filtros = {}) {
+    let sql = `SELECT * FROM reajustes_preco WHERE 1=1`
+    const params = []
+    if (filtros.dataInicio) { sql += ` AND data >= ?`; params.push(filtros.dataInicio) }
+    if (filtros.dataFim) { sql += ` AND data <= ?`; params.push(filtros.dataFim) }
+    if (filtros.busca) { sql += ` AND produto LIKE ?`; params.push(`%${filtros.busca}%`) }
+    sql += ` ORDER BY id DESC LIMIT 500`
+    return db.prepare(sql).all(...params)
+  },
+  aplicar(codigos, percentual, usuario) {
+    // codigos: array de código de produto; percentual: float (ex: 10 = +10%, -5 = -5%)
+    const fator = 1 + (percentual / 100)
+    const insLog = db.prepare(`INSERT INTO reajustes_preco (codigo_produto,produto,preco_anterior,preco_novo,percentual,data,usuario) VALUES (?,?,?,?,?,?,?)`)
+    db.transaction(() => {
+      for (const codigo of codigos) {
+        const prod = db.prepare(`SELECT codigo, descricao, preco_venda_vista, preco_venda_prazo FROM produtos WHERE codigo = ?`).get(codigo)
+        if (!prod) continue
+        const novoVista = Math.round(prod.preco_venda_vista * fator * 100) / 100
+        const novoPrazo = Math.round(prod.preco_venda_prazo * fator * 100) / 100
+        db.prepare(`UPDATE produtos SET preco_venda_vista=?,preco_venda_prazo=?,data_atualizacao=? WHERE codigo=?`)
+          .run(novoVista, novoPrazo, hoje(), codigo)
+        insLog.run(codigo, prod.descricao, prod.preco_venda_vista, novoVista, percentual, hoje(), usuario||'')
+      }
+    })()
+    return { sucesso: true, atualizados: codigos.length }
+  },
+}
+
+// ============================================================
+// NF-e
+// ============================================================
+const nfe = {
+  listar(filtros = {}) {
+    let sql = `
+      SELECT v.orcamento, v.data, v.hora_cadastro, v.valor_total, v.situacao,
+        v.numero_nfe, v.codigo_cliente, COALESCE(c.nome, 'Consumidor') as nome_cliente,
+        v.usuario_cadastro
+      FROM vendas v LEFT JOIN clientes c ON v.codigo_cliente = c.codigo
+      WHERE v.situacao NOT IN ('C')
+    `
+    const params = []
+    if (filtros.dataInicio) { sql += ` AND v.data >= ?`; params.push(filtros.dataInicio) }
+    if (filtros.dataFim) { sql += ` AND v.data <= ?`; params.push(filtros.dataFim) }
+    if (filtros.status === 'com') { sql += ` AND v.numero_nfe IS NOT NULL AND v.numero_nfe != ''` }
+    if (filtros.status === 'sem') { sql += ` AND (v.numero_nfe IS NULL OR v.numero_nfe = '')` }
+    if (filtros.busca) {
+      sql += ` AND (COALESCE(c.nome,'') LIKE ? OR v.orcamento LIKE ? OR v.numero_nfe LIKE ?)`
+      const b = `%${filtros.busca}%`
+      params.push(b, b, b)
+    }
+    sql += ` ORDER BY v.data DESC, v.hora_cadastro DESC LIMIT 500`
+    return db.prepare(sql).all(...params)
+  },
+
+  registrar(orcamento, numero_nfe) {
+    db.prepare(`UPDATE vendas SET numero_nfe = ? WHERE orcamento = ?`)
+      .run(numero_nfe || null, orcamento)
+    return { sucesso: true }
+  },
+}
+
+// ============================================================
+// LOG DO SISTEMA
+// ============================================================
+const log = {
+  listar(filtros = {}) {
+    const dataInicio = filtros.dataInicio || null
+    const dataFim = filtros.dataFim || null
+    const categoria = filtros.categoria || null
+
+    let sql = `
+      SELECT categoria, ref, descricao, valor, data, hora, usuario, extra
+      FROM (
+        SELECT 'VENDA' as categoria, v.orcamento as ref,
+          COALESCE(c.nome, 'Consumidor') as descricao,
+          v.valor_total as valor, v.data, v.hora_cadastro as hora,
+          COALESCE(v.usuario_cadastro,'') as usuario, '' as extra
+        FROM vendas v LEFT JOIN clientes c ON v.codigo_cliente = c.codigo
+        WHERE v.situacao NOT IN ('C','D')
+
+        UNION ALL
+
+        SELECT 'CANCELAMENTO', v.orcamento,
+          COALESCE(c.nome, 'Consumidor'),
+          v.valor_total,
+          COALESCE(v.data_cancelamento, v.data),
+          COALESCE(v.hora_cancelamento, v.hora_cadastro),
+          COALESCE(v.usuario_cancelamento,''),
+          COALESCE(v.motivo_cancelamento,'')
+        FROM vendas v LEFT JOIN clientes c ON v.codigo_cliente = c.codigo
+        WHERE v.situacao = 'C'
+
+        UNION ALL
+
+        SELECT 'ESTOQUE_' || tipo, CAST(id AS TEXT),
+          produto || ' ×' || CAST(CAST(quantidade AS INTEGER) AS TEXT),
+          total, data, hora_atualizacao,
+          '', COALESCE(obs,'')
+        FROM movimentos_estoque
+
+        UNION ALL
+
+        SELECT 'CAIXA_ABERTURA', CAST(id AS TEXT),
+          'Caixa aberto',
+          COALESCE(valor_abertura,0), data_abertura, hora_abertura,
+          COALESCE(usuario_abertura,''), ''
+        FROM movimentos_caixa WHERE data_abertura IS NOT NULL
+
+        UNION ALL
+
+        SELECT 'CAIXA_FECHAMENTO', CAST(id AS TEXT),
+          'Caixa fechado',
+          COALESCE(valor_fechamento,0), data_fechamento, hora_fechamento,
+          COALESCE(usuario_fechamento,''), ''
+        FROM movimentos_caixa WHERE situacao='F' AND data_fechamento IS NOT NULL
+
+        UNION ALL
+
+        SELECT 'RECEBIMENTO', cr.nro_docto,
+          COALESCE(c.nome,'Consumidor'),
+          cr.valor_docto, cr.data_pagamento, cr.hora_atualizacao,
+          COALESCE(cr.usuario,''), ''
+        FROM contas_receber cr LEFT JOIN clientes c ON cr.codigo_cliente = c.codigo
+        WHERE cr.situacao_docto='P' AND cr.data_pagamento IS NOT NULL
+      )
+      WHERE 1=1
+    `
+    const params = []
+    if (dataInicio) { sql += ` AND data >= ?`; params.push(dataInicio) }
+    if (dataFim) { sql += ` AND data <= ?`; params.push(dataFim) }
+    if (categoria) { sql += ` AND categoria LIKE ?`; params.push(categoria + '%') }
+    sql += ` ORDER BY data DESC, hora DESC LIMIT 500`
+    return db.prepare(sql).all(...params)
+  },
+}
+
+const manutencao = {
+  // Cancela CR abertos de vendas que já foram canceladas
+  corrigirCROrfaos() {
+    const resultado = db.prepare(`
+      UPDATE contas_receber SET situacao_docto='C', data_atualizacao=?, hora_atualizacao=?
+      WHERE tipo_docto='VD' AND situacao_docto='A'
+        AND nro_docto IN (SELECT orcamento FROM vendas WHERE situacao='C')
+    `).run(hoje(), agora())
+    return { corrigidos: resultado.changes }
+  },
+}
+
 module.exports = {
   init,
   login,
@@ -999,4 +1486,12 @@ module.exports = {
   preVendas,
   movimentosEstoque,
   haver,
+  importar,
+  manutencao,
+  log,
+  nfe,
+  pedidosCompra,
+  cheques,
+  lancamentosExtras,
+  reajustesPreco,
 }

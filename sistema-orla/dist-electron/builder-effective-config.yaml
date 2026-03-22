@@ -1,0 +1,23 @@
+directories:
+  output: dist-electron
+  buildResources: build
+appId: br.com.gollino.sistema
+productName: Gollino M.E
+files:
+  - filter:
+      - dist/**/*
+      - electron/**/*
+      - schema.sql
+win:
+  target: nsis
+  icon: public/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: public/icon.ico
+  uninstallerIcon: public/icon.ico
+  installerHeaderIcon: public/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Gollino M.E
+electronVersion: 41.0.3
