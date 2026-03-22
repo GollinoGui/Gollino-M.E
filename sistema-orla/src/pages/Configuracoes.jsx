@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react'
 import { Building2, Save, Upload } from 'lucide-react'
 
+function fmtPhone(v) {
+  const d = (v || '').replace(/\D/g, '').slice(0, 11)
+  if (d.length <= 2) return d
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
+}
+
 const dadosIniciais = {
   razao_social: 'Elter Gollino',
   nome_fantasia: 'Gollino M.E',
@@ -72,6 +80,23 @@ export default function Configuracoes() {
   const [abaAtiva, setAbaAtiva] = useState('empresa')
   const [backupMsg, setBackupMsg] = useState('')
   const [backupLoading, setBackupLoading] = useState(false)
+  const [restaurandoBackup, setRestaurandoBackup] = useState(false)
+
+  async function restaurarBackup() {
+    if (!window.confirm('Isso vai substituir o banco atual pelo arquivo selecionado. O banco atual será salvo como segurança. Continuar?')) return
+    setRestaurandoBackup(true)
+    setBackupMsg('')
+    try {
+      const res = await window.api.backup.importar()
+      if (res?.sucesso) {
+        setBackupMsg(`Restaurado com sucesso! Reinicie o sistema para aplicar. Segurança salva em: ${res.seguranca}`)
+      }
+    } catch {
+      setBackupMsg('Erro ao restaurar backup.')
+    } finally {
+      setRestaurandoBackup(false)
+    }
+  }
 
   async function fazerBackup() {
     setBackupLoading(true)
@@ -397,7 +422,12 @@ export default function Configuracoes() {
                       ) : (
                         <input
                           value={form[campo.key] || ''}
-                          onChange={f(campo.key)}
+                          onChange={
+                            campo.key === 'telefone' || campo.key === 'celular'
+                              ? (e) => setForm((p) => ({ ...p, [campo.key]: fmtPhone(e.target.value) }))
+                              : f(campo.key)
+                          }
+                          inputMode={campo.key === 'telefone' || campo.key === 'celular' ? 'numeric' : undefined}
                           style={{
                             width: '100%',
                             height: 36,
@@ -414,159 +444,11 @@ export default function Configuracoes() {
         )}
 
         {abaAtiva === 'sistema' && (
-          <div
-            style={{
-              maxWidth: 860,
-              margin: '0 auto',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 20,
-            }}
-          >
-            <div
-              style={{
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-lg)',
-                padding: 24,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 500,
-                  color: 'var(--text-secondary)',
-                  marginBottom: 16,
-                }}
-              >
-                PREFERÊNCIAS
-              </div>
-              <div
-                style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
-              >
-                {[
-                  {
-                    label: 'Imprimir cupom automaticamente ao finalizar venda',
-                    key: 'auto_print',
-                    value: true,
-                  },
-                  {
-                    label: 'Perguntar forma de pagamento ao fechar caixa',
-                    key: 'ask_payment',
-                    value: false,
-                  },
-                  {
-                    label: 'Mostrar estoque zerado em destaque na venda',
-                    key: 'show_zero',
-                    value: true,
-                  },
-                  {
-                    label: 'Exigir vendedor em todas as vendas',
-                    key: 'require_seller',
-                    value: false,
-                  },
-                ].map((opt) => (
-                  <label
-                    key={opt.key}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <input
-                      type='checkbox'
-                      defaultChecked={opt.value}
-                      style={{ width: 16, height: 16 }}
-                    />
-                    <span
-                      style={{ fontSize: 13, color: 'var(--text-primary)' }}
-                    >
-                      {opt.label}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-lg)',
-                padding: 24,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 500,
-                  color: 'var(--text-secondary)',
-                  marginBottom: 16,
-                }}
-              >
-                IMPRESSÃO
-              </div>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: 14,
-                }}
-              >
-                <div>
-                  <label
-                    style={{
-                      fontSize: 11,
-                      color: 'var(--text-secondary)',
-                      display: 'block',
-                      marginBottom: 4,
-                    }}
-                  >
-                    Largura do cupom
-                  </label>
-                  <select
-                    style={{ width: '100%', height: 36, padding: '0 10px' }}
-                  >
-                    <option>80mm (térmica padrão)</option>
-                    <option>58mm (térmica pequena)</option>
-                    <option>A4</option>
-                  </select>
-                </div>
-                <div>
-                  <label
-                    style={{
-                      fontSize: 11,
-                      color: 'var(--text-secondary)',
-                      display: 'block',
-                      marginBottom: 4,
-                    }}
-                  >
-                    Impressora padrão
-                  </label>
-                  <select
-                    style={{ width: '100%', height: 36, padding: '0 10px' }}
-                  >
-                    <option>Impressora padrão do sistema</option>
-                  </select>
-                </div>
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <label
-                    style={{
-                      fontSize: 11,
-                      color: 'var(--text-secondary)',
-                      display: 'block',
-                      marginBottom: 4,
-                    }}
-                  >
-                    Mensagem no rodapé do cupom
-                  </label>
-                  <input
-                    defaultValue='Obrigado pela preferência! Volte sempre.'
-                    style={{ width: '100%', height: 36, padding: '0 10px' }}
-                  />
-                </div>
+          <div style={{ maxWidth: 860, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 8 }}>PREFERÊNCIAS</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                Preferências de comportamento do sistema serão configuráveis em breve.
               </div>
             </div>
           </div>
@@ -695,23 +577,6 @@ export default function Configuracoes() {
                     copiar o arquivo de volta.
                   </div>
                 </div>
-                <button
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '10px 20px',
-                    background: 'var(--blue-700)',
-                    color: 'var(--surface)',
-                    borderRadius: 'var(--radius-md)',
-                    fontSize: 13,
-                    fontWeight: 500,
-                    alignSelf: 'flex-start',
-                  }}
-                >
-                  Conectar com Google Drive
-                </button>
-
                 <div
                   style={{
                     borderTop: '1px solid var(--border)',
@@ -759,6 +624,8 @@ export default function Configuracoes() {
                       {backupLoading ? 'Salvando...' : 'Fazer backup agora'}
                     </button>
                     <button
+                      onClick={restaurarBackup}
+                      disabled={restaurandoBackup}
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -768,6 +635,8 @@ export default function Configuracoes() {
                         borderRadius: 'var(--radius-md)',
                         fontSize: 13,
                         color: 'var(--text-primary)',
+                        cursor: restaurandoBackup ? 'wait' : 'pointer',
+                        opacity: restaurandoBackup ? 0.6 : 1,
                       }}
                       onMouseEnter={(e) =>
                         (e.currentTarget.style.background = 'var(--gray-50)')
@@ -776,7 +645,7 @@ export default function Configuracoes() {
                         (e.currentTarget.style.background = 'transparent')
                       }
                     >
-                      Restaurar backup
+                      {restaurandoBackup ? 'Restaurando...' : 'Restaurar backup'}
                     </button>
                   </div>
                 </div>

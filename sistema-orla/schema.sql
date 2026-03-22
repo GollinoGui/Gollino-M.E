@@ -517,6 +517,88 @@ CREATE TABLE IF NOT EXISTS movimentos_estoque (
 );
 
 -- ============================================================
+-- TABELA: pedidos_compra
+-- ============================================================
+CREATE TABLE IF NOT EXISTS pedidos_compra (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  numero TEXT UNIQUE NOT NULL,
+  fornecedor TEXT NOT NULL,
+  data TEXT NOT NULL,
+  data_previsao TEXT,
+  situacao TEXT DEFAULT 'ABERTO',  -- ABERTO RECEBIDO CANCELADO
+  valor_total REAL DEFAULT 0,
+  observacao TEXT,
+  usuario TEXT,
+  data_atualizacao TEXT,
+  hora_atualizacao TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pedidos_compra_itens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  numero TEXT NOT NULL,
+  codigo_produto TEXT NOT NULL,
+  descricao TEXT,
+  quantidade REAL DEFAULT 1,
+  preco_unitario REAL DEFAULT 0,
+  total REAL DEFAULT 0
+);
+
+-- ============================================================
+-- TABELA: cheques
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cheques (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tipo TEXT NOT NULL,           -- R=Receber P=Pagar
+  numero TEXT,
+  banco TEXT,
+  valor REAL DEFAULT 0,
+  data_emissao TEXT,
+  data_vencimento TEXT,
+  data_compensacao TEXT,
+  codigo_pessoa TEXT,
+  nome_pessoa TEXT,
+  nro_docto TEXT,
+  situacao TEXT DEFAULT 'A',    -- A=Aberto C=Compensado D=Devolvido
+  observacao TEXT,
+  usuario TEXT,
+  data_atualizacao TEXT,
+  hora_atualizacao TEXT
+);
+
+-- ============================================================
+-- TABELA: lancamentos_extras (vales, outras receitas, despesas)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS lancamentos_extras (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tipo TEXT NOT NULL,           -- RECEITA DESPESA VALE
+  descricao TEXT NOT NULL,
+  valor REAL DEFAULT 0,
+  data TEXT NOT NULL,
+  nome_pessoa TEXT,
+  forma_pagamento TEXT,
+  situacao TEXT DEFAULT 'A',    -- A=Pendente P=Pago C=Cancelado
+  data_pagamento TEXT,
+  observacao TEXT,
+  usuario TEXT,
+  data_atualizacao TEXT,
+  hora_atualizacao TEXT
+);
+
+-- ============================================================
+-- TABELA: reajustes_preco (histórico de reajustes)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS reajustes_preco (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  codigo_produto TEXT NOT NULL,
+  produto TEXT NOT NULL,
+  preco_anterior REAL DEFAULT 0,
+  preco_novo REAL DEFAULT 0,
+  percentual REAL DEFAULT 0,
+  data TEXT NOT NULL,
+  usuario TEXT
+);
+
+-- ============================================================
 -- ÍNDICES para performance
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_clientes_nome ON clientes(nome);

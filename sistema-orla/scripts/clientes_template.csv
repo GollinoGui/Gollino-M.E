@@ -1,0 +1,10 @@
+# Template de importação de clientes — Gollino M.E
+# Linhas começando com # são ignoradas
+# Separador: ponto-e-vírgula (;)
+# Colunas obrigatórias: codigo, nome
+# haver: saldo de crédito do cliente (deixar 0 se não tiver)
+# situacao: A = ativo / I = inativo
+codigo;nome;cpf_cnpj;telefone;celular;cidade;uf;limite_credito;haver;situacao
+0001;JOAO DA SILVA;123.456.789-00;(17) 3363-0000;(17) 99999-0000;ORLANDIA;SP;500.00;0;A
+0002;MARIA DE SOUZA;987.654.321-00;(17) 3363-1111;;ORLANDIA;SP;1000.00;0;A
+0003;EMPRESA EXEMPLO LTDA;12.345.678/0001-99;(17) 3363-2222;(17) 98888-0000;ORLANDIA;SP;5000.00;0;A
