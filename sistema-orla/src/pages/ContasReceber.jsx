@@ -200,7 +200,7 @@ function ModalReceber({ conta, onClose, onConfirm }) {
   )
 }
 
-export default function ContasReceber() {
+export default function ContasReceber({ usuario }) {
   const [dados, setDados] = useState([])
   const [loading, setLoading] = useState(true)
   const [busca, setBusca] = useState('')
@@ -265,7 +265,7 @@ export default function ContasReceber() {
         id,
         valor_pagamento: valor,
         data_pagamento: new Date().toISOString().slice(0, 10),
-        usuario: 'rosangela',
+        usuario: usuario?.usuario || 'sistema',
       })
       setContaRecebendo(null)
       setSelecionadas([])

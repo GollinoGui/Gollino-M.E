@@ -470,7 +470,7 @@ function ModalNova({ onClose, onSalvar }) {
   )
 }
 
-export default function ContasPagar() {
+export default function ContasPagar({ usuario }) {
   const [dados, setDados] = useState([])
   const [loading, setLoading] = useState(true)
   const [busca, setBusca] = useState('')
@@ -540,7 +540,7 @@ export default function ContasPagar() {
         id,
         valor_pagamento: valor,
         data_pagamento: data,
-        usuario: 'rosangela',
+        usuario: usuario?.usuario || 'sistema',
       })
       setContaPagando(null)
       setSelecionadas([])
@@ -563,7 +563,7 @@ export default function ContasPagar() {
         data_docto: new Date().toISOString().slice(0, 10),
         codigo_forma_pagamento: form.codigo_forma_pagamento,
         situacao_docto: 'A',
-        usuario: 'rosangela',
+        usuario: usuario?.usuario || 'sistema',
       })
       setModalNova(false)
       setSucesso('✅ Conta adicionada!')

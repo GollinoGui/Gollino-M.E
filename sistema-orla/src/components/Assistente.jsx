@@ -24,42 +24,7 @@ const sugestoes = [
 ]
 
 const fmt = (v) =>
-  v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-
-function gerarResposta(pergunta) {
-  const p = pergunta.toLowerCase()
-
-  if (p.includes('venda') || p.includes('fluxo')) {
-    return `Hoje foram realizadas **4 vendas**, totalizando **R$ 1.183,30**. A maior venda foi para a Construtora Viver Ltda no valor de R$ 520,00 via Convênio. O ticket médio do dia está em R$ 295,83. 📈`
-  }
-  if (p.includes('estoque') || p.includes('produto')) {
-    return `Há **2 produtos com estoque baixo** que precisam de atenção:\n\n• **Calha PVC 4m branca** — apenas 3 unidades (mínimo: 10)\n• **Chapa galvanizada 26** — apenas 7 unidades (mínimo: 10)\n\nDeseja registrar uma entrada de mercadoria?`
-  }
-  if (p.includes('conta') && p.includes('venc')) {
-    return `Existem **3 parcelas a vencer em breve**:\n\n• Arnaldo Leonidas — R$ 43,10 vence **hoje** ⚠️\n• Construtora Viver Ltda — R$ 520,00 vence amanhã\n• João Carlos Ferreira — R$ 87,50 vence em 3 dias\n\nTotal em aberto: R$ 650,60`
-  }
-  if (p.includes('caixa') || p.includes('total')) {
-    return `O caixa está **aberto** desde as 08:00. Saldo atual:\n\n• Dinheiro: R$ 244,80\n• Cartão: R$ 419,50\n• Convênio: R$ 519,00\n\n**Total: R$ 1.183,30** 💰`
-  }
-  if (p.includes('financeiro') || p.includes('resumo')) {
-    return `Resumo financeiro de hoje:\n\n💚 Entradas: **R$ 1.183,30**\n🟡 A receber: **R$ 650,60**\n🔴 A pagar: **R$ 3.450,00**\n\nSaldo do período: R$ 1.183,30\n\nAtenção: há uma conta vencida com a Aluguel do galpão (R$ 2.200,00)!`
-  }
-  if (p.includes('pagar') || p.includes('despesa')) {
-    return `Contas a pagar em aberto:\n\n⚠️ **Aluguel do galpão** — R$ 2.200,00 (VENCIDO!)\n• Fornecedor Aço Total — R$ 1.250,00 (vence em 5 dias)\n• Internet + Telefone — R$ 199,90 (vence em 10 dias)\n• Contador — R$ 450,00 (vence em 18 dias)\n\nTotal: R$ 4.099,90`
-  }
-  if (
-    p.includes('oi') ||
-    p.includes('olá') ||
-    p.includes('ola') ||
-    p.includes('tudo')
-  ) {
-    return `Tudo bem por aqui! 😊 O sistema está funcionando normalmente. Posso te ajudar com vendas, estoque, contas ou qualquer informação da empresa. O que você precisa?`
-  }
-  if (p.includes('fechar caixa') || p.includes('fecha')) {
-    return `Para fechar o caixa, vá em **Operacional → Fechar caixa**. Antes de fechar, confira:\n\n✅ Todas as vendas foram registradas\n✅ Sangrias e reforços estão anotados\n✅ Valor em caixa confere com o sistema\n\nO backup automático será feito ao fechar o caixa.`
-  }
-  return `Entendi! Posso te ajudar com informações sobre **vendas**, **estoque**, **contas a receber/pagar**, **caixa** e **resumos financeiros**. O que você precisa saber?`
-}
+  (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 function formatarTexto(texto) {
   const partes = texto.split('\n')
@@ -77,24 +42,127 @@ function formatarTexto(texto) {
   })
 }
 
-export default function Assistente({ caixaAberto, onNavigate }) {
+export default function Assistente({ caixaAberto }) {
   const [aberto, setAberto] = useState(false)
   const [mensagens, setMensagens] = useState(mensagensIniciais)
   const [input, setInput] = useState('')
   const [digitando, setDigitando] = useState(false)
-  const [notificacoes, setNotificacoes] = useState(3)
+  const [notificacoes, setNotificacoes] = useState(0)
+  const [dados, setDados] = useState({
+    resumo: null,
+    contasReceber: [],
+    contasPagar: [],
+    produtosBaixo: [],
+  })
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
+  const hojeStr = new Date().toISOString().slice(0, 10)
+  const crVencidos = dados.contasReceber.filter(
+    (r) => r.data_vencimento <= hojeStr,
+  )
+  const cpVencidos = dados.contasPagar.filter(
+    (p) => p.data_vencimento <= hojeStr,
+  )
+
   const alertas = [
-    !caixaAberto && {
+    !caixaAberto && { tipo: 'danger', texto: 'Caixa não foi aberto hoje ainda!' },
+    ...crVencidos.slice(0, 2).map((r) => ({
+      tipo: 'warning',
+      texto: `${r.nome_cliente || 'Cliente'} — ${fmt(r.valor_em_aberto)} vence hoje`,
+    })),
+    ...cpVencidos.slice(0, 1).map((p) => ({
       tipo: 'danger',
-      texto: 'Caixa não foi aberto hoje ainda!',
-    },
-    { tipo: 'warning', texto: 'Arnaldo Leonidas vence hoje — R$ 43,10' },
-    { tipo: 'danger', texto: 'Aluguel do galpão VENCIDO — R$ 2.200,00' },
-    { tipo: 'info', texto: 'Calha PVC com estoque baixo (3 un.)' },
+      texto: `${p.nome_fornecedor || p.descricao || 'Conta'} VENCIDA — ${fmt(p.valor_docto - (p.valor_pagamento || 0))}`,
+    })),
+    ...dados.produtosBaixo.slice(0, 2).map((pr) => ({
+      tipo: 'info',
+      texto: `${pr.descricao} com estoque baixo (${pr.estoque_atual} un.)`,
+    })),
   ].filter(Boolean)
+
+  async function carregarDados() {
+    try {
+      const [resumo, cr, cp, prods] = await Promise.all([
+        window.api.dashboard.resumo('hoje'),
+        window.api.contasReceber.listar({ situacao: 'A' }),
+        window.api.contasPagar.listar({ situacao: 'A' }),
+        window.api.produtos.listar({ estoqueBaixo: true }),
+      ])
+      const novosDados = {
+        resumo,
+        contasReceber: cr || [],
+        contasPagar: cp || [],
+        produtosBaixo: prods || [],
+      }
+      setDados(novosDados)
+      const hoje = new Date().toISOString().slice(0, 10)
+      const nCrVenc = (cr || []).filter((r) => r.data_vencimento <= hoje).length
+      const nCpVenc = (cp || []).filter((p) => p.data_vencimento <= hoje).length
+      const total = (!caixaAberto ? 1 : 0) + nCrVenc + nCpVenc + (prods?.length || 0)
+      setNotificacoes(total)
+    } catch (err) {
+      console.error('Assistente: erro ao carregar dados', err)
+    }
+  }
+
+  function gerarResposta(pergunta) {
+    const p = pergunta.toLowerCase()
+    const { resumo, contasPagar, produtosBaixo } = dados
+
+    if (p.includes('venda') || p.includes('fluxo')) {
+      if (!resumo) return 'Carregando dados de vendas...'
+      const { total, qtde } = resumo.vendas
+      const ticket = qtde > 0 ? total / qtde : 0
+      return `Hoje foram realizadas **${qtde} venda${qtde !== 1 ? 's' : ''}**, totalizando **${fmt(total)}**. Ticket médio: ${fmt(ticket)}. 📈`
+    }
+    if (p.includes('estoque') || p.includes('produto')) {
+      if (produtosBaixo.length === 0) return `Todos os produtos estão com estoque normal. ✅`
+      const lista = produtosBaixo
+        .slice(0, 5)
+        .map((pr) => `• **${pr.descricao}** — ${pr.estoque_atual} un. (mínimo: ${pr.estoque_minimo})`)
+        .join('\n')
+      return `Há **${produtosBaixo.length} produto${produtosBaixo.length !== 1 ? 's' : ''} com estoque baixo**:\n\n${lista}\n\nDeseja registrar uma entrada de mercadoria?`
+    }
+    if (p.includes('conta') && (p.includes('venc') || p.includes('receber'))) {
+      if (crVencidos.length === 0) return `Não há contas a receber vencidas hoje. ✅`
+      const lista = crVencidos
+        .slice(0, 5)
+        .map((r) => `• ${r.nome_cliente || 'Cliente'} — ${fmt(r.valor_em_aberto)} (venc. ${r.data_vencimento})`)
+        .join('\n')
+      return `Há **${crVencidos.length} conta${crVencidos.length !== 1 ? 's' : ''} vencida${crVencidos.length !== 1 ? 's' : ''}**:\n\n${lista}\n\nTotal a receber: ${resumo ? fmt(resumo.contasReceber.total) : '...'}`
+    }
+    if (p.includes('caixa') || p.includes('total')) {
+      if (!resumo) return 'Carregando dados do caixa...'
+      return `Status do caixa: **${caixaAberto ? 'Aberto' : 'Fechado'}**.\n\nVendas do dia:\n• Total: ${fmt(resumo.vendas.total)}\n• Quantidade: ${resumo.vendas.qtde} venda${resumo.vendas.qtde !== 1 ? 's' : ''} 💰`
+    }
+    if (p.includes('financeiro') || p.includes('resumo')) {
+      if (!resumo) return 'Carregando resumo financeiro...'
+      return `Resumo financeiro de hoje:\n\n💚 Vendas: **${fmt(resumo.vendas.total)}**\n🟡 A receber (aberto): **${fmt(resumo.contasReceber.total)}**\n🔴 A pagar (aberto): **${fmt(resumo.contasPagar.total)}**\n\n${cpVencidos.length > 0 ? `⚠️ Atenção: ${cpVencidos.length} conta${cpVencidos.length !== 1 ? 's' : ''} a pagar vencida${cpVencidos.length !== 1 ? 's' : ''}!` : 'Contas em dia. ✅'}`
+    }
+    if (p.includes('pagar') || p.includes('despesa')) {
+      if (contasPagar.length === 0) return `Nenhuma conta a pagar em aberto. ✅`
+      const lista = [...cpVencidos, ...contasPagar.filter((c) => !cpVencidos.includes(c))]
+        .slice(0, 5)
+        .map((cp) => {
+          const vencido = cp.data_vencimento <= hojeStr
+          return `${vencido ? '⚠️' : '•'} **${cp.nome_fornecedor || cp.descricao || 'Conta'}** — ${fmt(cp.valor_docto - (cp.valor_pagamento || 0))} (${vencido ? 'VENCIDA' : `vence ${cp.data_vencimento}`})`
+        })
+        .join('\n')
+      return `Contas a pagar em aberto:\n\n${lista}\n\nTotal: ${resumo ? fmt(resumo.contasPagar.total) : '...'}`
+    }
+    if (p.includes('oi') || p.includes('olá') || p.includes('ola') || p.includes('tudo')) {
+      return `Tudo bem por aqui! 😊 O sistema está funcionando normalmente. Posso te ajudar com vendas, estoque, contas ou qualquer informação da empresa. O que você precisa?`
+    }
+    if (p.includes('fechar caixa') || p.includes('fecha')) {
+      return `Para fechar o caixa, vá em **Operacional → Fechar caixa**. Antes de fechar, confira:\n\n✅ Todas as vendas foram registradas\n✅ Sangrias e reforços estão anotados\n✅ Valor em caixa confere com o sistema`
+    }
+    return `Entendi! Posso te ajudar com informações sobre **vendas**, **estoque**, **contas a receber/pagar**, **caixa** e **resumos financeiros**. O que você precisa saber?`
+  }
+
+  useEffect(() => {
+    carregarDados()
+  }, [])
 
   useEffect(() => {
     if (aberto) {

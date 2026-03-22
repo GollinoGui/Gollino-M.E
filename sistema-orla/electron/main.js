@@ -114,6 +114,9 @@ ipcMain.handle('vendas:salvar', (_, dados) => {
 ipcMain.handle('vendas:cancelar', (_, { orcamento, motivo, usuario }) => {
   return db.vendas.cancelar(orcamento, motivo, usuario)
 })
+ipcMain.handle('vendas:devolver', (_, dados) => {
+  return db.vendas.devolver(dados)
+})
 ipcMain.handle('vendas:proximoNumero', () => {
   return db.vendas.proximoNumero()
 })
@@ -424,3 +427,8 @@ ipcMain.handle('backup:exportar', async () => {
   }
   return { sucesso: false }
 })
+
+// --- HAVER ---
+ipcMain.handle('haver:listar', (_, busca) => db.haver.listar(busca))
+ipcMain.handle('haver:ajustar', (_, dados) => db.haver.ajustar(dados))
+ipcMain.handle('haver:totalGeral', () => db.haver.totalGeral())

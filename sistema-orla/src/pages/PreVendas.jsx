@@ -53,7 +53,43 @@ function ModalItem({ produto, onConfirm, onClose }) {
   )
 }
 
-export default function PreVendas() {
+function ModalBaixar({ pv, onConfirm, onClose, salvando }) {
+  const [forma, setForma] = useState('')
+  const formas = ['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'Convênio', 'Cheque', 'Haver']
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500 }}>
+      <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-md)', width: 420, padding: 24, boxShadow: '0 20px 50px rgba(0,0,0,0.18)' }}>
+        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Baixar Pré-venda #{pv.numero}</div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>{pv.nome_cliente} · {fmt(pv.valor_total)}</div>
+
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500, marginBottom: 8 }}>FORMA DE PAGAMENTO</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 20 }}>
+          {formas.map(f => (
+            <button key={f} onClick={() => setForma(f)} style={{
+              padding: '7px 14px', borderRadius: 8, fontSize: 13,
+              border: forma === f ? '2px solid #185FA5' : '1px solid var(--border-md)',
+              background: forma === f ? '#EBF3FC' : 'var(--surface)',
+              color: forma === f ? '#185FA5' : 'var(--text-secondary)',
+              fontWeight: forma === f ? 600 : 400, cursor: 'pointer',
+            }}>{f}</button>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>Cancelar</button>
+          <button onClick={() => forma && onConfirm(forma)} disabled={!forma || salvando} style={{
+            padding: '8px 22px', borderRadius: 'var(--radius-md)',
+            background: forma && !salvando ? 'var(--blue-700)' : 'var(--gray-200)',
+            color: forma && !salvando ? '#fff' : 'var(--text-muted)',
+            fontSize: 13, fontWeight: 500, cursor: forma && !salvando ? 'pointer' : 'not-allowed', border: 'none',
+          }}>{salvando ? 'Salvando...' : '✓ Confirmar Venda'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function PreVendas({ usuario }) {
   const [preVendas, setPreVendas] = useState([])
   const [todosProds, setTodosProds] = useState([])
   const [todosClientes, setTodosClientes] = useState([])
@@ -63,6 +99,8 @@ export default function PreVendas() {
   const [buscaProd, setBuscaProd] = useState('')
   const [itemModal, setItemModal] = useState(null)
   const [sucesso, setSucesso] = useState('')
+  const [pvBaixar, setPvBaixar] = useState(null)
+  const [baixando, setBaixando] = useState(false)
 
   const formVazio = { tipo: 'CONDICIONAL', cliente_id: '', nome_cliente: 'Consumidor a vista', vendedor: 'Geral', observacao: '', itens: [] }
   const [form, setForm] = useState(formVazio)
@@ -178,6 +216,71 @@ export default function PreVendas() {
       setPreVendas(prev => prev.map(p => p.numero === numero ? { ...p, situacao: 'CANCELADA' } : p))
     } catch (err) {
       console.error('Erro ao cancelar:', err)
+    }
+  }
+
+  async function baixarComoVenda(forma) {
+    if (!pvBaixar) return
+    setBaixando(true)
+    try {
+      const pvCompleta = await window.api.preVendas.buscar(pvBaixar.numero)
+      const { numero: orcamento } = await window.api.vendas.proximoNumero()
+
+      const pagamento = {
+        valor_pago_dinheiro: forma === 'Dinheiro' ? pvCompleta.valor_total : 0,
+        valor_pago_cartao_credito: forma === 'Cartão Crédito' ? pvCompleta.valor_total : 0,
+        valor_pago_cartao_debito: forma === 'Cartão Débito' ? pvCompleta.valor_total : 0,
+        valor_pago_cheque: forma === 'Cheque' ? pvCompleta.valor_total : 0,
+        valor_pago_haver: forma === 'Haver' ? pvCompleta.valor_total : 0,
+      }
+
+      const resultado = await window.api.vendas.salvar({
+        orcamento,
+        codigo_cliente: pvCompleta.codigo_cliente || '',
+        data: new Date().toISOString().slice(0, 10),
+        tipo_venda: 'V',
+        situacao: 'N',
+        valor_total: pvCompleta.valor_total,
+        valor_produtos: pvCompleta.valor_total,
+        codigo_forma_pagamento1: forma,
+        usuario_cadastro: usuario?.usuario || 'sistema',
+        numero_caixa: '001',
+        numero_turno: '1',
+        ...pagamento,
+        itens: (pvCompleta.itens || []).map(i => ({
+          codigo_produto: i.codigo_produto,
+          descricao: i.descricao,
+          quantidade: i.quantidade,
+          unidade: 'UN',
+          preco_unitario: i.preco_unitario,
+          preco_custo: 0,
+          valor_desconto: 0,
+          valor_acrescimo: 0,
+          valor_total: i.total,
+        })),
+      })
+
+      if (!resultado.sucesso) {
+        setSucesso(`Erro: ${resultado.erro}`)
+        setTimeout(() => setSucesso(''), 5000)
+        return
+      }
+
+      await window.api.preVendas.baixar(pvBaixar.numero)
+      setPvBaixar(null)
+      await carregarLista()
+      setSucesso(`Venda #${orcamento} gerada com sucesso!`)
+      setTimeout(() => setSucesso(''), 3000)
+
+      if (window.api.pdf) {
+        window.api.pdf.gerarVenda(orcamento).catch(console.error)
+      }
+    } catch (err) {
+      console.error('Erro ao baixar pré-venda:', err)
+      setSucesso('Erro ao converter para venda.')
+      setTimeout(() => setSucesso(''), 4000)
+    } finally {
+      setBaixando(false)
     }
   }
 
@@ -298,6 +401,14 @@ export default function PreVendas() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', position: 'relative' }}>
+      {pvBaixar && (
+        <ModalBaixar
+          pv={pvBaixar}
+          salvando={baixando}
+          onConfirm={baixarComoVenda}
+          onClose={() => setPvBaixar(null)}
+        />
+      )}
       {sucesso && (
         <div style={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', background: 'var(--green-500)', color: 'var(--surface)', padding: '9px 22px', borderRadius: 'var(--radius-lg)', fontSize: 13, fontWeight: 500, zIndex: 300, animation: 'fadeIn 0.2s ease' }}>{sucesso}</div>
       )}
@@ -344,16 +455,20 @@ export default function PreVendas() {
                 <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}><StatusBadge status={pv.situacao} /></td>
                 <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    <button onClick={() => editarPreVenda(pv)} style={{ padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-md)', fontSize: 12, color: 'var(--text-secondary)' }}
+                    <button onClick={() => editarPreVenda(pv)} style={{ padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-md)', fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' }}
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--blue-50)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >Editar</button>
-                    {pv.situacao === 'ABERTA' && (
-                      <button onClick={() => cancelar(pv.numero)} style={{ padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--red-100)', fontSize: 12, color: 'var(--red-500)' }}
+                    {pv.situacao === 'ABERTA' && <>
+                      <button onClick={() => setPvBaixar(pv)} style={{ padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--green-200)', fontSize: 12, color: 'var(--green-700)', fontWeight: 500, cursor: 'pointer' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--green-50)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >Baixar</button>
+                      <button onClick={() => cancelar(pv.numero)} style={{ padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--red-100)', fontSize: 12, color: 'var(--red-500)', cursor: 'pointer' }}
                         onMouseEnter={e => e.currentTarget.style.background = 'var(--red-50)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       >Cancelar</button>
-                    )}
+                    </>}
                   </div>
                 </td>
               </tr>

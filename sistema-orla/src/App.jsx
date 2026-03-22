@@ -10,6 +10,8 @@ import PreVendas from './pages/PreVendas'
 import ContasPagar from './pages/ContasPagar'
 import Estoque from './pages/Estoque'
 import Relatorios from './pages/Relatorios'
+import Devolucao from './pages/Devolucao'
+import Haver from './pages/Haver'
 import EmBreve from './pages/EmBreve'
 import Configuracoes from './pages/Configuracoes'
 import Assistente from './components/Assistente'
@@ -134,7 +136,42 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler)
   }, [buscaAberta, pagina])
 
+  // Nível mínimo exigido por página (ausente = livre para todos)
+  const nivelMinimo = {
+    'config-empresa':  250,
+    'config-sistema':  250,
+    'manutencao':      250,
+    'caixas-fechados':   2,
+    'contas-pagar':      2,
+    'contas-receber':    2,
+    'fin-receber':       2,
+    'rel-financeiro':    2,
+    'rel-contas-pagar':  2,
+    'rel-contas-receber':2,
+    'rel-vendas':        2,
+    'rel-pre-venda':     2,
+    'rel-entradas':      2,
+    'rel-produtos':      2,
+    'haver':             2,
+    'cheques-receber':   2,
+    'cheques-pagar':     2,
+  }
+
   function renderPagina() {
+    const nivelReq = nivelMinimo[pagina]
+    if (nivelReq && (usuario?.nivel ?? 0) < nivelReq) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'var(--text-muted)' }}>
+          <div style={{ fontSize: 40 }}>🔒</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>Acesso negado</div>
+          <div style={{ fontSize: 13 }}>Seu nível de acesso não permite visualizar esta página.</div>
+          <button onClick={() => setPagina('dashboard')} style={{ marginTop: 8, padding: '8px 20px', borderRadius: 8, background: 'var(--blue-700)', color: '#fff', fontSize: 13, border: 'none', cursor: 'pointer' }}>
+            Voltar ao início
+          </button>
+        </div>
+      )
+    }
+
     switch (pagina) {
       // Dashboard
       case 'dashboard':
@@ -142,18 +179,22 @@ export default function App() {
 
       // Operacional
       case 'vendas':
-        return <Vendas onNavigate={setPagina} />
+        return <Vendas onNavigate={setPagina} usuario={usuario} />
       case 'pre-vendas':
-        return <PreVendas />
+        return <PreVendas usuario={usuario} />
+      case 'devolucao':
+        return <Devolucao usuario={usuario} />
       case 'contas-receber':
       case 'fin-receber':
-        return <ContasReceber />
+        return <ContasReceber usuario={usuario} />
       case 'contas-pagar':
-        return <ContasPagar />
+        return <ContasPagar usuario={usuario} />
+      case 'haver':
+        return <Haver usuario={usuario} />
       case 'abrir-caixa':
       case 'fechar-caixa':
         return (
-          <Caixa caixaAberto={caixaAberto} setCaixaAberto={setCaixaAberto} />
+          <Caixa caixaAberto={caixaAberto} setCaixaAberto={setCaixaAberto} usuario={usuario} />
         )
       case 'clientes':
       case 'cad-clientes':
@@ -203,6 +244,7 @@ export default function App() {
         caixaAberto={caixaAberto}
         temaEscuro={temaEscuro}
         setTemaEscuro={setTemaEscuro}
+        usuario={usuario}
       />
       <div
         style={{

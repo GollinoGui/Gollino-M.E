@@ -11,7 +11,7 @@ import {
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-export default function Caixa({ caixaAberto, setCaixaAberto }) {
+export default function Caixa({ caixaAberto, setCaixaAberto, usuario }) {
   const [confirmando, setConfirmando] = useState(false)
   const [statusCaixa, setStatusCaixa] = useState(null)
   const [vendasHoje, setVendasHoje] = useState([])
@@ -71,7 +71,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
       await window.api.caixa.abrir({
         numero_caixa: '001',
         numero_turno: '1',
-        usuario: 'rosangela',
+        usuario: usuario?.usuario || 'sistema',
         valor_abertura: 0,
       })
       setCaixaAberto(true)
@@ -90,7 +90,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto }) {
     setSalvando(true)
     try {
       await window.api.caixa.fechar({
-        usuario: 'rosangela',
+        usuario: usuario?.usuario || 'sistema',
         valor_fechamento: totalVendas,
         valor_dinheiro: totalDinheiro,
         valor_cheque: totalCheque,

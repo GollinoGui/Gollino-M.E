@@ -593,66 +593,6 @@ export default function Login({ onLogin }) {
             </button>
           </form>
 
-          <div
-            style={{
-              marginTop: 20,
-              padding: '12px 14px',
-              background: 'var(--gray-50)',
-              borderRadius: 10,
-              border: '1px solid var(--gray-100)',
-            }}
-          >
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: 'var(--text-muted)',
-                marginBottom: 6,
-              }}
-            >
-              ACESSO RÁPIDO
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {[
-                { label: 'Administrador', user: 'admin', pass: 'admin123' },
-                { label: 'Rosangela', user: 'rosangela', pass: 'gollino123' },
-                { label: 'Elter', user: 'elter', pass: 'gollino' },
-              ].map((u) => (
-                <button
-                  key={u.user}
-                  onClick={() => {
-                    setUsuario(u.user)
-                    setSenha(u.pass)
-                    setErro('')
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '6px 10px',
-                    borderRadius: 8,
-                    border: '1px solid var(--gray-200)',
-                    background: 'var(--surface)',
-                    fontSize: 12,
-                    color: 'var(--text-secondary)',
-                    textAlign: 'left',
-                  }}
-                  onMouseEnter={(e) =>
-                    (e.currentTarget.style.background = 'var(--blue-50)')
-                  }
-                  onMouseLeave={(e) =>
-                    (e.currentTarget.style.background = 'var(--surface)')
-                  }
-                >
-                  <User size={12} style={{ color: '#185FA5' }} />
-                  <span style={{ fontWeight: 600 }}>{u.label}</span>
-                  <span style={{ color: 'var(--text-muted)', marginLeft: 4 }}>
-                    {u.user} / {u.pass}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
         <div
           style={{
