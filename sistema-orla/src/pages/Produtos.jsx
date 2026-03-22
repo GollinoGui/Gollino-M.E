@@ -50,7 +50,7 @@ function EstoqueBadge({ qtd, minimo }) {
     )
   if (q <= m)
     return (
-      <span style={{ ...style, background: '#fffbeb', color: '#d97706' }}>
+      <span style={{ ...style, background: 'var(--surface)beb', color: '#d97706' }}>
         Baixo: {q}
       </span>
     )
@@ -251,7 +251,7 @@ export default function Produtos() {
   // ── Vista com detalhes ─────────────────────────────────────
   if (produtoDetalhes) {
     return (
-      <div style={{ height: '100%', display: 'flex', background: '#fff' }}>
+      <div style={{ height: '100%', display: 'flex', background: 'var(--surface)' }}>
         {/* Lista lateral */}
         <div
           style={{
@@ -302,7 +302,7 @@ export default function Produtos() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 background: 'var(--blue-700)',
-                color: '#fff',
+                color: 'var(--surface)',
                 borderRadius: 'var(--radius-md)',
               }}
             >
@@ -592,7 +592,7 @@ export default function Produtos() {
 
               {produtoDetalhes.observacao && (
                 <Secao titulo='Observação'>
-                  <p style={{ fontSize: 13, color: '#4a5568', margin: 0 }}>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
                     {produtoDetalhes.observacao}
                   </p>
                 </Secao>
@@ -633,7 +633,7 @@ export default function Produtos() {
 
   // ── Vista lista ────────────────────────────────────────────
   return (
-    <div style={{ height: '100%', display: 'flex', background: '#fff' }}>
+    <div style={{ height: '100%', display: 'flex', background: 'var(--surface)' }}>
       <div
         style={{
           flex: 1,
@@ -678,7 +678,7 @@ export default function Produtos() {
               height: 34,
               padding: '0 14px',
               background: 'var(--blue-700)',
-              color: '#fff',
+              color: 'var(--surface)',
               borderRadius: 'var(--radius-md)',
               fontSize: 13,
               fontWeight: 500,
@@ -1386,7 +1386,7 @@ function FormularioProduto({
             flex: 2,
             height: 36,
             background: salvando ? 'var(--gray-400)' : 'var(--blue-700)',
-            color: '#fff',
+            color: 'var(--surface)',
             borderRadius: 'var(--radius-md)',
             fontSize: 13,
             fontWeight: 500,
@@ -1437,7 +1437,7 @@ function ModalExcluir({
     >
       <div
         style={{
-          background: '#fff',
+          background: 'var(--surface)',
           borderRadius: 16,
           padding: 28,
           width: 400,
@@ -1547,7 +1547,7 @@ function ModalExcluir({
               flex: 1,
               height: 38,
               background: excluindo ? '#fca5a5' : '#dc2626',
-              color: '#fff',
+              color: 'var(--surface)',
               borderRadius: 'var(--radius-md)',
               fontSize: 13,
               fontWeight: 600,
@@ -1582,7 +1582,7 @@ function Secao({ titulo, children }) {
   return (
     <div
       style={{
-        background: '#fff',
+        background: 'var(--surface)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius-md)',
         overflow: 'hidden',
@@ -1623,7 +1623,7 @@ function DadoItem({ label, value, col }) {
       <div
         style={{
           fontSize: 13,
-          color: value ? '#1a202c' : 'var(--text-muted)',
+          color: value ? 'var(--text-primary)' : 'var(--text-muted)',
           fontWeight: value ? 500 : 400,
         }}
       >

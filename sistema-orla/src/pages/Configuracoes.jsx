@@ -113,7 +113,7 @@ export default function Configuracoes() {
             left: '50%',
             transform: 'translateX(-50%)',
             background: 'var(--green-500)',
-            color: '#fff',
+            color: 'var(--surface)',
             padding: '10px 24px',
             borderRadius: 'var(--radius-lg)',
             fontSize: 13,
@@ -128,7 +128,7 @@ export default function Configuracoes() {
 
       <div
         style={{
-          background: '#fff',
+          background: 'var(--surface)',
           borderBottom: '1px solid var(--border)',
           padding: '0 24px',
           display: 'flex',
@@ -173,7 +173,7 @@ export default function Configuracoes() {
           >
             <div
               style={{
-                background: '#fff',
+                background: 'var(--surface)',
                 border: '1px solid var(--border)',
                 borderRadius: 'var(--radius-lg)',
                 padding: 24,
@@ -230,7 +230,7 @@ export default function Configuracoes() {
                       gap: 6,
                       padding: '8px 16px',
                       background: 'var(--blue-700)',
-                      color: '#fff',
+                      color: 'var(--surface)',
                       borderRadius: 'var(--radius-md)',
                       fontSize: 13,
                       fontWeight: 500,
@@ -262,7 +262,7 @@ export default function Configuracoes() {
               <div
                 key={secao.titulo}
                 style={{
-                  background: '#fff',
+                  background: 'var(--surface)',
                   border: '1px solid var(--border)',
                   borderRadius: 'var(--radius-lg)',
                   padding: 24,
@@ -390,7 +390,7 @@ export default function Configuracoes() {
           >
             <div
               style={{
-                background: '#fff',
+                background: 'var(--surface)',
                 border: '1px solid var(--border)',
                 borderRadius: 'var(--radius-lg)',
                 padding: 24,
@@ -457,7 +457,7 @@ export default function Configuracoes() {
 
             <div
               style={{
-                background: '#fff',
+                background: 'var(--surface)',
                 border: '1px solid var(--border)',
                 borderRadius: 'var(--radius-lg)',
                 padding: 24,
@@ -549,7 +549,7 @@ export default function Configuracoes() {
           >
             <div
               style={{
-                background: '#fff',
+                background: 'var(--surface)',
                 border: '1px solid var(--border)',
                 borderRadius: 'var(--radius-lg)',
                 padding: 24,
@@ -667,7 +667,7 @@ export default function Configuracoes() {
                     gap: 8,
                     padding: '10px 20px',
                     background: 'var(--blue-700)',
-                    color: '#fff',
+                    color: 'var(--surface)',
                     borderRadius: 'var(--radius-md)',
                     fontSize: 13,
                     fontWeight: 500,
@@ -744,7 +744,7 @@ export default function Configuracoes() {
 
       <div
         style={{
-          background: '#fff',
+          background: 'var(--surface)',
           borderTop: '1px solid var(--border)',
           padding: '12px 24px',
           display: 'flex',
@@ -759,7 +759,7 @@ export default function Configuracoes() {
             gap: 8,
             padding: '10px 24px',
             background: 'var(--blue-700)',
-            color: '#fff',
+            color: 'var(--surface)',
             borderRadius: 'var(--radius-md)',
             fontSize: 14,
             fontWeight: 500,

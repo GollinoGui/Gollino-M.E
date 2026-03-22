@@ -142,7 +142,7 @@ export default function App() {
 
       // Operacional
       case 'vendas':
-        return <Vendas />
+        return <Vendas onNavigate={setPagina} />
       case 'pre-vendas':
         return <PreVendas />
       case 'contas-receber':

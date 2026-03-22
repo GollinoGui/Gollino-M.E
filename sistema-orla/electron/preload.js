@@ -69,4 +69,25 @@ contextBridge.exposeInMainWorld('api', {
   backup: {
     exportar: () => ipcRenderer.invoke('backup:exportar'),
   },
+
+  // PRÉ-VENDAS
+  preVendas: {
+    listar: (filtros) => ipcRenderer.invoke('preVendas:listar', filtros),
+    buscar: (numero) => ipcRenderer.invoke('preVendas:buscar', numero),
+    salvar: (dados) => ipcRenderer.invoke('preVendas:salvar', dados),
+    cancelar: (numero) => ipcRenderer.invoke('preVendas:cancelar', numero),
+    baixar: (numero) => ipcRenderer.invoke('preVendas:baixar', numero),
+    proximoNumero: () => ipcRenderer.invoke('preVendas:proximoNumero'),
+  },
+
+  // MOVIMENTOS DE ESTOQUE
+  movimentosEstoque: {
+    listar: (filtros) => ipcRenderer.invoke('movimentosEstoque:listar', filtros),
+    salvar: (dados) => ipcRenderer.invoke('movimentosEstoque:salvar', dados),
+  },
+
+  // PDF
+  pdf: {
+    gerarVenda: (orcamento) => ipcRenderer.invoke('pdf:gerarVenda', orcamento),
+  },
 })

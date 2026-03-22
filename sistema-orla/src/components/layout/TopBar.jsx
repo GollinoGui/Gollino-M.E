@@ -182,6 +182,7 @@ export default function TopBar({
   setTemaEscuro,
 }) {
   const [openMenu, setOpenMenu] = useState(null)
+  const [dropdownLeft, setDropdownLeft] = useState(0)
   const menuRef = useRef(null)
 
   function toggleTema() {
@@ -221,7 +222,7 @@ export default function TopBar({
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          padding: '0 20px',
+          padding: '0 16px',
           borderRight: '1px solid rgba(255,255,255,0.12)',
           flexShrink: 0,
           cursor: 'pointer',
@@ -234,6 +235,7 @@ export default function TopBar({
             gap: 3,
             width: 26,
             height: 26,
+            flexShrink: 0,
           }}
         >
           {[0, 1, 2, 3].map((i) => (
@@ -250,11 +252,13 @@ export default function TopBar({
           ))}
         </div>
         <span
+          className='topbar-logo-text'
           style={{
-            color: '#fff',
+            color: 'var(--surface)',
             fontWeight: 600,
             fontSize: 14,
             letterSpacing: '-0.2px',
+            whiteSpace: 'nowrap',
           }}
         >
           Gollino M.E
@@ -262,11 +266,14 @@ export default function TopBar({
       </div>
 
       <div
+        className='topbar-nav'
         style={{
           display: 'flex',
           alignItems: 'stretch',
           flex: 1,
-          overflowX: 'visible',
+          overflowX: 'auto',
+          overflowY: 'visible',
+          scrollbarWidth: 'none',
         }}
       >
         {menus.map((menu) => {
@@ -275,17 +282,19 @@ export default function TopBar({
           return (
             <div key={menu.id} style={{ position: 'relative', flexShrink: 0 }}>
               <button
-                onClick={() =>
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  setDropdownLeft(rect.left)
                   setOpenMenu((prev) => (prev === menu.id ? null : menu.id))
-                }
+                }}
                 style={{
                   height: '100%',
-                  padding: '0 14px',
+                  padding: '0 11px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 4,
                   color:
-                    isOpen || hasActive ? '#fff' : 'rgba(255,255,255,0.72)',
+                    isOpen || hasActive ? 'var(--surface)' : 'rgba(255,255,255,0.72)',
                   background: isOpen
                     ? 'rgba(255,255,255,0.15)'
                     : hasActive
@@ -312,15 +321,16 @@ export default function TopBar({
               {isOpen && (
                 <div
                   style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
+                    position: 'fixed',
+                    top: 46,
+                    left: dropdownLeft,
                     minWidth: 230,
-                    background: '#fff',
+                    background: 'var(--surface)',
                     border: '1px solid var(--border-md)',
                     borderRadius: '0 0 var(--radius-lg) var(--radius-lg)',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
                     overflow: 'hidden',
+                    zIndex: 2000,
                     animation: 'fadeIn 0.12s ease both',
                   }}
                 >
@@ -382,11 +392,12 @@ export default function TopBar({
       </div>
 
       <div
+        className='topbar-right'
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 10,
-          padding: '0 16px',
+          gap: 8,
+          padding: '0 12px',
           flexShrink: 0,
           borderLeft: '1px solid rgba(255,255,255,0.12)',
         }}
@@ -418,6 +429,7 @@ export default function TopBar({
           {temaEscuro ? <Sun size={14} /> : <Moon size={14} />}
         </button>
         <button
+          className='topbar-search-btn'
           onClickCapture={() =>
             window.dispatchEvent(
               new KeyboardEvent('keydown', {
@@ -439,6 +451,7 @@ export default function TopBar({
             color: 'rgba(255,255,255,0.8)',
             cursor: 'pointer',
             transition: 'all 0.15s',
+            whiteSpace: 'nowrap',
           }}
           onMouseEnter={(e) =>
             (e.currentTarget.style.background = 'rgba(255,255,255,0.18)')
@@ -448,8 +461,9 @@ export default function TopBar({
           }
         >
           <Search size={12} />
-          Buscar
+          <span className='topbar-search-text'>Buscar</span>
           <kbd
+            className='topbar-search-kbd'
             style={{
               padding: '1px 5px',
               background: 'rgba(255,255,255,0.15)',
@@ -463,6 +477,7 @@ export default function TopBar({
         </button>
 
         <div
+          className='topbar-caixa-status'
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -470,9 +485,10 @@ export default function TopBar({
             background: 'rgba(255,255,255,0.12)',
             border: '1px solid rgba(255,255,255,0.2)',
             borderRadius: 20,
-            padding: '4px 12px',
+            padding: '4px 10px',
             fontSize: 12,
-            color: '#fff',
+            color: 'var(--surface)',
+            whiteSpace: 'nowrap',
           }}
         >
           <div
@@ -481,11 +497,14 @@ export default function TopBar({
               height: 7,
               borderRadius: '50%',
               background: caixaAberto ? '#4ade80' : '#f87171',
+              flexShrink: 0,
             }}
           />
-          {caixaAberto ? 'Caixa aberto' : 'Caixa fechado'}
+          <span className='topbar-caixa-text'>
+            {caixaAberto ? 'Caixa aberto' : 'Caixa fechado'}
+          </span>
         </div>
-        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>
+        <span className='topbar-user' style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap' }}>
           Secretaria
         </span>
       </div>

@@ -21,7 +21,7 @@ function StatusBadge({ status }) {
     ABERTO: { bg: '#EBF3FC', color: '#185FA5', label: 'Aberto' },
     BAIXADO: { bg: '#EAF6EE', color: '#22863A', label: 'Baixado' },
     VENCIDO: { bg: '#FFF0F0', color: '#C53030', label: 'Vencido' },
-    CANCELADO: { bg: '#F7F7F7', color: '#9AA3B2', label: 'Cancelado' },
+    CANCELADO: { bg: '#F7F7F7', color: 'var(--text-muted)', label: 'Cancelado' },
   }
   const s = cfg[status] || cfg.ABERTO
   return (
@@ -69,9 +69,9 @@ function ModalReceber({ conta, onClose, onConfirm }) {
     >
       <div
         style={{
-          background: '#fff',
+          background: 'var(--surface)',
           borderRadius: 14,
-          border: '1px solid #E2EAF4',
+          border: '1px solid var(--border-md)',
           width: 400,
           boxShadow: '0 16px 40px rgba(0,0,0,0.14)',
           overflow: 'hidden',
@@ -83,7 +83,7 @@ function ModalReceber({ conta, onClose, onConfirm }) {
           </div>
           <div
             style={{
-              color: '#fff',
+              color: 'var(--surface)',
               fontSize: 22,
               fontWeight: 600,
               marginTop: 2,
@@ -107,7 +107,7 @@ function ModalReceber({ conta, onClose, onConfirm }) {
             <div
               style={{
                 fontSize: 11,
-                color: '#9AA3B2',
+                color: 'var(--text-muted)',
                 marginBottom: 8,
                 fontWeight: 500,
               }}
@@ -124,9 +124,9 @@ function ModalReceber({ conta, onClose, onConfirm }) {
                     borderRadius: 8,
                     fontSize: 13,
                     border:
-                      forma === f ? '2px solid #185FA5' : '1px solid #E2EAF4',
-                    background: forma === f ? '#EBF3FC' : '#fff',
-                    color: forma === f ? '#185FA5' : '#4A5568',
+                      forma === f ? '2px solid #185FA5' : '1px solid var(--border-md)',
+                    background: forma === f ? '#EBF3FC' : 'var(--surface)',
+                    color: forma === f ? '#185FA5' : 'var(--text-secondary)',
                     fontWeight: forma === f ? 600 : 400,
                   }}
                 >
@@ -140,7 +140,7 @@ function ModalReceber({ conta, onClose, onConfirm }) {
               <label
                 style={{
                   fontSize: 11,
-                  color: '#9AA3B2',
+                  color: 'var(--text-muted)',
                   display: 'block',
                   marginBottom: 4,
                 }}
@@ -159,7 +159,7 @@ function ModalReceber({ conta, onClose, onConfirm }) {
                   fontSize: 15,
                   fontWeight: 500,
                   borderRadius: 8,
-                  border: '1px solid #E2EAF4',
+                  border: '1px solid var(--border-md)',
                 }}
                 autoFocus
               />
@@ -171,9 +171,9 @@ function ModalReceber({ conta, onClose, onConfirm }) {
               style={{
                 padding: '8px 18px',
                 borderRadius: 8,
-                border: '1px solid #E2EAF4',
+                border: '1px solid var(--border-md)',
                 fontSize: 13,
-                color: '#9AA3B2',
+                color: 'var(--text-muted)',
               }}
             >
               Cancelar
@@ -184,8 +184,8 @@ function ModalReceber({ conta, onClose, onConfirm }) {
               style={{
                 padding: '8px 20px',
                 borderRadius: 8,
-                background: forma ? '#185FA5' : '#E2EAF4',
-                color: forma ? '#fff' : '#9AA3B2',
+                background: forma ? '#185FA5' : 'var(--border-md)',
+                color: forma ? 'var(--surface)' : 'var(--text-muted)',
                 fontSize: 13,
                 fontWeight: 600,
                 cursor: forma ? 'pointer' : 'not-allowed',
@@ -218,7 +218,7 @@ export default function ContasReceber() {
       if (filtroStatus === 'baixado') filtros.situacao = 'P'
       if (busca) filtros.cliente = busca
 
-      const result = await window.api.invoke('contasReceber:listar', filtros)
+      const result = await window.api.contasReceber.listar(filtros)
       setDados(result)
     } catch (err) {
       console.error('Erro ao carregar contas a receber:', err)
@@ -261,7 +261,7 @@ export default function ContasReceber() {
 
   async function confirmarRecebimento(id, forma, valor) {
     try {
-      await window.api.invoke('contasReceber:receber', {
+      await window.api.contasReceber.receber({
         id,
         valor_pagamento: valor,
         data_pagamento: new Date().toISOString().slice(0, 10),
@@ -287,7 +287,7 @@ export default function ContasReceber() {
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        background: '#fff',
+        background: 'var(--surface)',
         position: 'relative',
       }}
     >
@@ -300,7 +300,7 @@ export default function ContasReceber() {
             left: '50%',
             transform: 'translateX(-50%)',
             background: '#22863A',
-            color: '#fff',
+            color: 'var(--surface)',
             padding: '9px 22px',
             borderRadius: 10,
             fontSize: 13,
@@ -322,7 +322,7 @@ export default function ContasReceber() {
 
       {/* ── TOPO: busca + filtros + totais ── */}
       <div
-        style={{ padding: '14px 16px 10px', borderBottom: '1px solid #E2EAF4' }}
+        style={{ padding: '14px 16px 10px', borderBottom: '1px solid var(--border-md)' }}
       >
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
           <div style={{ position: 'relative', flex: 1 }}>
@@ -333,7 +333,7 @@ export default function ContasReceber() {
                 left: 10,
                 top: '50%',
                 transform: 'translateY(-50%)',
-                color: '#9AA3B2',
+                color: 'var(--text-muted)',
               }}
             />
             <input
@@ -346,7 +346,7 @@ export default function ContasReceber() {
                 height: 34,
                 paddingLeft: 32,
                 borderRadius: 8,
-                border: '1px solid #E2EAF4',
+                border: '1px solid var(--border-md)',
                 fontSize: 13,
               }}
             />
@@ -358,7 +358,7 @@ export default function ContasReceber() {
               height: 34,
               padding: '0 10px',
               borderRadius: 8,
-              border: '1px solid #E2EAF4',
+              border: '1px solid var(--border-md)',
               fontSize: 13,
             }}
           >
@@ -374,10 +374,10 @@ export default function ContasReceber() {
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              border: '1px solid #E2EAF4',
+              border: '1px solid var(--border-md)',
               borderRadius: 8,
               fontSize: 12,
-              color: '#9AA3B2',
+              color: 'var(--text-muted)',
             }}
             title='Atualizar'
           >
@@ -395,18 +395,18 @@ export default function ContasReceber() {
           {[
             { label: 'Em aberto', value: fmt(totalEmAberto), color: '#185FA5' },
             { label: 'Recebido', value: fmt(totalPago), color: '#22863A' },
-            { label: 'Total docs', value: fmt(totalDocto), color: '#1A202C' },
+            { label: 'Total docs', value: fmt(totalDocto), color: 'var(--text-primary)' },
           ].map((c) => (
             <div
               key={c.label}
               style={{
-                background: '#F7FAFF',
+                background: 'var(--gray-50)',
                 borderRadius: 8,
                 padding: '10px 14px',
-                border: '1px solid #E2EAF4',
+                border: '1px solid var(--border-md)',
               }}
             >
-              <div style={{ fontSize: 11, color: '#9AA3B2', marginBottom: 3 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>
                 {c.label}
               </div>
               <div style={{ fontSize: 16, fontWeight: 600, color: c.color }}>
@@ -424,7 +424,7 @@ export default function ContasReceber() {
             style={{
               padding: 40,
               textAlign: 'center',
-              color: '#9AA3B2',
+              color: 'var(--text-muted)',
               fontSize: 14,
             }}
           >
@@ -435,7 +435,7 @@ export default function ContasReceber() {
             style={{
               padding: 40,
               textAlign: 'center',
-              color: '#9AA3B2',
+              color: 'var(--text-muted)',
               fontSize: 14,
             }}
           >
@@ -502,7 +502,7 @@ export default function ContasReceber() {
                       if (!sel)
                         e.currentTarget.style.background = vencido
                           ? '#FEE2E2'
-                          : '#F7FAFF'
+                          : 'var(--gray-50)'
                     }}
                     onMouseLeave={(e) => {
                       if (!sel)
@@ -533,7 +533,7 @@ export default function ContasReceber() {
                         ...tdStyle,
                         textAlign: 'center',
                         fontSize: 12,
-                        color: '#9AA3B2',
+                        color: 'var(--text-muted)',
                         fontWeight: 600,
                       }}
                     >
@@ -568,7 +568,7 @@ export default function ContasReceber() {
                       style={{
                         ...tdStyle,
                         fontWeight: 500,
-                        color: emAberto > 0 ? '#185FA5' : '#9AA3B2',
+                        color: emAberto > 0 ? '#185FA5' : 'var(--text-muted)',
                       }}
                     >
                       {fmt(emAberto)}
@@ -587,15 +587,15 @@ export default function ContasReceber() {
       {/* ── RODAPÉ ── */}
       <div
         style={{
-          background: '#F7FAFF',
-          borderTop: '1px solid #E2EAF4',
+          background: 'var(--gray-50)',
+          borderTop: '1px solid var(--border-md)',
           padding: '8px 14px',
           display: 'flex',
           alignItems: 'center',
           gap: 10,
         }}
       >
-        <span style={{ fontSize: 12, color: '#9AA3B2' }}>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
           {filtrados.length} registro(s) · Selecionadas: {selecionadas.length}
         </span>
         <div style={{ flex: 1 }} />
@@ -611,8 +611,8 @@ export default function ContasReceber() {
             borderRadius: 8,
             fontSize: 13,
             fontWeight: 600,
-            background: podeReceber ? '#185FA5' : '#E2EAF4',
-            color: podeReceber ? '#fff' : '#9AA3B2',
+            background: podeReceber ? '#185FA5' : 'var(--border-md)',
+            color: podeReceber ? 'var(--surface)' : 'var(--text-muted)',
             cursor: podeReceber ? 'pointer' : 'not-allowed',
           }}
         >
@@ -627,10 +627,10 @@ const thStyle = {
   padding: '8px 10px',
   fontSize: 11,
   fontWeight: 500,
-  color: '#9AA3B2',
+  color: 'var(--text-muted)',
   textAlign: 'left',
-  background: '#F7FAFF',
-  borderBottom: '1px solid #E2EAF4',
+  background: 'var(--gray-50)',
+  borderBottom: '1px solid var(--border-md)',
   position: 'sticky',
   top: 0,
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   ArrowLeft,
   User,
@@ -9,10 +9,9 @@ import {
   Save,
   X,
 } from 'lucide-react'
-import { contasReceber } from '../data/mock'
 
 const fmt = (v) =>
-  v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = (d) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-'
 
@@ -54,12 +53,18 @@ const historicoVendas = [
 export default function DetalhesCliente({ cliente, onVoltar }) {
   const [editando, setEditando] = useState(false)
   const [form, setForm] = useState({ ...cliente })
+  const [contasCliente, setContasCliente] = useState([])
   const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }))
 
-  const contasCliente = contasReceber.filter((c) => c.cliente_id === cliente.id)
+  useEffect(() => {
+    window.api.contasReceber.listar({ cliente: cliente.codigo })
+      .then(setContasCliente)
+      .catch(console.error)
+  }, [cliente.codigo])
+
   const totalEmAberto = contasCliente
-    .filter((c) => c.situacao === 'ABERTO')
-    .reduce((s, c) => s + c.em_aberto, 0)
+    .filter((c) => c.situacao_docto === 'A')
+    .reduce((s, c) => s + (c.valor_em_aberto || 0), 0)
   const totalComprado = historicoVendas.reduce((s, v) => s + v.valor, 0)
   const haver = 35.6
 

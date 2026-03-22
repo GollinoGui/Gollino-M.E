@@ -463,6 +463,60 @@ INSERT OR IGNORE INTO linhas_produtos (codigo, descricao) VALUES
   ('004', 'SELANTES');
 
 -- ============================================================
+-- TABELA: pre_vendas
+-- ============================================================
+CREATE TABLE IF NOT EXISTS pre_vendas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  numero TEXT UNIQUE NOT NULL,
+  tipo TEXT DEFAULT 'CONDICIONAL',       -- CONDICIONAL, ORCAMENTO, PEDIDO
+  codigo_cliente TEXT DEFAULT '',
+  nome_cliente TEXT DEFAULT 'Consumidor a vista',
+  vendedor TEXT DEFAULT 'Geral',
+  observacao TEXT,
+  valor_total REAL DEFAULT 0,
+  qtde_itens REAL DEFAULT 0,
+  situacao TEXT DEFAULT 'ABERTA',        -- ABERTA, BAIXADA, CANCELADA
+  data TEXT NOT NULL,
+  hora TEXT,
+  usuario TEXT,
+  data_atualizacao TEXT,
+  hora_atualizacao TEXT
+);
+
+-- ============================================================
+-- TABELA: pre_vendas_itens
+-- ============================================================
+CREATE TABLE IF NOT EXISTS pre_vendas_itens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  numero TEXT NOT NULL,
+  codigo_produto TEXT NOT NULL,
+  descricao TEXT,
+  quantidade REAL DEFAULT 1,
+  preco_unitario REAL DEFAULT 0,
+  total REAL DEFAULT 0,
+  FOREIGN KEY (numero) REFERENCES pre_vendas(numero)
+);
+
+-- ============================================================
+-- TABELA: movimentos_estoque
+-- ============================================================
+CREATE TABLE IF NOT EXISTS movimentos_estoque (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tipo TEXT NOT NULL,                    -- ENTRADA, SAIDA, ACERTO
+  produto_id TEXT NOT NULL,
+  produto TEXT NOT NULL,
+  quantidade REAL DEFAULT 0,
+  valor_unitario REAL DEFAULT 0,
+  total REAL DEFAULT 0,
+  data TEXT NOT NULL,
+  fornecedor TEXT,
+  obs TEXT,
+  usuario TEXT,
+  data_atualizacao TEXT,
+  hora_atualizacao TEXT
+);
+
+-- ============================================================
 -- ÍNDICES para performance
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_clientes_nome ON clientes(nome);
@@ -481,3 +535,8 @@ CREATE INDEX IF NOT EXISTS idx_cr_situacao ON contas_receber(situacao_docto);
 CREATE INDEX IF NOT EXISTS idx_cp_fornecedor ON contas_pagar(codigo_fornecedor);
 CREATE INDEX IF NOT EXISTS idx_cp_vencimento ON contas_pagar(data_vencimento);
 CREATE INDEX IF NOT EXISTS idx_cp_situacao ON contas_pagar(situacao_docto);
+CREATE INDEX IF NOT EXISTS idx_pv_situacao ON pre_vendas(situacao);
+CREATE INDEX IF NOT EXISTS idx_pv_data ON pre_vendas(data);
+CREATE INDEX IF NOT EXISTS idx_pvi_numero ON pre_vendas_itens(numero);
+CREATE INDEX IF NOT EXISTS idx_me_produto ON movimentos_estoque(produto_id);
+CREATE INDEX IF NOT EXISTS idx_me_data ON movimentos_estoque(data);

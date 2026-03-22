@@ -5,7 +5,7 @@ export default function EmBreve({ titulo }) {
     <div style={{
       height: '100%', display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center', gap: 12,
-      color: 'var(--text-muted)', background: '#fff',
+      color: 'var(--text-muted)', background: 'var(--surface)',
     }}>
       <div style={{
         width: 56, height: 56, borderRadius: '50%',

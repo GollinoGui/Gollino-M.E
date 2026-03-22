@@ -229,7 +229,7 @@ export default function Login({ onLogin }) {
               style={{
                 fontSize: 36,
                 fontWeight: 800,
-                color: '#fff',
+                color: 'var(--surface)',
                 letterSpacing: '-1px',
                 lineHeight: 1,
               }}
@@ -260,7 +260,7 @@ export default function Login({ onLogin }) {
             <div
               style={{
                 height: '100%',
-                background: '#fff',
+                background: 'var(--surface)',
                 borderRadius: 99,
                 animation: 'barraCarregar 2s ease forwards',
               }}
@@ -383,7 +383,7 @@ export default function Login({ onLogin }) {
             style={{
               fontSize: 28,
               fontWeight: 800,
-              color: '#fff',
+              color: 'var(--surface)',
               letterSpacing: '-0.5px',
             }}
           >
@@ -403,7 +403,7 @@ export default function Login({ onLogin }) {
 
         <div
           style={{
-            background: '#fff',
+            background: 'var(--surface)',
             borderRadius: 20,
             padding: '32px 32px 28px',
             boxShadow: '0 24px 60px rgba(12,63,122,0.25)',
@@ -413,21 +413,21 @@ export default function Login({ onLogin }) {
             style={{
               fontSize: 18,
               fontWeight: 700,
-              color: '#1A202C',
+              color: 'var(--text-primary)',
               marginBottom: 4,
             }}
           >
             Entrar no sistema
           </div>
-          <div style={{ fontSize: 13, color: '#9AA3B2', marginBottom: 24 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24 }}>
             Insira suas credenciais para continuar
           </div>
 
           {erro && (
             <div
               style={{
-                background: '#FFF0F0',
-                border: '1px solid #FECACA',
+                background: 'var(--red-50)',
+                border: '1px solid var(--red-100)',
                 borderRadius: 10,
                 padding: '10px 14px',
                 display: 'flex',
@@ -438,9 +438,9 @@ export default function Login({ onLogin }) {
             >
               <AlertCircle
                 size={15}
-                style={{ color: '#C53030', flexShrink: 0 }}
+                style={{ color: 'var(--red-500)', flexShrink: 0 }}
               />
-              <span style={{ fontSize: 13, color: '#C53030' }}>{erro}</span>
+              <span style={{ fontSize: 13, color: 'var(--red-500)' }}>{erro}</span>
             </div>
           )}
 
@@ -453,7 +453,7 @@ export default function Login({ onLogin }) {
                 style={{
                   fontSize: 12,
                   fontWeight: 600,
-                  color: '#4A5568',
+                  color: 'var(--text-secondary)',
                   display: 'block',
                   marginBottom: 6,
                 }}
@@ -468,7 +468,7 @@ export default function Login({ onLogin }) {
                     left: 12,
                     top: '50%',
                     transform: 'translateY(-50%)',
-                    color: '#9AA3B2',
+                    color: 'var(--text-muted)',
                   }}
                 />
                 <input
@@ -483,7 +483,7 @@ export default function Login({ onLogin }) {
                     paddingLeft: 38,
                     paddingRight: 14,
                     borderRadius: 10,
-                    border: '1.5px solid #DDE1E9',
+                    border: '1.5px solid var(--gray-200)',
                     fontSize: 14,
                     outline: 'none',
                     transition: 'all 0.15s',
@@ -497,7 +497,7 @@ export default function Login({ onLogin }) {
                 style={{
                   fontSize: 12,
                   fontWeight: 600,
-                  color: '#4A5568',
+                  color: 'var(--text-secondary)',
                   display: 'block',
                   marginBottom: 6,
                 }}
@@ -512,7 +512,7 @@ export default function Login({ onLogin }) {
                     left: 12,
                     top: '50%',
                     transform: 'translateY(-50%)',
-                    color: '#9AA3B2',
+                    color: 'var(--text-muted)',
                   }}
                 />
                 <input
@@ -527,7 +527,7 @@ export default function Login({ onLogin }) {
                     paddingLeft: 38,
                     paddingRight: 44,
                     borderRadius: 10,
-                    border: '1.5px solid #DDE1E9',
+                    border: '1.5px solid var(--gray-200)',
                     fontSize: 14,
                     outline: 'none',
                     transition: 'all 0.15s',
@@ -542,7 +542,7 @@ export default function Login({ onLogin }) {
                     right: 12,
                     top: '50%',
                     transform: 'translateY(-50%)',
-                    color: '#9AA3B2',
+                    color: 'var(--text-muted)',
                   }}
                 >
                   {mostrarSenha ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -557,9 +557,9 @@ export default function Login({ onLogin }) {
                 height: 46,
                 background:
                   !usuario || !senha || carregando
-                    ? '#DDE1E9'
+                    ? 'var(--gray-200)'
                     : 'linear-gradient(135deg,#0C3F7A,#185FA5)',
-                color: !usuario || !senha || carregando ? '#9AA3B2' : '#fff',
+                color: !usuario || !senha || carregando ? 'var(--text-muted)' : 'var(--surface)',
                 borderRadius: 10,
                 fontSize: 14,
                 fontWeight: 700,
@@ -581,7 +581,7 @@ export default function Login({ onLogin }) {
                       height: 16,
                       borderRadius: '50%',
                       border: '2px solid rgba(255,255,255,0.3)',
-                      borderTopColor: '#fff',
+                      borderTopColor: 'var(--surface)',
                       animation: 'spin 0.7s linear infinite',
                     }}
                   />
@@ -597,16 +597,16 @@ export default function Login({ onLogin }) {
             style={{
               marginTop: 20,
               padding: '12px 14px',
-              background: '#F8FAFD',
+              background: 'var(--gray-50)',
               borderRadius: 10,
-              border: '1px solid #EEF3F9',
+              border: '1px solid var(--gray-100)',
             }}
           >
             <div
               style={{
                 fontSize: 11,
                 fontWeight: 600,
-                color: '#9AA3B2',
+                color: 'var(--text-muted)',
                 marginBottom: 6,
               }}
             >
@@ -631,22 +631,22 @@ export default function Login({ onLogin }) {
                     gap: 8,
                     padding: '6px 10px',
                     borderRadius: 8,
-                    border: '1px solid #DDE1E9',
-                    background: '#fff',
+                    border: '1px solid var(--gray-200)',
+                    background: 'var(--surface)',
                     fontSize: 12,
-                    color: '#4A5568',
+                    color: 'var(--text-secondary)',
                     textAlign: 'left',
                   }}
                   onMouseEnter={(e) =>
-                    (e.currentTarget.style.background = '#EBF3FC')
+                    (e.currentTarget.style.background = 'var(--blue-50)')
                   }
                   onMouseLeave={(e) =>
-                    (e.currentTarget.style.background = '#fff')
+                    (e.currentTarget.style.background = 'var(--surface)')
                   }
                 >
                   <User size={12} style={{ color: '#185FA5' }} />
                   <span style={{ fontWeight: 600 }}>{u.label}</span>
-                  <span style={{ color: '#9AA3B2', marginLeft: 4 }}>
+                  <span style={{ color: 'var(--text-muted)', marginLeft: 4 }}>
                     {u.user} / {u.pass}
                   </span>
                 </button>

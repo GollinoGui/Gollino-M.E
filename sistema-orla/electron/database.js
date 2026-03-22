@@ -400,7 +400,10 @@ const vendas = {
 const contasReceber = {
   listar(filtros = {}) {
     let sql = `
-      SELECT cr.*, c.nome as nome_cliente
+      SELECT cr.*,
+        cr.nro_docto as numero_docto,
+        (cr.valor_docto - COALESCE(cr.valor_pagamento, 0)) as valor_em_aberto,
+        c.nome as nome_cliente
       FROM contas_receber cr
       LEFT JOIN clientes c ON cr.codigo_cliente = c.codigo
       WHERE 1=1
@@ -649,6 +652,185 @@ const config = {
   },
 }
 
+// ============================================================
+// PRÉ-VENDAS
+// ============================================================
+const preVendas = {
+  proximoNumero() {
+    const row = db
+      .prepare(
+        `SELECT MAX(CAST(numero AS INTEGER)) as ultimo FROM pre_vendas`,
+      )
+      .get()
+    const proximo = ((row?.ultimo || 0) + 1).toString().padStart(8, '0')
+    return { numero: proximo }
+  },
+
+  listar(filtros = {}) {
+    let sql = `SELECT * FROM pre_vendas WHERE 1=1`
+    const params = []
+    if (filtros.busca) {
+      sql += ` AND (nome_cliente LIKE ? OR numero LIKE ?)`
+      const b = `%${filtros.busca}%`
+      params.push(b, b)
+    }
+    if (filtros.situacao && filtros.situacao !== 'Todas') {
+      sql += ` AND situacao = ?`
+      params.push(filtros.situacao.toUpperCase())
+    }
+    sql += ` ORDER BY id DESC LIMIT 500`
+    return db.prepare(sql).all(...params)
+  },
+
+  buscar(numero) {
+    const pv = db
+      .prepare(`SELECT * FROM pre_vendas WHERE numero = ?`)
+      .get(numero)
+    if (pv) {
+      pv.itens = db
+        .prepare(`SELECT * FROM pre_vendas_itens WHERE numero = ?`)
+        .all(numero)
+    }
+    return pv
+  },
+
+  salvar(dados) {
+    const { itens, ...pv } = dados
+    const salvarPV = db.transaction(() => {
+      const existe = db
+        .prepare(`SELECT id FROM pre_vendas WHERE numero = ?`)
+        .get(pv.numero)
+      if (existe) {
+        db.prepare(
+          `UPDATE pre_vendas SET tipo=?, codigo_cliente=?, nome_cliente=?, vendedor=?,
+          observacao=?, valor_total=?, qtde_itens=?, situacao=?,
+          data_atualizacao=?, hora_atualizacao=? WHERE numero=?`,
+        ).run(
+          pv.tipo,
+          pv.codigo_cliente || '',
+          pv.nome_cliente,
+          pv.vendedor,
+          pv.observacao || '',
+          pv.valor_total,
+          pv.qtde_itens || 0,
+          pv.situacao || 'ABERTA',
+          hoje(),
+          agora(),
+          pv.numero,
+        )
+        db.prepare(`DELETE FROM pre_vendas_itens WHERE numero = ?`).run(
+          pv.numero,
+        )
+      } else {
+        db.prepare(
+          `INSERT INTO pre_vendas (numero, tipo, codigo_cliente, nome_cliente, vendedor,
+          observacao, valor_total, qtde_itens, situacao, data, hora, data_atualizacao, hora_atualizacao)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        ).run(
+          pv.numero,
+          pv.tipo,
+          pv.codigo_cliente || '',
+          pv.nome_cliente,
+          pv.vendedor,
+          pv.observacao || '',
+          pv.valor_total,
+          pv.qtde_itens || 0,
+          'ABERTA',
+          pv.data || hoje(),
+          agora(),
+          hoje(),
+          agora(),
+        )
+      }
+      const insItem = db.prepare(
+        `INSERT INTO pre_vendas_itens (numero, codigo_produto, descricao, quantidade, preco_unitario, total)
+        VALUES (?,?,?,?,?,?)`,
+      )
+      for (const item of itens || []) {
+        insItem.run(
+          pv.numero,
+          item.codigo || item.codigo_produto,
+          item.descricao,
+          item.qty || item.quantidade,
+          item.preco_unitario,
+          item.total,
+        )
+      }
+    })
+    salvarPV()
+    return { sucesso: true, numero: pv.numero }
+  },
+
+  cancelar(numero) {
+    db.prepare(
+      `UPDATE pre_vendas SET situacao='CANCELADA', data_atualizacao=?, hora_atualizacao=? WHERE numero=?`,
+    ).run(hoje(), agora(), numero)
+    return { sucesso: true }
+  },
+
+  baixar(numero) {
+    db.prepare(
+      `UPDATE pre_vendas SET situacao='BAIXADA', data_atualizacao=?, hora_atualizacao=? WHERE numero=?`,
+    ).run(hoje(), agora(), numero)
+    return { sucesso: true }
+  },
+}
+
+// ============================================================
+// MOVIMENTOS DE ESTOQUE
+// ============================================================
+const movimentosEstoque = {
+  listar(filtros = {}) {
+    let sql = `SELECT * FROM movimentos_estoque WHERE 1=1`
+    const params = []
+    if (filtros.busca) {
+      sql += ` AND produto LIKE ?`
+      params.push(`%${filtros.busca}%`)
+    }
+    if (filtros.tipo && filtros.tipo !== 'todos') {
+      sql += ` AND tipo = ?`
+      params.push(filtros.tipo)
+    }
+    sql += ` ORDER BY id DESC LIMIT 500`
+    return db.prepare(sql).all(...params)
+  },
+
+  salvar(dados) {
+    const qty = parseFloat(dados.quantidade)
+    db.prepare(
+      `INSERT INTO movimentos_estoque (tipo, produto_id, produto, quantidade, valor_unitario, total, data, fornecedor, obs, data_atualizacao, hora_atualizacao)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    ).run(
+      dados.tipo,
+      dados.produto_id,
+      dados.produto,
+      qty,
+      parseFloat(dados.valor_unitario || 0),
+      parseFloat(dados.total || 0),
+      dados.data || hoje(),
+      dados.fornecedor || '',
+      dados.obs || '',
+      hoje(),
+      agora(),
+    )
+    // Atualiza estoque do produto
+    if (dados.tipo === 'ENTRADA') {
+      db.prepare(
+        `UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE codigo = ?`,
+      ).run(qty, dados.produto_id)
+    } else if (dados.tipo === 'SAIDA') {
+      db.prepare(
+        `UPDATE produtos SET estoque_atual = estoque_atual - ? WHERE codigo = ?`,
+      ).run(qty, dados.produto_id)
+    } else if (dados.tipo === 'ACERTO') {
+      db.prepare(
+        `UPDATE produtos SET estoque_atual = ? WHERE codigo = ?`,
+      ).run(qty, dados.produto_id)
+    }
+    return { sucesso: true }
+  },
+}
+
 module.exports = {
   init,
   login,
@@ -660,4 +842,6 @@ module.exports = {
   caixa,
   dashboard,
   config,
+  preVendas,
+  movimentosEstoque,
 }

@@ -9,10 +9,9 @@ import {
   ArrowRight,
   Command,
 } from 'lucide-react'
-import { clientes, produtos, contasReceber } from '../data/mock'
 
 const fmt = (v) =>
-  v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 const paginas = [
   {
@@ -90,88 +89,90 @@ const paginas = [
 export default function BuscaGlobal({ onNavigate, onClose }) {
   const [query, setQuery] = useState('')
   const [selecionado, setSelecionado] = useState(0)
+  const [resultadosDB, setResultadosDB] = useState([])
   const inputRef = useRef(null)
-  const listaRef = useRef(null)
+  const debounceRef = useRef(null)
 
   useEffect(() => {
     setTimeout(() => inputRef.current?.focus(), 50)
   }, [])
 
-  const resultados =
-    query.trim().length < 1
-      ? []
-      : (() => {
-          const q = query.toLowerCase()
-          const res = []
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (query.trim().length < 1) {
+      setResultadosDB([])
+      return
+    }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const [clientes, produtos, contas] = await Promise.all([
+          window.api.clientes.listar({ busca: query }),
+          window.api.produtos.listar({ busca: query }),
+          window.api.contasReceber.listar({ situacao: 'A' }),
+        ])
+        const q = query.toLowerCase()
+        const res = []
 
-          paginas
-            .filter(
-              (p) =>
-                p.label.toLowerCase().includes(q) ||
-                p.desc.toLowerCase().includes(q),
-            )
-            .forEach((p) => res.push({ tipo: 'pagina', ...p }))
+        paginas
+          .filter(
+            (p) =>
+              p.label.toLowerCase().includes(q) ||
+              p.desc.toLowerCase().includes(q),
+          )
+          .forEach((p) => res.push({ tipo: 'pagina', ...p }))
 
-          clientes
-            .filter(
-              (c) =>
-                c.nome.toLowerCase().includes(q) ||
-                c.cpf_cnpj?.includes(q) ||
-                c.codigo.includes(q),
-            )
-            .slice(0, 4)
-            .forEach((c) =>
-              res.push({
-                tipo: 'cliente',
-                id: 'clientes',
-                label: c.nome,
-                desc: c.cpf_cnpj || c.codigo,
-                icon: Users,
-                categoria: 'Clientes',
-                dados: c,
-              }),
-            )
+        ;(clientes || []).slice(0, 4).forEach((c) =>
+          res.push({
+            tipo: 'cliente',
+            id: 'clientes',
+            label: c.nome,
+            desc: c.cpf_cnpj || c.codigo,
+            icon: Users,
+            categoria: 'Clientes',
+            dados: c,
+          }),
+        )
 
-          produtos
-            .filter(
-              (p) =>
-                p.descricao.toLowerCase().includes(q) || p.codigo.includes(q),
-            )
-            .slice(0, 4)
-            .forEach((p) =>
-              res.push({
-                tipo: 'produto',
-                id: 'produtos',
-                label: p.descricao,
-                desc: `${fmt(p.preco_vista)} · Estoque: ${p.estoque}`,
-                icon: Package,
-                categoria: 'Produtos',
-                dados: p,
-              }),
-            )
+        ;(produtos || []).slice(0, 4).forEach((p) =>
+          res.push({
+            tipo: 'produto',
+            id: 'produtos',
+            label: p.descricao,
+            desc: `${fmt(p.preco_venda_vista)} · Estoque: ${p.estoque_atual ?? 0}`,
+            icon: Package,
+            categoria: 'Produtos',
+            dados: p,
+          }),
+        )
 
-          contasReceber
-            .filter(
-              (c) =>
-                c.cliente_nome.toLowerCase().includes(q) ||
-                c.documento.includes(q),
-            )
-            .filter((c) => c.situacao === 'ABERTO')
-            .slice(0, 3)
-            .forEach((c) =>
-              res.push({
-                tipo: 'conta',
-                id: 'contas-receber',
-                label: c.cliente_nome,
-                desc: `Doc. ${c.documento} · ${fmt(c.em_aberto)} em aberto`,
-                icon: Wallet,
-                categoria: 'Contas a receber',
-                dados: c,
-              }),
-            )
+        ;(contas || [])
+          .filter(
+            (c) =>
+              c.nome_cliente?.toLowerCase().includes(q) ||
+              c.numero_docto?.includes(q),
+          )
+          .slice(0, 3)
+          .forEach((c) =>
+            res.push({
+              tipo: 'conta',
+              id: 'contas-receber',
+              label: c.nome_cliente,
+              desc: `Doc. ${c.numero_docto} · ${fmt(c.valor_em_aberto)} em aberto`,
+              icon: Wallet,
+              categoria: 'Contas a receber',
+              dados: c,
+            }),
+          )
 
-          return res
-        })()
+        setResultadosDB(res)
+      } catch (err) {
+        console.error('Erro na busca global:', err)
+      }
+    }, 250)
+    return () => clearTimeout(debounceRef.current)
+  }, [query])
+
+  const resultados = query.trim().length < 1 ? [] : resultadosDB
 
   const sugestoesRapidas = [
     { id: 'vendas', label: 'Nova venda', icon: ShoppingCart },
@@ -243,15 +244,15 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
           to   { opacity: 1; transform: translateY(0) scale(1); }
         }
         .busca-item { transition: background 0.1s; cursor: pointer; }
-        .busca-item:hover, .busca-item.ativo { background: #EBF3FC !important; }
+        .busca-item:hover, .busca-item.ativo { background: var(--blue-50) !important; }
       `}</style>
 
       <div
         style={{
           width: 580,
-          background: '#fff',
+          background: 'var(--surface)',
           borderRadius: 18,
-          border: '1px solid #E2EAF4',
+          border: '1px solid var(--border-md)',
           boxShadow: '0 24px 60px rgba(12,63,122,0.2)',
           overflow: 'hidden',
           animation: 'buscaEntrada 0.2s cubic-bezier(0.34,1.56,0.64,1) both',
@@ -263,7 +264,7 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
             alignItems: 'center',
             gap: 12,
             padding: '14px 18px',
-            borderBottom: '1px solid #EEF3F9',
+            borderBottom: '1px solid var(--gray-100)',
           }}
         >
           <Search size={18} style={{ color: '#185FA5', flexShrink: 0 }} />
@@ -277,14 +278,14 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
               border: 'none',
               outline: 'none',
               fontSize: 15,
-              color: '#1A202C',
+              color: 'var(--text-primary)',
               background: 'transparent',
             }}
           />
           {query && (
             <button
               onClick={() => setQuery('')}
-              style={{ color: '#9AA3B2', flexShrink: 0 }}
+              style={{ color: 'var(--text-muted)', flexShrink: 0 }}
             >
               <X size={16} />
             </button>
@@ -292,11 +293,11 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
           <kbd
             style={{
               padding: '2px 7px',
-              background: '#F0F4FA',
-              border: '1px solid #DDE1E9',
+              background: 'var(--gray-100)',
+              border: '1px solid var(--gray-200)',
               borderRadius: 6,
               fontSize: 11,
-              color: '#4A5568',
+              color: 'var(--text-secondary)',
               fontFamily: 'monospace',
             }}
           >
@@ -311,7 +312,7 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
                 style={{
                   fontSize: 11,
                   fontWeight: 600,
-                  color: '#9AA3B2',
+                  color: 'var(--text-muted)',
                   marginBottom: 8,
                   letterSpacing: '0.05em',
                 }}
@@ -336,8 +337,8 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
                       gap: 10,
                       padding: '10px 14px',
                       borderRadius: 10,
-                      background: '#F8FAFD',
-                      border: '1px solid #EEF3F9',
+                      background: 'var(--gray-50)',
+                      border: '1px solid var(--gray-100)',
                       textAlign: 'left',
                     }}
                   >
@@ -359,14 +360,14 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
                       style={{
                         fontSize: 13,
                         fontWeight: 500,
-                        color: '#1A202C',
+                        color: 'var(--text-primary)',
                       }}
                     >
                       {s.label}
                     </span>
                     <ArrowRight
                       size={12}
-                      style={{ color: '#9AA3B2', marginLeft: 'auto' }}
+                      style={{ color: 'var(--text-muted)', marginLeft: 'auto' }}
                     />
                   </button>
                 ))}
@@ -375,7 +376,7 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
           )}
 
           {query && resultados.length === 0 && (
-            <div style={{ padding: 40, textAlign: 'center', color: '#9AA3B2' }}>
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
               <Search size={32} style={{ opacity: 0.3, marginBottom: 10 }} />
               <div style={{ fontSize: 14, fontWeight: 500 }}>
                 Nenhum resultado para "{query}"
@@ -395,7 +396,7 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
                     padding: '10px 18px 4px',
                     fontSize: 11,
                     fontWeight: 600,
-                    color: '#9AA3B2',
+                    color: 'var(--text-muted)',
                     letterSpacing: '0.05em',
                   }}
                 >
@@ -427,7 +428,7 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
                             width: 34,
                             height: 34,
                             borderRadius: 8,
-                            background: '#F0F4FA',
+                            background: 'var(--gray-100)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -441,7 +442,7 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
                             style={{
                               fontSize: 13,
                               fontWeight: 500,
-                              color: '#1A202C',
+                              color: 'var(--text-primary)',
                               whiteSpace: 'nowrap',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
@@ -452,7 +453,7 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
                           <div
                             style={{
                               fontSize: 11,
-                              color: '#9AA3B2',
+                              color: 'var(--text-muted)',
                               marginTop: 1,
                               whiteSpace: 'nowrap',
                               overflow: 'hidden',
@@ -464,7 +465,7 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
                         </div>
                         <ArrowRight
                           size={13}
-                          style={{ color: '#C8CDD8', flexShrink: 0 }}
+                          style={{ color: 'var(--gray-300)', flexShrink: 0 }}
                         />
                       </button>
                     )
@@ -476,8 +477,8 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
         <div
           style={{
             padding: '10px 18px',
-            borderTop: '1px solid #EEF3F9',
-            background: '#F8FAFD',
+            borderTop: '1px solid var(--gray-100)',
+            background: 'var(--gray-50)',
             display: 'flex',
             gap: 16,
             alignItems: 'center',
@@ -495,17 +496,17 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
               <kbd
                 style={{
                   padding: '2px 7px',
-                  background: '#fff',
-                  border: '1px solid #DDE1E9',
+                  background: 'var(--surface)',
+                  border: '1px solid var(--gray-200)',
                   borderRadius: 5,
                   fontSize: 11,
-                  color: '#4A5568',
+                  color: 'var(--text-secondary)',
                   fontFamily: 'monospace',
                 }}
               >
                 {t.tecla}
               </kbd>
-              <span style={{ fontSize: 11, color: '#9AA3B2' }}>{t.desc}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.desc}</span>
             </div>
           ))}
           <div
@@ -516,8 +517,8 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
               gap: 5,
             }}
           >
-            <Command size={11} style={{ color: '#9AA3B2' }} />
-            <span style={{ fontSize: 11, color: '#9AA3B2' }}>
+            <Command size={11} style={{ color: 'var(--text-muted)' }} />
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
               Ctrl+K para abrir
             </span>
           </div>
