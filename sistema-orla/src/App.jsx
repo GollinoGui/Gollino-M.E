@@ -219,13 +219,19 @@ export default function App() {
 
       // Estoque
       case 'entrada-mercadoria':
-      case 'saida-mercadoria':
-      case 'acerto-estoque':
-      case 'contagem-estoque':
       case 'movimento-produto':
-      case 'consulta-reajustes':
       case 'estoque-consulta':
-        return <Estoque />
+        return <Estoque abaInicial='movimentos' />
+      case 'pedido-compra':
+        return <Estoque abaInicial='pedido-compra' />
+      case 'saida-mercadoria':
+        return <Estoque abaInicial='saida-mercadoria' />
+      case 'acerto-estoque':
+        return <Estoque abaInicial='acerto-estoque' />
+      case 'contagem-estoque':
+        return <Estoque abaInicial='contagem-estoque' />
+      case 'consulta-reajustes':
+        return <Estoque abaInicial='reajustes' />
 
       // Relatórios
       case 'rel-vendas':
