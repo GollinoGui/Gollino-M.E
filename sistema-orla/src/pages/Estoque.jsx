@@ -555,8 +555,8 @@ function ModalPedidoCompra({ onClose, onSalvar, numero }) {
   )
 }
 
-export default function Estoque() {
-  const [aba, setAba] = useState('movimentos')
+export default function Estoque({ abaInicial = 'movimentos' }) {
+  const [aba, setAba] = useState(abaInicial)
   const [movimentos, setMovimentos] = useState([])
   const [produtos, setProdutos] = useState([])
   const [busca, setBusca] = useState('')
