@@ -215,7 +215,7 @@ export default function App() {
         return <Clientes />
       case 'produtos':
       case 'cad-produtos':
-        return <Produtos />
+        return <Produtos usuario={usuario} />
 
       // Estoque
       case 'entrada-mercadoria':

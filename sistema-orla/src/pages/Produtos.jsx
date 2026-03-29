@@ -18,11 +18,8 @@ const fmt = (v) =>
   })
 
 function maskMoney(v) {
-  const n = v.replace(/\D/g, '')
-  if (!n) return ''
-  return (parseInt(n) / 100).toLocaleString('pt-BR', {
-    minimumFractionDigits: 2,
-  })
+  // Permite digitação livre com vírgula decimal (até 4 casas)
+  return v.replace(/[^0-9,]/g, '')
 }
 function parseMoney(v) {
   return parseFloat(String(v).replace(/\./g, '').replace(',', '.')) || 0
@@ -61,7 +58,7 @@ function EstoqueBadge({ qtd, minimo }) {
   )
 }
 
-export default function Produtos() {
+export default function Produtos({ usuario }) {
   const [produtos, setProdutos] = useState([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState(null)
@@ -136,13 +133,13 @@ export default function Produtos() {
       ...formVazio,
       ...p,
       preco_venda_vista: p.preco_venda_vista
-        ? (parseFloat(p.preco_venda_vista) || 0).toFixed(2).replace('.', ',')
+        ? String(parseFloat(p.preco_venda_vista) || 0).replace('.', ',')
         : '',
       preco_venda_prazo: p.preco_venda_prazo
-        ? (parseFloat(p.preco_venda_prazo) || 0).toFixed(2).replace('.', ',')
+        ? String(parseFloat(p.preco_venda_prazo) || 0).replace('.', ',')
         : '',
       preco_custo_atual: p.preco_custo_atual
-        ? (parseFloat(p.preco_custo_atual) || 0).toFixed(2).replace('.', ',')
+        ? String(parseFloat(p.preco_custo_atual) || 0).replace('.', ',')
         : '',
       estoque_atual:
         p.estoque_atual !== undefined ? String(p.estoque_atual) : '',
@@ -1117,12 +1114,13 @@ function FormularioProduto({
           <C label='Código' col={1}>
             <input
               value={form.codigo}
-              readOnly
+              readOnly={!usuario?.super_usuario}
+              onChange={(e) => campo('codigo', e.target.value)}
               style={{
                 width: '100%',
                 height: 34,
                 padding: '0 10px',
-                background: 'var(--gray-50)',
+                background: usuario?.super_usuario ? 'var(--bg)' : 'var(--gray-50)',
               }}
             />
           </C>

@@ -170,7 +170,7 @@ const produtos = {
       params.push(filtros.situacao)
     }
     if (filtros.estoqueBaixo) {
-      sql += ` AND estoque_atual <= estoque_minimo AND controla_estoque = 'S'`
+      sql += ` AND estoque_atual <= estoque_minimo AND controla_estoque = 'S' AND situacao_produto = 'A'`
     }
     sql += ` ORDER BY descricao LIMIT 500`
     return db.prepare(sql).all(...params)
