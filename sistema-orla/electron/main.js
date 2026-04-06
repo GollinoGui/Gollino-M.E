@@ -531,3 +531,9 @@ ipcMain.handle('importar:abrirArquivo', async () => {
 
 handle('importar:produtos', (_, linhas) => db.importar.produtos(linhas))
 handle('importar:clientes', (_, linhas) => db.importar.clientes(linhas))
+
+// --- RELATÓRIOS GERENCIAIS ---
+handle('relatorios:inventario', () => db.relatorios.inventario())
+handle('relatorios:itenisVendidos', (_, f) => db.relatorios.itenisVendidos(f.dataInicio, f.dataFim))
+handle('relatorios:entradasMercadoria', (_, f) => db.relatorios.entradasMercadoria(f.dataInicio, f.dataFim))
+handle('relatorios:extrato', (_, f) => db.relatorios.extrato(f.dataInicio, f.dataFim))

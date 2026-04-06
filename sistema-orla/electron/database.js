@@ -20,7 +20,83 @@ function init(dbPath) {
   }
 
   console.log('✅ Banco de dados iniciado em:', dbPath)
+
+  // Migração única de produtos — roda apenas uma vez
+  const jaRodou = db.prepare(`SELECT valor FROM configuracoes WHERE chave = 'migracao_produtos_v1'`).get()
+  if (!jaRodou) {
+    migrarProdutos()
+    db.prepare(`INSERT OR IGNORE INTO configuracoes (chave, valor, descricao) VALUES ('migracao_produtos_v1', 'S', 'Migração inicial de produtos')`).run()
+    console.log('✅ Migração de produtos concluída.')
+  }
 }
+
+function migrarProdutos() {
+  const produtos = [
+    { codigo: '00000004', descricao: 'APLICADOR P/SELANTES TUBO',        estoque: 3,      custo: 30.25,    preco: 48.00  },
+    { codigo: '00000442', descricao: 'ARAME SOLDA [FIO]',                 estoque: 10,     custo: 4.892,    preco: 10.00  },
+    { codigo: '00000079', descricao: 'BROCANTE-CC 3/16 X 7/8 X 5/16',    estoque: 2950,   custo: 0.1402,   preco: 0.30   },
+    { codigo: '00000017', descricao: 'BROCANTE-SC 3/16 X 3/4 X 5/16',    estoque: 700,    custo: 0.1400,   preco: 0.30   },
+    { codigo: '00000060', descricao: 'CHAPA GALVANIZADA 22/0,80MM',       estoque: 29.3,   custo: 9.15,     preco: 14.00  },
+    { codigo: '00000736', descricao: 'CHAPA GALVANIZADA 24/0,65MM',       estoque: 169.1,  custo: 9.15,     preco: 13.00  },
+    { codigo: '00000046', descricao: 'CHAPA GALVANIZADA 26/0,50MM',       estoque: 6241,   custo: 9.15,     preco: 13.00  },
+    { codigo: '00000062', descricao: 'CONDUTOR 25',                        estoque: 25,     custo: 21.00,    preco: 33.00  },
+    { codigo: '00000023', descricao: 'CONDUTOR 28',                        estoque: 60,     custo: 23.00,    preco: 35.00  },
+    { codigo: '00000024', descricao: 'CONDUTOR 33',                        estoque: 203,    custo: 24.00,    preco: 40.00  },
+    { codigo: '00000607', descricao: 'CONDUTOR 40',                        estoque: 25,     custo: 32.00,    preco: 53.00  },
+    { codigo: '00000622', descricao: 'CONDUTOR 50',                        estoque: 40,     custo: 40.00,    preco: 65.00  },
+    { codigo: '00000008', descricao: 'DISCO FINO INOX 4,5" TYROLIT',      estoque: 67,     custo: 5.396,    preco: 9.00   },
+    { codigo: '00000570', descricao: 'DISCO FINO INOX 7" TYROLIT',        estoque: 39,     custo: 9.36,     preco: 14.00  },
+    { codigo: '00000097', descricao: 'DOBRA DE CHAPA',                     estoque: 56.6,   custo: 0.10,     preco: 1.50   },
+    { codigo: '00000756', descricao: 'ELETRODO 3,25MM',                    estoque: 4,      custo: 15.34,    preco: 25.00  },
+    { codigo: '00000312', descricao: 'ELETRODO 2,5MM',                     estoque: 14.92,  custo: 16.40,    preco: 25.00  },
+    { codigo: '00000374', descricao: 'ESQUADRO ALUMINIO 12"',              estoque: 3,      custo: 40.413,   preco: 62.00  },
+    { codigo: '00000095', descricao: 'ESTANHADOR ELETRICO 110V 950W',      estoque: 1,      custo: 160.50,   preco: 240.00 },
+    { codigo: '00000385', descricao: 'ESTANHO 50X50 SUPER LIGAS',          estoque: 99,     custo: 15.90,    preco: 25.00  },
+    { codigo: '00000035', descricao: 'EXAUSTOR EOLICO 24',                 estoque: 7,      custo: 302.00,   preco: 500.00 },
+    { codigo: '00000738', descricao: 'EXAUSTOR/COPO PROT.ROLAMENTO',       estoque: 13,     custo: 10.00,    preco: 20.00  },
+    { codigo: '00000739', descricao: 'EXAUSTOR/MANCAL P/ROLAMENTO',        estoque: 15,     custo: 10.00,    preco: 20.00  },
+    { codigo: '00000761', descricao: 'EXAUSTOR/ROLAMENTO 6201',            estoque: 1,      custo: 5.00,     preco: 10.00  },
+    { codigo: '00000077', descricao: 'FITA ISOLANTE 3M 20MT',              estoque: 5,      custo: 8.0066,   preco: 13.00  },
+    { codigo: '00000292', descricao: 'P.PHILLIPS 4,2X13 BROCANTE',         estoque: 20,     custo: 5.50,     preco: 10.00  },
+    { codigo: '00001000', descricao: 'P.PHILLIPS 4,2X13 PONTA AGULHA',     estoque: 10,     custo: 5.50,     preco: 10.00  },
+    { codigo: '00000112', descricao: 'PREGO 15 X 15',                      estoque: 20,     custo: 1.66,     preco: 4.00   },
+    { codigo: '00000251', descricao: 'PREGO 18 X 24',                      estoque: 45,     custo: 2.104,    preco: 4.00   },
+    { codigo: '00000543', descricao: 'PREGO DE ACO BEMICA',                estoque: 1,      custo: 26.90,    preco: 36.00  },
+    { codigo: '00000113', descricao: 'PREGO DE ACO SFOR',                  estoque: 4,      custo: 15.90,    preco: 23.00  },
+    { codigo: '00000566', descricao: 'PU HEKOL SACHE 600ML',               estoque: 70,     custo: 44.90,    preco: 60.00  },
+    { codigo: '00000550', descricao: 'PU HEKOL TUBO 300ML',                estoque: 38,     custo: 32.90,    preco: 40.00  },
+    { codigo: '00000178', descricao: 'PU UNIAO SACHE 870ML',               estoque: 44,     custo: 30.00,    preco: 45.00  },
+    { codigo: '00000019', descricao: 'REBITE FLORADO',                      estoque: 484,    custo: 0.298,    preco: 0.50   },
+    { codigo: '00000082', descricao: 'REBITE POP DE ACO 308',               estoque: 14,     custo: 13.90,    preco: 24.00  },
+    { codigo: '00000279', descricao: 'TELHA FIBRA DE VIDRO LEITOSA 1',     estoque: 6,      custo: 59.00,    preco: 82.00  },
+    { codigo: '00000758', descricao: 'TINTA SPRAY PRETO/BRANCA',            estoque: 14,     custo: 17.5465,  preco: 24.00  },
+    { codigo: '00000812', descricao: 'VIDRO P/MASCARA SOLDA TRANSP.',       estoque: 6,      custo: 2.35,     preco: 3.50   },
+  ]
+
+  const upsert = db.prepare(`
+    INSERT INTO produtos
+      (codigo, descricao, estoque_atual, preco_custo_atual, preco_venda_vista, preco_venda_prazo,
+       situacao_produto, controla_estoque, unidade, data_atualizacao)
+    VALUES
+      (@codigo, @descricao, @estoque, @custo, @preco, @preco, 'A', 'S', 'PC', date('now'))
+    ON CONFLICT(codigo) DO UPDATE SET
+      descricao         = excluded.descricao,
+      estoque_atual     = excluded.estoque_atual,
+      preco_custo_atual = excluded.preco_custo_atual,
+      preco_venda_vista = excluded.preco_venda_vista,
+      preco_venda_prazo = excluded.preco_venda_prazo,
+      situacao_produto  = 'A',
+      controla_estoque  = 'S',
+      data_atualizacao  = date('now')
+  `)
+
+  const codigos = produtos.map(p => `'${p.codigo}'`).join(',')
+  const inativar = db.prepare(`UPDATE produtos SET situacao_produto = 'I' WHERE codigo NOT IN (${codigos})`)
+
+  db.transaction(() => {
+    inativar.run()
+    for (const p of produtos) upsert.run(p)
+  })()
 
 // ============================================================
 // UTILITÁRIOS
@@ -1497,6 +1573,92 @@ const manutencao = {
   },
 }
 
+// ============================================================
+// RELATÓRIOS GERENCIAIS
+// ============================================================
+const relatorios = {
+  inventario() {
+    return db.prepare(`
+      SELECT codigo, descricao, unidade, estoque_atual, estoque_minimo,
+             preco_custo_atual, preco_venda_vista,
+             ROUND(estoque_atual * preco_custo_atual, 4) as valor_custo,
+             ROUND(estoque_atual * preco_venda_vista, 4) as valor_vista
+      FROM produtos
+      WHERE situacao_produto = 'A'
+      ORDER BY descricao
+    `).all()
+  },
+
+  itenisVendidos(dataInicio, dataFim) {
+    return db.prepare(`
+      SELECT vi.codigo_produto as codigo, vi.descricao,
+             SUM(vi.quantidade) as quantidade,
+             SUM(vi.valor_total) as valor_venda
+      FROM vendas_itens vi
+      JOIN vendas v ON vi.orcamento = v.orcamento
+      WHERE v.situacao = 'N' AND v.data >= ? AND v.data <= ?
+      GROUP BY vi.codigo_produto, vi.descricao
+      ORDER BY vi.descricao
+    `).all(dataInicio, dataFim)
+  },
+
+  entradasMercadoria(dataInicio, dataFim) {
+    return db.prepare(`
+      SELECT produto_id as codigo, produto as descricao,
+             SUM(quantidade) as qtde_total,
+             SUM(total) as valor_total
+      FROM movimentos_estoque
+      WHERE tipo = 'ENTRADA' AND data >= ? AND data <= ?
+      GROUP BY produto_id, produto
+      ORDER BY produto
+    `).all(dataInicio, dataFim)
+  },
+
+  extrato(dataInicio, dataFim) {
+    const saldoAntes = db.prepare(`
+      SELECT COALESCE(SUM(valor), 0) as total FROM (
+        SELECT valor_pagamento as valor FROM contas_receber
+          WHERE situacao_docto = 'P' AND data_pagamento < ?
+        UNION ALL
+        SELECT -valor_pagamento FROM contas_pagar
+          WHERE situacao_docto = 'P' AND data_pagamento < ?
+        UNION ALL
+        SELECT CASE WHEN tipo = 'RECEITA' THEN valor ELSE -valor END
+          FROM lancamentos_extras WHERE situacao = 'P' AND data_pagamento < ?
+      )
+    `).get(dataInicio, dataInicio, dataInicio)
+
+    const movimentos = db.prepare(`
+      SELECT data, historico, debito, credito, documento, observacao FROM (
+        SELECT data_pagamento as data,
+               UPPER(COALESCE(NULLIF(forma_pagamento,''), 'PIX')) as historico,
+               0.0 as debito, valor_pagamento as credito,
+               nro_docto as documento,
+               'Cliente: ' || COALESCE(codigo_cliente,'') as observacao,
+               id
+        FROM contas_receber
+        WHERE situacao_docto = 'P' AND data_pagamento >= ? AND data_pagamento <= ?
+        UNION ALL
+        SELECT data_pagamento, 'COMPR', valor_pagamento, 0.0,
+               nro_docto, 'Fornecedor: ' || COALESCE(codigo_fornecedor,''), id
+        FROM contas_pagar
+        WHERE situacao_docto = 'P' AND data_pagamento >= ? AND data_pagamento <= ?
+        UNION ALL
+        SELECT data_pagamento,
+               UPPER(SUBSTR(descricao,1,5)),
+               CASE WHEN tipo IN ('DESPESA','VALE') THEN valor ELSE 0.0 END,
+               CASE WHEN tipo = 'RECEITA' THEN valor ELSE 0.0 END,
+               CAST(id AS TEXT), descricao, id
+        FROM lancamentos_extras
+        WHERE situacao = 'P' AND data_pagamento >= ? AND data_pagamento <= ?
+      )
+      ORDER BY data, id
+    `).all(dataInicio, dataFim, dataInicio, dataFim, dataInicio, dataFim)
+
+    return { saldoInicial: saldoAntes?.total || 0, movimentos }
+  },
+}
+
 module.exports = {
   init,
   login,
@@ -1519,4 +1681,5 @@ module.exports = {
   cheques,
   lancamentosExtras,
   reajustesPreco,
+  relatorios,
 }

@@ -7,6 +7,10 @@ import {
   Package,
   RefreshCw,
   Download,
+  ShoppingCart,
+  Truck,
+  Archive,
+  FileText,
 } from 'lucide-react'
 
 const fmt = (v) =>
@@ -69,6 +73,10 @@ function mesAtual() {
 
 const abas = [
   { id: 'rel-vendas', label: 'Vendas', icon: BarChart2 },
+  { id: 'rel-itens-vendidos', label: 'Itens Vendidos', icon: ShoppingCart },
+  { id: 'rel-entradas', label: 'Entradas', icon: Truck },
+  { id: 'rel-inventario', label: 'Inventário', icon: Archive },
+  { id: 'rel-extrato', label: 'Extrato', icon: FileText },
   { id: 'rel-produtos', label: 'Produtos', icon: Package },
   { id: 'rel-contas-receber', label: 'Contas a receber', icon: TrendingUp },
   { id: 'rel-contas-pagar', label: 'Contas a pagar', icon: TrendingDown },
@@ -1904,6 +1912,358 @@ function RelFinanceiro() {
   )
 }
 
+// ── ITENS VENDIDOS ────────────────────────────────────────────────────────────
+function RelItenisVendidos() {
+  const { ini, fim } = mesAtual()
+  const [dataInicio, setDataInicio] = useState(ini)
+  const [dataFim, setDataFim] = useState(fim)
+  const [itens, setItens] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  async function carregar() {
+    setLoading(true)
+    try {
+      const data = await window.api.relatorios.itenisVendidos({ dataInicio, dataFim })
+      setItens(data || [])
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { carregar() }, [])
+
+  const totalQtd = itens.reduce((s, i) => s + (i.quantidade || 0), 0)
+  const totalVal = itens.reduce((s, i) => s + (i.valor_venda || 0), 0)
+
+  return (
+    <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>De</label>
+          <input type='date' value={dataInicio} onChange={e => setDataInicio(e.target.value)}
+            style={{ height: 32, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: 13 }} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Até</label>
+          <input type='date' value={dataFim} onChange={e => setDataFim(e.target.value)}
+            style={{ height: 32, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: 13 }} />
+        </div>
+        <button onClick={carregar} style={{ height: 32, padding: '0 16px', borderRadius: 6, background: 'var(--blue-700)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+          {loading ? 'Carregando…' : 'Atualizar'}
+        </button>
+        <BtnExportar onClick={() => exportarCSV(itens.map(i => ({
+          Código: i.codigo, Descrição: i.descricao,
+          Quantidade: String(i.quantidade || 0).replace('.', ','),
+          'Valor Venda (R$)': (i.valor_venda || 0).toFixed(2).replace('.', ','),
+        })), `itens_vendidos_${dataInicio}_${dataFim}`)} />
+      </div>
+      {loading ? <Carregando /> : (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'var(--gray-50)', borderBottom: '2px solid var(--border)' }}>
+                <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>CÓDIGO</th>
+                <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>DESCRIÇÃO</th>
+                <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>QUANTIDADE</th>
+                <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>VALOR VENDA</th>
+              </tr>
+            </thead>
+            <tbody>
+              {itens.map((it, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontSize: 12, color: 'var(--text-muted)' }}>{it.codigo}</td>
+                  <td style={{ padding: '7px 12px' }}>{it.descricao}</td>
+                  <td style={{ padding: '7px 12px', textAlign: 'right' }}>{(it.quantidade || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td>
+                  <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 500 }}>{fmt(it.valor_venda)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ background: 'var(--gray-50)', borderTop: '2px solid var(--border)', fontWeight: 700 }}>
+                <td colSpan={2} style={{ padding: '8px 12px' }}>TOTAL — {itens.length} produtos</td>
+                <td style={{ padding: '8px 12px', textAlign: 'right' }}>{totalQtd.toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td>
+                <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--blue-700)' }}>{fmt(totalVal)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── ENTRADAS DE MERCADORIA ────────────────────────────────────────────────────
+function RelEntradasMercadoria() {
+  const { ini, fim } = mesAtual()
+  const [dataInicio, setDataInicio] = useState(ini)
+  const [dataFim, setDataFim] = useState(fim)
+  const [itens, setItens] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  async function carregar() {
+    setLoading(true)
+    try {
+      const data = await window.api.relatorios.entradasMercadoria({ dataInicio, dataFim })
+      setItens(data || [])
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { carregar() }, [])
+
+  const totalQtd = itens.reduce((s, i) => s + (i.qtde_total || 0), 0)
+  const totalVal = itens.reduce((s, i) => s + (i.valor_total || 0), 0)
+
+  return (
+    <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>De</label>
+          <input type='date' value={dataInicio} onChange={e => setDataInicio(e.target.value)}
+            style={{ height: 32, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: 13 }} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Até</label>
+          <input type='date' value={dataFim} onChange={e => setDataFim(e.target.value)}
+            style={{ height: 32, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: 13 }} />
+        </div>
+        <button onClick={carregar} style={{ height: 32, padding: '0 16px', borderRadius: 6, background: 'var(--blue-700)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+          {loading ? 'Carregando…' : 'Atualizar'}
+        </button>
+        <BtnExportar onClick={() => exportarCSV(itens.map(i => ({
+          Código: i.codigo, 'Nome/Descrição': i.descricao,
+          'Qtde Total': String(i.qtde_total || 0).replace('.', ','),
+          'Valor Total (R$)': (i.valor_total || 0).toFixed(2).replace('.', ','),
+        })), `entradas_mercadoria_${dataInicio}_${dataFim}`)} />
+      </div>
+      {loading ? <Carregando /> : (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'var(--gray-50)', borderBottom: '2px solid var(--border)' }}>
+                <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>CÓDIGO</th>
+                <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>NOME/DESCRIÇÃO</th>
+                <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>QTDE TOTAL</th>
+                <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>VALOR TOTAL</th>
+              </tr>
+            </thead>
+            <tbody>
+              {itens.map((it, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontSize: 12, color: 'var(--text-muted)' }}>{it.codigo}</td>
+                  <td style={{ padding: '7px 12px' }}>{it.descricao}</td>
+                  <td style={{ padding: '7px 12px', textAlign: 'right' }}>{(it.qtde_total || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td>
+                  <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 500 }}>{fmt(it.valor_total)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ background: 'var(--gray-50)', borderTop: '2px solid var(--border)', fontWeight: 700 }}>
+                <td colSpan={2} style={{ padding: '8px 12px' }}>TOTAL — {itens.length} produtos</td>
+                <td style={{ padding: '8px 12px', textAlign: 'right' }}>{totalQtd.toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td>
+                <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--blue-700)' }}>{fmt(totalVal)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── INVENTÁRIO DE PRODUTOS ────────────────────────────────────────────────────
+function RelInventario() {
+  const [itens, setItens] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [busca, setBusca] = useState('')
+
+  useEffect(() => {
+    window.api.relatorios.inventario().then(setItens).finally(() => setLoading(false))
+  }, [])
+
+  const filtrados = itens.filter(i =>
+    !busca || i.descricao.toLowerCase().includes(busca.toLowerCase()) || i.codigo.includes(busca)
+  )
+  const totalCusto = filtrados.reduce((s, i) => s + (i.valor_custo || 0), 0)
+  const totalVista = filtrados.reduce((s, i) => s + (i.valor_vista || 0), 0)
+
+  return (
+    <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <input placeholder='Buscar produto…' value={busca} onChange={e => setBusca(e.target.value)}
+          style={{ height: 32, padding: '0 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: 13, width: 240 }} />
+        <BtnExportar onClick={() => exportarCSV(filtrados.map(i => ({
+          Código: i.codigo, Descrição: i.descricao, Unidade: i.unidade,
+          'Estoque Atual': String(i.estoque_atual || 0).replace('.', ','),
+          'Estoque Mínimo': String(i.estoque_minimo || 0).replace('.', ','),
+          'Custo Unit. (R$)': (i.preco_custo_atual || 0).toFixed(4).replace('.', ','),
+          'Preço Vista (R$)': (i.preco_venda_vista || 0).toFixed(4).replace('.', ','),
+          'Total Custo (R$)': (i.valor_custo || 0).toFixed(2).replace('.', ','),
+          'Total Vista (R$)': (i.valor_vista || 0).toFixed(2).replace('.', ','),
+        })), `inventario_${new Date().toISOString().slice(0,10)}`)} />
+        <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 'auto' }}>{filtrados.length} produtos</span>
+      </div>
+      {loading ? <Carregando /> : (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--gray-50)', borderBottom: '2px solid var(--border)' }}>
+                {['CÓDIGO','DESCRIÇÃO','UN','ESTOQUE','MÍN','CUSTO UNIT.','PREÇO VISTA','TOTAL CUSTO','TOTAL VISTA'].map(h => (
+                  <th key={h} style={{ padding: '8px 10px', textAlign: h === 'CÓDIGO' || h === 'DESCRIÇÃO' || h === 'UN' ? 'left' : 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtrados.map((it, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <td style={{ padding: '6px 10px', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{it.codigo}</td>
+                  <td style={{ padding: '6px 10px', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.descricao}</td>
+                  <td style={{ padding: '6px 10px' }}>{it.unidade}</td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 500, color: (it.estoque_atual || 0) <= 0 ? '#DC2626' : 'inherit' }}>{(it.estoque_atual || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)' }}>{it.estoque_minimo || 0}</td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right' }}>{(it.preco_custo_atual || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right' }}>{(it.preco_venda_vista || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right' }}>{fmt(it.valor_custo)}</td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 500 }}>{fmt(it.valor_vista)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ background: 'var(--gray-50)', borderTop: '2px solid var(--border)', fontWeight: 700 }}>
+                <td colSpan={7} style={{ padding: '8px 10px' }}>TOTAL GERAL</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{fmt(totalCusto)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right', color: 'var(--blue-700)' }}>{fmt(totalVista)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── EXTRATO ───────────────────────────────────────────────────────────────────
+function RelExtrato() {
+  const { ini, fim } = mesAtual()
+  const [dataInicio, setDataInicio] = useState(ini)
+  const [dataFim, setDataFim] = useState(fim)
+  const [dados, setDados] = useState({ saldoInicial: 0, movimentos: [] })
+  const [loading, setLoading] = useState(false)
+
+  async function carregar() {
+    setLoading(true)
+    try {
+      const data = await window.api.relatorios.extrato({ dataInicio, dataFim })
+      setDados(data || { saldoInicial: 0, movimentos: [] })
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { carregar() }, [])
+
+  // Calcula saldo corrido
+  let saldo = dados.saldoInicial || 0
+  const linhas = (dados.movimentos || []).map(m => {
+    saldo += (m.credito || 0) - (m.debito || 0)
+    return { ...m, saldo }
+  })
+
+  const totalDeb = (dados.movimentos || []).reduce((s, m) => s + (m.debito || 0), 0)
+  const totalCred = (dados.movimentos || []).reduce((s, m) => s + (m.credito || 0), 0)
+  const saldoFinal = (dados.saldoInicial || 0) + totalCred - totalDeb
+
+  return (
+    <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>De</label>
+          <input type='date' value={dataInicio} onChange={e => setDataInicio(e.target.value)}
+            style={{ height: 32, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: 13 }} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Até</label>
+          <input type='date' value={dataFim} onChange={e => setDataFim(e.target.value)}
+            style={{ height: 32, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: 13 }} />
+        </div>
+        <button onClick={carregar} style={{ height: 32, padding: '0 16px', borderRadius: 6, background: 'var(--blue-700)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+          {loading ? 'Carregando…' : 'Atualizar'}
+        </button>
+        <BtnExportar onClick={() => exportarCSV([
+          { Data: '', Histórico: 'SALDO ANTERIOR', Débito: '', Crédito: '', Saldo: dados.saldoInicial.toFixed(2).replace('.', ','), Documento: '', Observação: '' },
+          ...linhas.map(m => ({
+            Data: fmtDate(m.data), Histórico: m.historico,
+            'Débito (R$)': m.debito ? (m.debito).toFixed(2).replace('.', ',') : '',
+            'Crédito (R$)': m.credito ? (m.credito).toFixed(2).replace('.', ',') : '',
+            'Saldo (R$)': m.saldo.toFixed(2).replace('.', ','),
+            Documento: m.documento || '', Observação: m.observacao || '',
+          })),
+          { Data: '', Histórico: 'SALDO FINAL', Débito: totalDeb.toFixed(2).replace('.', ','), Crédito: totalCred.toFixed(2).replace('.', ','), Saldo: saldoFinal.toFixed(2).replace('.', ','), Documento: '', Observação: '' },
+        ], `extrato_${dataInicio}_${dataFim}`)} />
+      </div>
+
+      {/* Cards de totais */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
+        {[
+          { label: 'Saldo anterior', value: fmt(dados.saldoInicial), color: 'var(--text-primary)' },
+          { label: 'Total créditos', value: fmt(totalCred), color: '#16A34A' },
+          { label: 'Total débitos', value: fmt(totalDeb), color: '#DC2626' },
+          { label: 'Saldo final', value: fmt(saldoFinal), color: saldoFinal >= 0 ? 'var(--blue-700)' : '#DC2626' },
+        ].map(c => (
+          <div key={c.label} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{c.label}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: c.color }}>{c.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {loading ? <Carregando /> : (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--gray-50)', borderBottom: '2px solid var(--border)' }}>
+                {['DATA','HISTÓRICO','DÉBITO','CRÉDITO','SALDO','DOCUMENTO','OBSERVAÇÃO'].map(h => (
+                  <th key={h} style={{ padding: '8px 10px', textAlign: ['DÉBITO','CRÉDITO','SALDO'].includes(h) ? 'right' : 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr style={{ background: '#F0FDF4', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>
+                <td colSpan={4} style={{ padding: '6px 10px', color: '#166534' }}>SALDO ANTERIOR</td>
+                <td style={{ padding: '6px 10px', textAlign: 'right', color: '#166534', fontWeight: 700 }}>{fmt(dados.saldoInicial)}</td>
+                <td colSpan={2} />
+              </tr>
+              {linhas.map((m, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{fmtDate(m.data)}</td>
+                  <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontWeight: 600, fontSize: 11 }}>{m.historico}</td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right', color: m.debito ? '#DC2626' : 'var(--text-muted)' }}>{m.debito ? fmt(m.debito) : '—'}</td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right', color: m.credito ? '#16A34A' : 'var(--text-muted)' }}>{m.credito ? fmt(m.credito) : '—'}</td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600 }}>{fmt(m.saldo)}</td>
+                  <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>{m.documento}</td>
+                  <td style={{ padding: '6px 10px', color: 'var(--text-secondary)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.observacao}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ background: 'var(--gray-50)', borderTop: '2px solid var(--border)', fontWeight: 700 }}>
+                <td colSpan={2} style={{ padding: '8px 10px' }}>SALDO</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right', color: '#DC2626' }}>{fmt(totalDeb)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right', color: '#16A34A' }}>{fmt(totalCred)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right', color: 'var(--blue-700)' }}>{fmt(saldoFinal)}</td>
+                <td colSpan={2} />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── COMPONENTE PRINCIPAL ──────────────────────────────────────────────────────
 export default function Relatorios({ paginaAtiva }) {
   const abaInicial = abas.find((a) => a.id === paginaAtiva)?.id || 'rel-vendas'
@@ -1977,6 +2337,14 @@ export default function Relatorios({ paginaAtiva }) {
     switch (abaAtiva) {
       case 'rel-vendas':
         return <RelVendas />
+      case 'rel-itens-vendidos':
+        return <RelItenisVendidos />
+      case 'rel-entradas':
+        return <RelEntradasMercadoria />
+      case 'rel-inventario':
+        return <RelInventario />
+      case 'rel-extrato':
+        return <RelExtrato />
       case 'rel-produtos':
         return <RelProdutos />
       case 'rel-contas-receber':
