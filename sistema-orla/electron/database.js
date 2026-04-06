@@ -97,6 +97,7 @@ function migrarProdutos() {
     inativar.run()
     for (const p of produtos) upsert.run(p)
   })()
+}
 
 // ============================================================
 // UTILITÁRIOS

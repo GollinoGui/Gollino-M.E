@@ -105,6 +105,7 @@ export default function Produtos({ usuario }) {
       const dados = await window.api.produtos.listar({
         busca,
         grupo: filtroGrupo,
+        situacao: 'A',
       })
       setProdutos(dados || [])
     } catch (e) {
