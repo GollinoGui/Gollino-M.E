@@ -445,7 +445,7 @@ INSERT OR IGNORE INTO configuracoes (chave, valor, descricao) VALUES
 INSERT OR IGNORE INTO usuarios (usuario, senha, nome, nivel, super_usuario) VALUES
   ('admin', 'SENHA_ROTACIONADA_REMOVIDA_DO_HISTORICO', 'Administrador', 250, 'S'),
   ('elter', 'SENHA_ROTACIONADA_REMOVIDA_DO_HISTORICO', 'Elter Gollino', 2, 'N'),
-  ('rosangela', 'SENHA_ROTACIONADA_REMOVIDA_DO_HISTORICO', 'Rosangela', 4, 'N');
+  ('rosangela', 'SENHA_ROTACIONADA_REMOVIDA_DO_HISTORICO', 'Rosangela', 1, 'N');
 
 -- ============================================================
 -- DADOS INICIAIS — Caixa padrão

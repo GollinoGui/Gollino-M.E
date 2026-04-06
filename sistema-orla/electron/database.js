@@ -28,6 +28,34 @@ function init(dbPath) {
     db.prepare(`INSERT OR IGNORE INTO configuracoes (chave, valor, descricao) VALUES ('migracao_produtos_v1', 'S', 'Migração inicial de produtos')`).run()
     console.log('✅ Migração de produtos concluída.')
   }
+
+  // Migração de permissões e fornecedores — roda apenas uma vez
+  const migV2 = db.prepare(`SELECT valor FROM configuracoes WHERE chave = 'migracao_v2'`).get()
+  if (!migV2) {
+    // Corrige nível da Rosangela para operador (1)
+    db.prepare(`UPDATE usuarios SET nivel = 1 WHERE usuario = 'rosangela' AND nivel != 1`).run()
+
+    // Extrai fornecedores únicos dos movimentos de estoque
+    const nomes = db.prepare(`
+      SELECT DISTINCT TRIM(fornecedor) as nome FROM movimentos_estoque
+      WHERE fornecedor IS NOT NULL AND TRIM(fornecedor) != ''
+    `).all()
+
+    const proxCod = db.prepare(`SELECT MAX(CAST(codigo AS INTEGER)) as max FROM fornecedores`).get()
+    let seq = (proxCod?.max || 0) + 1
+
+    const insForn = db.prepare(`
+      INSERT OR IGNORE INTO fornecedores (codigo, nome, situacao, data_atualizacao)
+      VALUES (?, ?, 'A', date('now'))
+    `)
+    for (const { nome } of nomes) {
+      insForn.run(String(seq).padStart(6, '0'), nome.toUpperCase())
+      seq++
+    }
+
+    db.prepare(`INSERT OR IGNORE INTO configuracoes (chave, valor, descricao) VALUES ('migracao_v2', 'S', 'Permissões e fornecedores')`).run()
+    console.log(`✅ Migração v2: permissões e ${nomes.length} fornecedor(es) importados.`)
+  }
 }
 
 function migrarProdutos() {

@@ -949,14 +949,16 @@ export default function Vendas({ onNavigate, usuario }) {
                     {v.nome_cliente || 'Consumidor'} · {fmt(v.valor_total)}
                   </div>
                 </div>
-                <button
-                  onClick={() => cancelarVenda(v.orcamento)}
-                  disabled={cancelando === v.orcamento}
-                  title="Cancelar venda"
-                  style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6, border: '1px solid #FECACA', background: '#FFF0F0', color: '#C53030', cursor: 'pointer', flexShrink: 0 }}
-                >
-                  {cancelando === v.orcamento ? '...' : 'Cancelar'}
-                </button>
+                {(usuario?.nivel ?? 0) >= 2 && (
+                  <button
+                    onClick={() => cancelarVenda(v.orcamento)}
+                    disabled={cancelando === v.orcamento}
+                    title="Cancelar venda"
+                    style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6, border: '1px solid #FECACA', background: '#FFF0F0', color: '#C53030', cursor: 'pointer', flexShrink: 0 }}
+                  >
+                    {cancelando === v.orcamento ? '...' : 'Cancelar'}
+                  </button>
+                )}
               </div>
             ))}
           </div>

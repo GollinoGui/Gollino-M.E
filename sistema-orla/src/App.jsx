@@ -149,24 +149,33 @@ export default function App() {
   }, [buscaAberta, pagina])
 
   // Nível mínimo exigido por página (ausente = livre para todos)
+  // 1=operador  2=gerente  250=super
   const nivelMinimo = {
-    'config-empresa':  250,
-    'config-sistema':  250,
-    'manutencao':      250,
-    'caixas-fechados':   2,
-    'contas-pagar':      2,
-    'contas-receber':    2,
-    'fin-receber':       2,
-    'rel-financeiro':    2,
-    'rel-contas-pagar':  2,
-    'rel-contas-receber':2,
-    'rel-vendas':        2,
-    'rel-pre-venda':     2,
-    'rel-entradas':      2,
-    'rel-produtos':      2,
-    'haver':             2,
-    'cheques-receber':   2,
-    'cheques-pagar':     2,
+    // Super apenas
+    'config-empresa':     250,
+    'config-sistema':     250,
+    'manutencao':         250,
+    'importacao':         250,
+    // Gerente apenas
+    'caixas-fechados':      2,
+    'contas-pagar':         2,
+    'devolucao':            2,
+    'haver':                2,
+    'cheques-pagar':        2,
+    'rel-financeiro':       2,
+    'rel-contas-pagar':     2,
+    // Operador e acima
+    'contas-receber':       1,
+    'fin-receber':          1,
+    'cheques-receber':      1,
+    'rel-contas-receber':   1,
+    'rel-vendas':           1,
+    'rel-pre-venda':        1,
+    'rel-entradas':         1,
+    'rel-produtos':         1,
+    'rel-itens-vendidos':   1,
+    'rel-inventario':       1,
+    'rel-extrato':          2,
   }
 
   function renderPagina() {
