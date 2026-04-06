@@ -445,7 +445,7 @@ INSERT OR IGNORE INTO configuracoes (chave, valor, descricao) VALUES
 INSERT OR IGNORE INTO usuarios (usuario, senha, nome, nivel, super_usuario) VALUES
   ('admin', '6c12863da47b965432875f30cad3213524d802544ea2f9878553cbcdab424707', 'Administrador', 250, 'S'),
   ('elter', 'e625caf8bde95031db99602785cf94b1c473e4321723cca842fb1b3a4e6b628a', 'Elter Gollino', 2, 'N'),
-  ('rosangela', '2bbc91450ec3b7cf6d3deadffb450be0de7d617e332f22c46e16dae179b3a1f7', 'Rosangela', 4, 'N');
+  ('rosangela', '2bbc91450ec3b7cf6d3deadffb450be0de7d617e332f22c46e16dae179b3a1f7', 'Rosangela', 1, 'N');
 
 -- ============================================================
 -- DADOS INICIAIS — Caixa padrão
