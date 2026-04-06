@@ -155,4 +155,12 @@ contextBridge.exposeInMainWorld('api', {
     listar: (filtros) => ipcRenderer.invoke('reajustesPreco:listar', filtros),
     aplicar: (dados) => ipcRenderer.invoke('reajustesPreco:aplicar', dados),
   },
+
+  // RELATÓRIOS GERENCIAIS
+  relatorios: {
+    inventario: () => ipcRenderer.invoke('relatorios:inventario'),
+    itenisVendidos: (f) => ipcRenderer.invoke('relatorios:itenisVendidos', f),
+    entradasMercadoria: (f) => ipcRenderer.invoke('relatorios:entradasMercadoria', f),
+    extrato: (f) => ipcRenderer.invoke('relatorios:extrato', f),
+  },
 })
