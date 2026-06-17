@@ -430,13 +430,10 @@ INSERT INTO configuracoes (chave, valor, descricao) VALUES
 ON CONFLICT (chave) DO NOTHING;
 
 -- ============================================================
--- DADOS INICIAIS — Usuários
+-- USUÁRIOS — sem seed de senha aqui de propósito (este arquivo é público).
+-- O primeiro usuário admin deve ser criado manualmente, direto no banco,
+-- com uma senha forte gerada fora do controle de versão.
 -- ============================================================
-INSERT INTO usuarios (usuario, senha, nome, nivel, super_usuario) VALUES
-  ('admin', 'SENHA_ROTACIONADA_REMOVIDA_DO_HISTORICO', 'Administrador', 250, 'S'),
-  ('elter', 'SENHA_ROTACIONADA_REMOVIDA_DO_HISTORICO', 'Elter Gollino', 2, 'N'),
-  ('rosangela', 'SENHA_ROTACIONADA_REMOVIDA_DO_HISTORICO', 'Rosangela', 1, 'N')
-ON CONFLICT (usuario) DO NOTHING;
 
 -- ============================================================
 -- DADOS INICIAIS — Caixa padrão
