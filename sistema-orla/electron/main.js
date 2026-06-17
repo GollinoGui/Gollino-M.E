@@ -1,20 +1,41 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { autoUpdater } = require('electron-updater')
 
 // Importa o módulo de banco de dados
 const db = require('./database')
 
 const isDev = !app.isPackaged
 
-// Pasta onde o banco vai ficar: C:\GollinoME\banco\
-function getDbPath() {
+// Pasta onde fica a config de conexão: C:\GollinoME\banco\connection.json
+function getBancoDir() {
   const base = isDev
     ? path.join(__dirname, '..')
     : path.dirname(app.getPath('exe'))
-  const dbDir = path.join(base, 'banco')
-  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true })
-  return path.join(dbDir, 'gollino.db')
+  const dir = path.join(base, 'banco')
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+// Lê a config de conexão do Postgres/Supabase de banco/connection.json
+// (arquivo local, não commitado — configurado manualmente em cada máquina).
+// Usa campos separados (host/port/database/user/password) em vez de uma
+// única URI, pra evitar problema de escaping quando a senha tem caracteres
+// especiais (#, @, etc).
+function getDbConfig() {
+  const file = path.join(getBancoDir(), 'connection.json')
+  if (!fs.existsSync(file)) {
+    throw new Error(
+      `Arquivo de conexão não encontrado: ${file}\n` +
+      `Crie esse arquivo com: { "host": "...", "port": 5432, "database": "postgres", "user": "postgres", "password": "..." }`,
+    )
+  }
+  const conteudo = JSON.parse(fs.readFileSync(file, 'utf8'))
+  if (!conteudo.host || !conteudo.password) {
+    throw new Error(`"host"/"password" ausentes em ${file}`)
+  }
+  return conteudo
 }
 
 function createWindow() {
@@ -44,16 +65,60 @@ function createWindow() {
   win.setMenuBarVisibility(false)
 }
 
-app.whenReady().then(() => {
-  // Inicializa o banco de dados
-  db.init(getDbPath())
+app.whenReady().then(async () => {
+  // Inicializa o banco de dados (Postgres/Supabase)
+  let dbConfig
+  try {
+    dbConfig = getDbConfig()
+    await db.init(dbConfig)
+  } catch (e) {
+    console.error('❌ Falha ao conectar no banco:', e.message)
+    dialog.showErrorBox('Erro ao conectar no banco de dados', e.message)
+    app.quit()
+    return
+  }
 
   createWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+
+  setupAutoUpdater()
 })
+
+// Auto-update via GitHub Releases — só faz sentido na versão instalada (não em dev)
+function setupAutoUpdater() {
+  if (isDev) return
+
+  autoUpdater.checkForUpdates()
+
+  autoUpdater.on('update-available', () => {
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Atualização disponível',
+      message: 'Uma nova versão do Gollino M.E está sendo baixada em segundo plano.',
+      buttons: ['OK'],
+    })
+  })
+
+  autoUpdater.on('update-downloaded', () => {
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Atualização pronta',
+      message: 'A nova versão foi baixada. Reinicie o app para instalar.',
+      buttons: ['Reiniciar agora', 'Depois'],
+    }).then(({ response }) => {
+      if (response === 0) {
+        autoUpdater.quitAndInstall(true, true)
+      }
+    })
+  })
+
+  autoUpdater.on('error', (err) => {
+    console.error('Erro no auto-update:', err.message)
+  })
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
@@ -174,10 +239,7 @@ handle('movimentosEstoque:salvar', (_, dados) => db.movimentosEstoque.salvar(dad
 
 // --- PDF ---
 function getVendasDir() {
-  const base = isDev
-    ? path.join(__dirname, '..')
-    : path.dirname(app.getPath('exe'))
-  const dir = path.join(base, 'banco', 'vendas')
+  const dir = path.join(getBancoDir(), 'vendas')
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
   return dir
 }
@@ -405,11 +467,11 @@ th{background:#f0f0f0;font-weight:700;font-size:9px}
 
 ipcMain.handle('pdf:gerarVenda', async (_, orcamento) => {
   try {
-    const venda = db.vendas.buscar(orcamento)
+    const venda = await db.vendas.buscar(orcamento)
     if (!venda) return { sucesso: false, erro: 'Venda não encontrada' }
 
     // Empresa: tenta JSON blob primeiro, depois fallback nos campos individuais
-    const configs = db.config.get()
+    const configs = await db.config.get()
     const cfgMap = {}
     for (const c of configs) cfgMap[c.chave] = c.valor
     const blob = cfgMap['empresa'] ? (() => { try { return JSON.parse(cfgMap['empresa']) } catch { return null } })() : null
@@ -438,17 +500,17 @@ ipcMain.handle('pdf:gerarVenda', async (_, orcamento) => {
     }
 
     // Cliente completo
-    const cliente = venda.codigo_cliente ? db.clientes.buscar(venda.codigo_cliente) : null
+    const cliente = venda.codigo_cliente ? await db.clientes.buscar(venda.codigo_cliente) : null
 
     // Saldo CR em aberto do cliente
     let saldoCR = 0
     if (venda.codigo_cliente) {
-      try { saldoCR = db.contasReceber.saldoCliente(venda.codigo_cliente) } catch (_) {}
+      try { saldoCR = await db.contasReceber.saldoCliente(venda.codigo_cliente) } catch (_) {}
     }
 
     // Vencimentos desta venda
     let vencimentos = []
-    try { vencimentos = db.contasReceber.porOrcamento(venda.orcamento) } catch (_) {}
+    try { vencimentos = await db.contasReceber.porOrcamento(venda.orcamento) } catch (_) {}
 
     const html = gerarHtmlVenda(venda, empresa, cliente, saldoCR, vencimentos)
 
@@ -484,33 +546,15 @@ ipcMain.handle('pdf:gerarVenda', async (_, orcamento) => {
 })
 
 // --- BACKUP ---
+// O banco agora é compartilhado no Supabase (Postgres), não um arquivo local —
+// exportar/importar por cópia de arquivo não se aplica mais. Revisar depois
+// com uma exportação real (dump das tabelas), se for necessário.
 ipcMain.handle('backup:exportar', async () => {
-  const { filePath } = await dialog.showSaveDialog({
-    title: 'Salvar Backup',
-    defaultPath: `backup_gollino_${new Date().toISOString().slice(0, 10)}.db`,
-    filters: [{ name: 'Banco de Dados', extensions: ['db'] }],
-  })
-  if (filePath) {
-    fs.copyFileSync(getDbPath(), filePath)
-    return { sucesso: true, caminho: filePath }
-  }
-  return { sucesso: false }
+  return { sucesso: false, erro: 'Backup por arquivo local desativado: o banco agora é compartilhado no Supabase.' }
 })
 
 ipcMain.handle('backup:importar', async () => {
-  const { filePaths } = await dialog.showOpenDialog({
-    title: 'Selecionar arquivo de backup',
-    filters: [{ name: 'Banco de Dados', extensions: ['db'] }],
-    properties: ['openFile'],
-  })
-  if (!filePaths || filePaths.length === 0) return { sucesso: false }
-  const origem = filePaths[0]
-  const destino = getDbPath()
-  // Cria cópia de segurança do banco atual antes de sobrescrever
-  const seguranca = destino.replace('.db', `_antes_restauracao_${new Date().toISOString().slice(0,10)}.db`)
-  fs.copyFileSync(destino, seguranca)
-  fs.copyFileSync(origem, destino)
-  return { sucesso: true, seguranca }
+  return { sucesso: false, erro: 'Restauração por arquivo local desativada: o banco agora é compartilhado no Supabase.' }
 })
 
 // --- HAVER ---

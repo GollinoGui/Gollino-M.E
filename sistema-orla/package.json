@@ -10,11 +10,14 @@
     "dev:electron": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build",
     "build:electron": "vite build && electron-builder",
+    "release": "vite build && electron-builder --publish always",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "lucide-react": "^0.577.0",
+    "pg": "^8.21.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
@@ -43,21 +46,24 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "schema.sql"
+      "schema.postgres.sql"
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "GollinoGui",
+      "repo": "Gollino-M.E",
+      "releaseType": "release"
+    },
     "win": {
-      "target": "nsis",
-      "icon": "public/icon.ico"
+      "target": "nsis"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "public/icon.ico",
-      "uninstallerIcon": "public/icon.ico",
-      "installerHeaderIcon": "public/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Gollino M.E"
+      "shortcutName": "Gollino M.E",
+      "include": "build/installer.nsh"
     }
   }
 }

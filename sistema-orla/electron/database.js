@@ -1,64 +1,121 @@
-const Database = require('better-sqlite3')
+const { Pool } = require('pg')
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 
+let pool
 let db
 
 // ============================================================
-// INIT — cria o banco e as tabelas se não existirem
+// HELPERS — conversão de placeholders e runner de query
 // ============================================================
-function init(dbPath) {
-  db = new Database(dbPath)
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
+function toPositional(sql) {
+  let i = 0
+  return sql.replace(/\?/g, () => `$${++i}`)
+}
 
-  const schemaPath = path.join(__dirname, '../schema.sql')
+function namedToPositional(sql, paramsObj) {
+  const values = []
+  const text = sql.replace(/@(\w+)/g, (_, key) => {
+    values.push(paramsObj[key])
+    return `$${values.length}`
+  })
+  return { text, values }
+}
+
+function makeRunner(executor) {
+  return {
+    async query(sql, params = []) {
+      return executor.query(toPositional(sql), params)
+    },
+    async get(sql, params = []) {
+      const { rows } = await this.query(sql, params)
+      return rows[0]
+    },
+    async all(sql, params = []) {
+      const { rows } = await this.query(sql, params)
+      return rows
+    },
+    async run(sql, params = []) {
+      const result = await this.query(sql, params)
+      return { changes: result.rowCount, rows: result.rows }
+    },
+    async runNamed(sql, paramsObj) {
+      const { text, values } = namedToPositional(sql, paramsObj)
+      return this.run(text, values)
+    },
+  }
+}
+
+async function withTransaction(fn) {
+  const client = await pool.connect()
+  const t = makeRunner(client)
+  try {
+    await client.query('BEGIN')
+    const result = await fn(t)
+    await client.query('COMMIT')
+    return result
+  } catch (e) {
+    await client.query('ROLLBACK')
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
+// ============================================================
+// INIT — conecta no Postgres (Supabase) e garante o schema
+// ============================================================
+async function init(dbConfig) {
+  pool = new Pool({
+    ...dbConfig,
+    ssl: { rejectUnauthorized: false },
+  })
+  db = makeRunner(pool)
+
+  const schemaPath = path.join(__dirname, '../schema.postgres.sql')
   if (fs.existsSync(schemaPath)) {
     const schema = fs.readFileSync(schemaPath, 'utf8')
-    db.exec(schema)
+    await pool.query(schema)
   }
 
-  console.log('✅ Banco de dados iniciado em:', dbPath)
+  console.log('✅ Banco de dados (Postgres/Supabase) conectado.')
 
   // Migração única de produtos — roda apenas uma vez
-  const jaRodou = db.prepare(`SELECT valor FROM configuracoes WHERE chave = 'migracao_produtos_v1'`).get()
+  const jaRodou = await db.get(`SELECT valor FROM configuracoes WHERE chave = 'migracao_produtos_v1'`)
   if (!jaRodou) {
-    migrarProdutos()
-    db.prepare(`INSERT OR IGNORE INTO configuracoes (chave, valor, descricao) VALUES ('migracao_produtos_v1', 'S', 'Migração inicial de produtos')`).run()
+    await migrarProdutos()
+    await db.run(`INSERT INTO configuracoes (chave, valor, descricao) VALUES ('migracao_produtos_v1', 'S', 'Migração inicial de produtos') ON CONFLICT (chave) DO NOTHING`)
     console.log('✅ Migração de produtos concluída.')
   }
 
   // Migração de permissões e fornecedores — roda apenas uma vez
-  const migV2 = db.prepare(`SELECT valor FROM configuracoes WHERE chave = 'migracao_v2'`).get()
+  const migV2 = await db.get(`SELECT valor FROM configuracoes WHERE chave = 'migracao_v2'`)
   if (!migV2) {
-    // Corrige nível da Rosangela para operador (1)
-    db.prepare(`UPDATE usuarios SET nivel = 1 WHERE usuario = 'rosangela' AND nivel != 1`).run()
+    await db.run(`UPDATE usuarios SET nivel = 1 WHERE usuario = 'rosangela' AND nivel != 1`)
 
-    // Extrai fornecedores únicos dos movimentos de estoque
-    const nomes = db.prepare(`
+    const nomes = await db.all(`
       SELECT DISTINCT TRIM(fornecedor) as nome FROM movimentos_estoque
       WHERE fornecedor IS NOT NULL AND TRIM(fornecedor) != ''
-    `).all()
+    `)
 
-    const proxCod = db.prepare(`SELECT MAX(CAST(codigo AS INTEGER)) as max FROM fornecedores`).get()
+    const proxCod = await db.get(`SELECT MAX(CAST(codigo AS INTEGER)) as max FROM fornecedores`)
     let seq = (proxCod?.max || 0) + 1
 
-    const insForn = db.prepare(`
-      INSERT OR IGNORE INTO fornecedores (codigo, nome, situacao, data_atualizacao)
-      VALUES (?, ?, 'A', date('now'))
-    `)
     for (const { nome } of nomes) {
-      insForn.run(String(seq).padStart(6, '0'), nome.toUpperCase())
+      await db.run(
+        `INSERT INTO fornecedores (codigo, nome, situacao, data_atualizacao) VALUES (?, ?, 'A', ?) ON CONFLICT (codigo) DO NOTHING`,
+        [String(seq).padStart(6, '0'), nome.toUpperCase(), hoje()],
+      )
       seq++
     }
 
-    db.prepare(`INSERT OR IGNORE INTO configuracoes (chave, valor, descricao) VALUES ('migracao_v2', 'S', 'Permissões e fornecedores')`).run()
+    await db.run(`INSERT INTO configuracoes (chave, valor, descricao) VALUES ('migracao_v2', 'S', 'Permissões e fornecedores') ON CONFLICT (chave) DO NOTHING`)
     console.log(`✅ Migração v2: permissões e ${nomes.length} fornecedor(es) importados.`)
   }
 }
 
-function migrarProdutos() {
+async function migrarProdutos() {
   const produtos = [
     { codigo: '00000004', descricao: 'APLICADOR P/SELANTES TUBO',        estoque: 3,      custo: 30.25,    preco: 48.00  },
     { codigo: '00000442', descricao: 'ARAME SOLDA [FIO]',                 estoque: 10,     custo: 4.892,    preco: 10.00  },
@@ -101,30 +158,44 @@ function migrarProdutos() {
     { codigo: '00000812', descricao: 'VIDRO P/MASCARA SOLDA TRANSP.',       estoque: 6,      custo: 2.35,     preco: 3.50   },
   ]
 
-  const upsert = db.prepare(`
-    INSERT INTO produtos
-      (codigo, descricao, estoque_atual, preco_custo_atual, preco_venda_vista, preco_venda_prazo,
-       situacao_produto, controla_estoque, unidade, data_atualizacao)
-    VALUES
-      (@codigo, @descricao, @estoque, @custo, @preco, @preco, 'A', 'S', 'PC', date('now'))
-    ON CONFLICT(codigo) DO UPDATE SET
-      descricao         = excluded.descricao,
-      estoque_atual     = excluded.estoque_atual,
-      preco_custo_atual = excluded.preco_custo_atual,
-      preco_venda_vista = excluded.preco_venda_vista,
-      preco_venda_prazo = excluded.preco_venda_prazo,
-      situacao_produto  = 'A',
-      controla_estoque  = 'S',
-      data_atualizacao  = date('now')
-  `)
+  const dataHoje = hoje()
 
-  const codigos = produtos.map(p => `'${p.codigo}'`).join(',')
-  const inativar = db.prepare(`UPDATE produtos SET situacao_produto = 'I' WHERE codigo NOT IN (${codigos})`)
+  await withTransaction(async (t) => {
+    const codigos = produtos.map(p => `'${p.codigo}'`).join(',')
+    await t.run(`UPDATE produtos SET situacao_produto = 'I' WHERE codigo NOT IN (${codigos})`)
 
-  db.transaction(() => {
-    inativar.run()
-    for (const p of produtos) upsert.run(p)
-  })()
+    for (const p of produtos) {
+      await t.runNamed(`
+        INSERT INTO produtos
+          (codigo, descricao, estoque_atual, preco_custo_atual, preco_venda_vista, preco_venda_prazo,
+           situacao_produto, controla_estoque, unidade, data_atualizacao)
+        VALUES
+          (@codigo, @descricao, @estoque, @custo, @preco, @preco, 'A', 'S', 'PC', @data)
+        ON CONFLICT(codigo) DO UPDATE SET
+          descricao         = excluded.descricao,
+          estoque_atual     = excluded.estoque_atual,
+          preco_custo_atual = excluded.preco_custo_atual,
+          preco_venda_vista = excluded.preco_venda_vista,
+          preco_venda_prazo = excluded.preco_venda_prazo,
+          situacao_produto  = 'A',
+          controla_estoque  = 'S',
+          data_atualizacao  = @data
+      `, { ...p, data: dataHoje })
+    }
+  })
+}
+
+// ============================================================
+// NUMERAÇÃO ATÔMICA (vendas, pré-vendas, pedidos de compra)
+// ============================================================
+async function proximoNumeroAtomico(chave) {
+  const row = await db.get(
+    `INSERT INTO numeradores (chave, valor) VALUES (?, 1)
+     ON CONFLICT (chave) DO UPDATE SET valor = numeradores.valor + 1
+     RETURNING valor`,
+    [chave],
+  )
+  return row.valor
 }
 
 // ============================================================
@@ -160,13 +231,12 @@ function agora() {
 // ============================================================
 // AUTH
 // ============================================================
-function login(usuario, senha) {
-  const row = db
-    .prepare(
-      `SELECT usuario, nome, nivel, super_usuario, codigo_vendedor, senha
-       FROM usuarios WHERE usuario = ? AND ativo = 'S'`,
-    )
-    .get(usuario)
+async function login(usuario, senha) {
+  const row = await db.get(
+    `SELECT usuario, nome, nivel, super_usuario, codigo_vendedor, senha
+     FROM usuarios WHERE usuario = ? AND ativo = 'S'`,
+    [usuario],
+  )
 
   if (!row || !verificarSenha(senha, row.senha)) {
     return { sucesso: false, erro: 'Usuário ou senha inválidos' }
@@ -174,16 +244,10 @@ function login(usuario, senha) {
 
   // migração gradual: se ainda usa hash legado, atualiza para PBKDF2
   if (!row.senha.startsWith('pbkdf2:')) {
-    db.prepare(`UPDATE usuarios SET senha = ? WHERE usuario = ?`).run(
-      hashSenha(senha),
-      usuario,
-    )
+    await db.run(`UPDATE usuarios SET senha = ? WHERE usuario = ?`, [hashSenha(senha), usuario])
   }
 
-  db.prepare(`UPDATE usuarios SET ultima_saida = ? WHERE usuario = ?`).run(
-    new Date().toISOString(),
-    usuario,
-  )
+  await db.run(`UPDATE usuarios SET ultima_saida = ? WHERE usuario = ?`, [new Date().toISOString(), usuario])
 
   const { senha: _s, ...usuarioSemSenha } = row
   return { sucesso: true, usuario: usuarioSemSenha }
@@ -193,7 +257,7 @@ function login(usuario, senha) {
 // CLIENTES
 // ============================================================
 const clientes = {
-  listar(filtros = {}) {
+  async listar(filtros = {}) {
     let sql = `SELECT * FROM clientes WHERE 1=1`
     const params = []
 
@@ -207,17 +271,15 @@ const clientes = {
       params.push(filtros.situacao)
     }
     sql += ` ORDER BY nome LIMIT 500`
-    return db.prepare(sql).all(...params)
+    return db.all(sql, params)
   },
 
-  buscar(codigo) {
-    return db.prepare(`SELECT * FROM clientes WHERE codigo = ?`).get(codigo)
+  async buscar(codigo) {
+    return db.get(`SELECT * FROM clientes WHERE codigo = ?`, [codigo])
   },
 
-  salvar(dados) {
-    const existe = db
-      .prepare(`SELECT id FROM clientes WHERE codigo = ?`)
-      .get(dados.codigo)
+  async salvar(dados) {
+    const existe = await db.get(`SELECT id FROM clientes WHERE codigo = ?`, [dados.codigo])
     if (existe) {
       const sets = Object.keys(dados)
         .filter((k) => k !== 'codigo')
@@ -226,25 +288,25 @@ const clientes = {
       const vals = Object.keys(dados)
         .filter((k) => k !== 'codigo')
         .map((k) => dados[k])
-      db.prepare(
+      await db.run(
         `UPDATE clientes SET ${sets}, data_atualizacao = ?, hora_atualizacao = ? WHERE codigo = ?`,
-      ).run(...vals, hoje(), agora(), dados.codigo)
+        [...vals, hoje(), agora(), dados.codigo],
+      )
     } else {
       const cols = Object.keys(dados).join(', ')
       const phs = Object.keys(dados)
         .map(() => '?')
         .join(', ')
-      db.prepare(
+      await db.run(
         `INSERT INTO clientes (${cols}, data_atualizacao, hora_atualizacao) VALUES (${phs}, ?, ?)`,
-      ).run(...Object.values(dados), hoje(), agora())
+        [...Object.values(dados), hoje(), agora()],
+      )
     }
     return { sucesso: true }
   },
 
-  excluir(codigo) {
-    db.prepare(
-      `UPDATE clientes SET status_registro = 'I' WHERE codigo = ?`,
-    ).run(codigo)
+  async excluir(codigo) {
+    await db.run(`UPDATE clientes SET status_registro = 'I' WHERE codigo = ?`, [codigo])
     return { sucesso: true }
   },
 }
@@ -253,7 +315,7 @@ const clientes = {
 // PRODUTOS
 // ============================================================
 const produtos = {
-  listar(filtros = {}) {
+  async listar(filtros = {}) {
     let sql = `SELECT * FROM produtos WHERE 1=1`
     const params = []
 
@@ -278,17 +340,15 @@ const produtos = {
       sql += ` AND estoque_atual <= estoque_minimo AND controla_estoque = 'S' AND situacao_produto = 'A'`
     }
     sql += ` ORDER BY descricao LIMIT 500`
-    return db.prepare(sql).all(...params)
+    return db.all(sql, params)
   },
 
-  buscar(codigo) {
-    return db.prepare(`SELECT * FROM produtos WHERE codigo = ?`).get(codigo)
+  async buscar(codigo) {
+    return db.get(`SELECT * FROM produtos WHERE codigo = ?`, [codigo])
   },
 
-  salvar(dados) {
-    const existe = db
-      .prepare(`SELECT id FROM produtos WHERE codigo = ?`)
-      .get(dados.codigo)
+  async salvar(dados) {
+    const existe = await db.get(`SELECT id FROM produtos WHERE codigo = ?`, [dados.codigo])
     if (existe) {
       const sets = Object.keys(dados)
         .filter((k) => k !== 'codigo')
@@ -297,25 +357,25 @@ const produtos = {
       const vals = Object.keys(dados)
         .filter((k) => k !== 'codigo')
         .map((k) => dados[k])
-      db.prepare(
+      await db.run(
         `UPDATE produtos SET ${sets}, data_atualizacao = ?, hora_atualizacao = ? WHERE codigo = ?`,
-      ).run(...vals, hoje(), agora(), dados.codigo)
+        [...vals, hoje(), agora(), dados.codigo],
+      )
     } else {
       const cols = Object.keys(dados).join(', ')
       const phs = Object.keys(dados)
         .map(() => '?')
         .join(', ')
-      db.prepare(
+      await db.run(
         `INSERT INTO produtos (${cols}, data_atualizacao, hora_atualizacao) VALUES (${phs}, ?, ?)`,
-      ).run(...Object.values(dados), hoje(), agora())
+        [...Object.values(dados), hoje(), agora()],
+      )
     }
     return { sucesso: true }
   },
 
-  excluir(codigo) {
-    db.prepare(
-      `UPDATE produtos SET situacao_produto = 'I' WHERE codigo = ?`,
-    ).run(codigo)
+  async excluir(codigo) {
+    await db.run(`UPDATE produtos SET situacao_produto = 'I' WHERE codigo = ?`, [codigo])
     return { sucesso: true }
   },
 }
@@ -324,7 +384,7 @@ const produtos = {
 // VENDAS
 // ============================================================
 const vendas = {
-  listar(filtros = {}) {
+  async listar(filtros = {}) {
     let sql = `
       SELECT v.*, c.nome as nome_cliente
       FROM vendas v
@@ -352,121 +412,112 @@ const vendas = {
     }
 
     sql += ` ORDER BY v.data DESC, v.orcamento DESC LIMIT 500`
-    return db.prepare(sql).all(...params)
+    return db.all(sql, params)
   },
 
-  buscar(orcamento) {
-    const venda = db
-      .prepare(
-        `
+  async buscar(orcamento) {
+    const venda = await db.get(
+      `
       SELECT v.*, c.nome as nome_cliente
       FROM vendas v
       LEFT JOIN clientes c ON v.codigo_cliente = c.codigo
       WHERE v.orcamento = ?
     `,
-      )
-      .get(orcamento)
+      [orcamento],
+    )
 
     if (venda) {
-      venda.itens = db
-        .prepare(
-          `
+      venda.itens = await db.all(
+        `
         SELECT vi.*, p.descricao as desc_produto
         FROM vendas_itens vi
         LEFT JOIN produtos p ON vi.codigo_produto = p.codigo
         WHERE vi.orcamento = ?
       `,
-        )
-        .all(orcamento)
+        [orcamento],
+      )
     }
     return venda
   },
 
-  proximoNumero() {
-    const row = db
-      .prepare(`SELECT MAX(CAST(orcamento AS INTEGER)) as ultimo FROM vendas`)
-      .get()
-    const proximo = ((row?.ultimo || 0) + 1).toString().padStart(8, '0')
-    return { numero: proximo }
+  async proximoNumero() {
+    const valor = await proximoNumeroAtomico('vendas')
+    return { numero: String(valor).padStart(8, '0') }
   },
 
-  salvar(dados) {
+  async salvar(dados) {
     const { itens, ...venda } = dados
 
-    const salvarVenda = db.transaction(() => {
+    const salvarVenda = () => withTransaction(async (t) => {
       // Salva cabeçalho
-      const existe = db
-        .prepare(`SELECT id FROM vendas WHERE orcamento = ?`)
-        .get(venda.orcamento)
+      const existe = await t.get(`SELECT id FROM vendas WHERE orcamento = ?`, [venda.orcamento])
       if (existe) {
-        db.prepare(
+        await t.run(
           `UPDATE vendas SET codigo_cliente=?, data=?, tipo_venda=?, situacao=?,
           valor_total=?, valor_descontos_itens=?, valor_acrescimo=?, valor_desconto_final=?,
           valor_entrada=?, valor_restante=?, codigo_forma_pagamento1=?, valor_pago_dinheiro=?,
           valor_pago_cartao_credito=?, valor_pago_cartao_debito=?, valor_pago_cheque=?,
           usuario_cadastro=?, data_cadastro=?, hora_cadastro=?
           WHERE orcamento = ?`,
-        ).run(
-          venda.codigo_cliente,
-          venda.data,
-          venda.tipo_venda || 'V',
-          venda.situacao || 'N',
-          venda.valor_total,
-          venda.valor_descontos_itens || 0,
-          venda.valor_acrescimo || 0,
-          venda.valor_desconto_final || 0,
-          venda.valor_entrada || 0,
-          venda.valor_restante || 0,
-          venda.codigo_forma_pagamento1,
-          venda.valor_pago_dinheiro || 0,
-          venda.valor_pago_cartao_credito || 0,
-          venda.valor_pago_cartao_debito || 0,
-          venda.valor_pago_cheque || 0,
-          venda.usuario_cadastro,
-          hoje(),
-          agora(),
-          venda.orcamento,
+          [
+            venda.codigo_cliente,
+            venda.data,
+            venda.tipo_venda || 'V',
+            venda.situacao || 'N',
+            venda.valor_total,
+            venda.valor_descontos_itens || 0,
+            venda.valor_acrescimo || 0,
+            venda.valor_desconto_final || 0,
+            venda.valor_entrada || 0,
+            venda.valor_restante || 0,
+            venda.codigo_forma_pagamento1,
+            venda.valor_pago_dinheiro || 0,
+            venda.valor_pago_cartao_credito || 0,
+            venda.valor_pago_cartao_debito || 0,
+            venda.valor_pago_cheque || 0,
+            venda.usuario_cadastro,
+            hoje(),
+            agora(),
+            venda.orcamento,
+          ],
         )
-        db.prepare(`DELETE FROM vendas_itens WHERE orcamento = ?`).run(
-          venda.orcamento,
-        )
+        await t.run(`DELETE FROM vendas_itens WHERE orcamento = ?`, [venda.orcamento])
       } else {
-        db.prepare(
+        await t.run(
           `INSERT INTO vendas (orcamento, codigo_cliente, data, tipo_venda, situacao,
           valor_total, valor_descontos_itens, valor_acrescimo, valor_desconto_final,
           valor_entrada, valor_restante, codigo_forma_pagamento1, valor_pago_dinheiro,
           valor_pago_cartao_credito, valor_pago_cartao_debito, valor_pago_cheque,
           observacao, usuario_cadastro, data_cadastro, hora_cadastro)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        ).run(
-          venda.orcamento,
-          venda.codigo_cliente,
-          venda.data,
-          venda.tipo_venda || 'V',
-          'N',
-          venda.valor_total,
-          venda.valor_descontos_itens || 0,
-          venda.valor_acrescimo || 0,
-          venda.valor_desconto_final || 0,
-          venda.valor_entrada || 0,
-          venda.valor_restante || 0,
-          venda.codigo_forma_pagamento1,
-          venda.valor_pago_dinheiro || 0,
-          venda.valor_pago_cartao_credito || 0,
-          venda.valor_pago_cartao_debito || 0,
-          venda.valor_pago_cheque || 0,
-          venda.observacao || '',
-          venda.usuario_cadastro,
-          hoje(),
-          agora(),
+          [
+            venda.orcamento,
+            venda.codigo_cliente,
+            venda.data,
+            venda.tipo_venda || 'V',
+            'N',
+            venda.valor_total,
+            venda.valor_descontos_itens || 0,
+            venda.valor_acrescimo || 0,
+            venda.valor_desconto_final || 0,
+            venda.valor_entrada || 0,
+            venda.valor_restante || 0,
+            venda.codigo_forma_pagamento1,
+            venda.valor_pago_dinheiro || 0,
+            venda.valor_pago_cartao_credito || 0,
+            venda.valor_pago_cartao_debito || 0,
+            venda.valor_pago_cheque || 0,
+            venda.observacao || '',
+            venda.usuario_cadastro,
+            hoje(),
+            agora(),
+          ],
         )
       }
 
       // Valida estoque antes de salvar
       for (const item of itens || []) {
-        const prod = db
-          .prepare(`SELECT estoque_atual, controla_estoque, descricao FROM produtos WHERE codigo = ?`)
-          .get(item.codigo_produto)
+        const prod = await t.get(`SELECT estoque_atual, controla_estoque, descricao FROM produtos WHERE codigo = ?`, [item.codigo_produto])
         if (prod?.controla_estoque === 'S' && (prod.estoque_atual ?? 0) < item.quantidade) {
           throw new Error(
             `Estoque insuficiente: "${prod.descricao}" — disponível: ${prod.estoque_atual}, solicitado: ${item.quantidade}`,
@@ -475,74 +526,74 @@ const vendas = {
       }
 
       // Salva itens e atualiza estoque
-      const insItem = db.prepare(`INSERT INTO vendas_itens
-        (orcamento, codigo_produto, descricao, quantidade, unidade, preco_unitario, preco_custo, valor_desconto, valor_acrescimo, valor_total)
-        VALUES (?,?,?,?,?,?,?,?,?,?)`)
-
       for (const item of itens || []) {
-        insItem.run(
-          venda.orcamento,
-          item.codigo_produto,
-          item.descricao,
-          item.quantidade,
-          item.unidade,
-          item.preco_unitario,
-          item.preco_custo || 0,
-          item.valor_desconto || 0,
-          item.valor_acrescimo || 0,
-          item.valor_total,
+        await t.run(
+          `INSERT INTO vendas_itens
+          (orcamento, codigo_produto, descricao, quantidade, unidade, preco_unitario, preco_custo, valor_desconto, valor_acrescimo, valor_total)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          [
+            venda.orcamento,
+            item.codigo_produto,
+            item.descricao,
+            item.quantidade,
+            item.unidade,
+            item.preco_unitario,
+            item.preco_custo || 0,
+            item.valor_desconto || 0,
+            item.valor_acrescimo || 0,
+            item.valor_total,
+          ],
         )
 
-        db.prepare(`UPDATE produtos SET estoque_atual = estoque_atual - ? WHERE codigo = ?`)
-          .run(item.quantidade, item.codigo_produto)
+        await t.run(`UPDATE produtos SET estoque_atual = estoque_atual - ? WHERE codigo = ?`, [item.quantidade, item.codigo_produto])
 
         // Registra saída no movimento de estoque
-        db.prepare(`INSERT INTO movimentos_estoque (tipo, produto_id, produto, quantidade, valor_unitario, total, data, obs, usuario, data_atualizacao, hora_atualizacao)
-          VALUES ('SAIDA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(item.codigo_produto, item.descricao, item.quantidade, item.preco_unitario || 0, item.valor_total || 0,
-            hoje(), `Venda #${venda.orcamento}`, venda.usuario_cadastro || 'sistema', hoje(), agora())
+        await t.run(
+          `INSERT INTO movimentos_estoque (tipo, produto_id, produto, quantidade, valor_unitario, total, data, obs, usuario, data_atualizacao, hora_atualizacao)
+          VALUES ('SAIDA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            item.codigo_produto, item.descricao, item.quantidade, item.preco_unitario || 0, item.valor_total || 0,
+            hoje(), `Venda #${venda.orcamento}`, venda.usuario_cadastro || 'sistema', hoje(), agora(),
+          ],
+        )
       }
 
       // Atualiza haver do cliente se necessário
       if (venda.valor_deixado_em_haver > 0) {
-        db.prepare(
-          `UPDATE clientes SET haver = haver + ? WHERE codigo = ?`,
-        ).run(venda.valor_deixado_em_haver, venda.codigo_cliente)
+        await t.run(`UPDATE clientes SET haver = haver + ? WHERE codigo = ?`, [venda.valor_deixado_em_haver, venda.codigo_cliente])
       }
 
       // Cria contas a receber para vendas a prazo/convênio (apenas em vendas novas)
       if (!existe && venda.situacao === 'N') {
-        const crJaExiste = db
-          .prepare(`SELECT id FROM contas_receber WHERE nro_docto = ? AND tipo_docto = 'VD'`)
-          .get(venda.orcamento)
+        const crJaExiste = await t.get(`SELECT id FROM contas_receber WHERE nro_docto = ? AND tipo_docto = 'VD'`, [venda.orcamento])
 
         if (!crJaExiste) {
-          const insCR = db.prepare(`
+          const insCRSql = `
             INSERT INTO contas_receber
               (nro_docto, tipo_docto, seq_docto, codigo_cliente, data_docto, data_vencimento,
                valor_docto, valor_original, situacao_docto, numero_caixa, numero_turno,
                usuario, data_atualizacao, hora_atualizacao)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
 
           if (venda.codigo_forma_pagamento1 === 'Convênio') {
             // Vencimento padrão: 30 dias
             const d = new Date(); d.setDate(d.getDate() + 30)
             const dataVenc = d.toISOString().slice(0, 10)
-            insCR.run(
+            await t.run(insCRSql, [
               venda.orcamento, 'VD', '001', venda.codigo_cliente, hoje(), dataVenc,
               venda.valor_total, venda.valor_total, 'A',
               venda.numero_caixa || '001', venda.numero_turno || '1',
               venda.usuario_cadastro, hoje(), agora(),
-            )
+            ])
           } else if (venda.parcelas?.length > 0) {
             // Parcelamento: uma CR por parcela
             for (const p of venda.parcelas) {
-              insCR.run(
+              await t.run(insCRSql, [
                 venda.orcamento, 'VD', p.seq, venda.codigo_cliente, hoje(), p.data_vencimento,
                 p.valor, p.valor, 'A',
                 venda.numero_caixa || '001', venda.numero_turno || '1',
                 venda.usuario_cadastro, hoje(), agora(),
-              )
+              ])
             }
           }
         }
@@ -550,57 +601,57 @@ const vendas = {
     })
 
     try {
-      salvarVenda()
+      await salvarVenda()
       return { sucesso: true, orcamento: venda.orcamento }
     } catch (e) {
       return { sucesso: false, erro: e.message }
     }
   },
 
-  cancelar(orcamento, motivo, usuario) {
-    const cancelar = db.transaction(() => {
-      const venda = db.prepare(`SELECT * FROM vendas WHERE orcamento = ?`).get(orcamento)
+  async cancelar(orcamento, motivo, usuario) {
+    await withTransaction(async (t) => {
+      const venda = await t.get(`SELECT * FROM vendas WHERE orcamento = ?`, [orcamento])
 
       // Reverte estoque e registra movimento
-      const itens = db.prepare(`SELECT * FROM vendas_itens WHERE orcamento = ?`).all(orcamento)
+      const itens = await t.all(`SELECT * FROM vendas_itens WHERE orcamento = ?`, [orcamento])
       for (const item of itens) {
-        db.prepare(`UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE codigo = ?`)
-          .run(item.quantidade, item.codigo_produto)
+        await t.run(`UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE codigo = ?`, [item.quantidade, item.codigo_produto])
 
-        db.prepare(`INSERT INTO movimentos_estoque (tipo, produto_id, produto, quantidade, valor_unitario, total, data, obs, usuario, data_atualizacao, hora_atualizacao)
-          VALUES ('ENTRADA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(item.codigo_produto, item.descricao, item.quantidade, item.preco_unitario || 0, item.valor_total || 0,
-            hoje(), `Cancelamento venda #${orcamento}`, usuario, hoje(), agora())
+        await t.run(
+          `INSERT INTO movimentos_estoque (tipo, produto_id, produto, quantidade, valor_unitario, total, data, obs, usuario, data_atualizacao, hora_atualizacao)
+          VALUES ('ENTRADA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            item.codigo_produto, item.descricao, item.quantidade, item.preco_unitario || 0, item.valor_total || 0,
+            hoje(), `Cancelamento venda #${orcamento}`, usuario, hoje(), agora(),
+          ],
+        )
       }
 
       // Cancela contas a receber em aberto desta venda
-      db.prepare(`UPDATE contas_receber SET situacao_docto='C', data_atualizacao=?, hora_atualizacao=? WHERE nro_docto=? AND tipo_docto='VD' AND situacao_docto='A'`)
-        .run(hoje(), agora(), orcamento)
+      await t.run(
+        `UPDATE contas_receber SET situacao_docto='C', data_atualizacao=?, hora_atualizacao=? WHERE nro_docto=? AND tipo_docto='VD' AND situacao_docto='A'`,
+        [hoje(), agora(), orcamento],
+      )
 
       // Devolve haver ao cliente se a venda foi paga com haver
       if (venda?.valor_pago_haver > 0 && venda?.codigo_cliente) {
-        db.prepare(`UPDATE clientes SET haver = haver + ? WHERE codigo = ?`)
-          .run(venda.valor_pago_haver, venda.codigo_cliente)
+        await t.run(`UPDATE clientes SET haver = haver + ? WHERE codigo = ?`, [venda.valor_pago_haver, venda.codigo_cliente])
       }
 
-      db.prepare(`UPDATE vendas SET situacao='C', usuario_cancelamento=?, data_cancelamento=?, motivo_cancelamento=? WHERE orcamento=?`)
-        .run(usuario, hoje(), motivo, orcamento)
+      await t.run(
+        `UPDATE vendas SET situacao='C', usuario_cancelamento=?, data_cancelamento=?, motivo_cancelamento=? WHERE orcamento=?`,
+        [usuario, hoje(), motivo, orcamento],
+      )
     })
-    cancelar()
     return { sucesso: true }
   },
 
-  devolver(dados) {
-    // dados: { orcamento, itens: [{codigo_produto, quantidade}], usuario, motivo }
-    const devolver = db.transaction(() => {
-      const venda = db
-        .prepare(`SELECT * FROM vendas WHERE orcamento = ? AND situacao = 'N'`)
-        .get(dados.orcamento)
+  async devolver(dados) {
+    const devolver = () => withTransaction(async (t) => {
+      const venda = await t.get(`SELECT * FROM vendas WHERE orcamento = ? AND situacao = 'N'`, [dados.orcamento])
       if (!venda) throw new Error('Venda não encontrada ou já cancelada/devolvida.')
 
-      const itensOriginais = db
-        .prepare(`SELECT * FROM vendas_itens WHERE orcamento = ?`)
-        .all(dados.orcamento)
+      const itensOriginais = await t.all(`SELECT * FROM vendas_itens WHERE orcamento = ?`, [dados.orcamento])
 
       let totalDevolvido = 0
 
@@ -611,8 +662,7 @@ const vendas = {
           throw new Error(`Quantidade a devolver (${item.quantidade}) maior que a vendida (${orig.quantidade}) para ${orig.descricao}.`)
 
         // Reverte estoque
-        db.prepare(`UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE codigo = ?`)
-          .run(item.quantidade, item.codigo_produto)
+        await t.run(`UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE codigo = ?`, [item.quantidade, item.codigo_produto])
 
         totalDevolvido += (orig.preco_unitario || 0) * item.quantidade
       }
@@ -623,24 +673,27 @@ const vendas = {
       const total = totalItensDevolvidos >= totalItensVendidos
 
       // Marca venda
-      db.prepare(`UPDATE vendas SET situacao=?, motivo_cancelamento=?, usuario_cancelamento=?, data_cancelamento=? WHERE orcamento=?`)
-        .run(total ? 'D' : 'N', dados.motivo || 'Devolução', dados.usuario, hoje(), dados.orcamento)
+      await t.run(
+        `UPDATE vendas SET situacao=?, motivo_cancelamento=?, usuario_cancelamento=?, data_cancelamento=? WHERE orcamento=?`,
+        [total ? 'D' : 'N', dados.motivo || 'Devolução', dados.usuario, hoje(), dados.orcamento],
+      )
 
       // Cancela CR aberto desta venda
-      db.prepare(`UPDATE contas_receber SET situacao_docto='C', data_atualizacao=?, hora_atualizacao=? WHERE nro_docto=? AND situacao_docto='A'`)
-        .run(hoje(), agora(), dados.orcamento)
+      await t.run(
+        `UPDATE contas_receber SET situacao_docto='C', data_atualizacao=?, hora_atualizacao=? WHERE nro_docto=? AND situacao_docto='A'`,
+        [hoje(), agora(), dados.orcamento],
+      )
 
       // Credita haver do cliente
       if (venda.codigo_cliente) {
-        db.prepare(`UPDATE clientes SET haver = haver + ? WHERE codigo = ?`)
-          .run(totalDevolvido, venda.codigo_cliente)
+        await t.run(`UPDATE clientes SET haver = haver + ? WHERE codigo = ?`, [totalDevolvido, venda.codigo_cliente])
       }
 
       return { totalDevolvido, total }
     })
 
     try {
-      const resultado = devolver()
+      const resultado = await devolver()
       return { sucesso: true, ...resultado }
     } catch (e) {
       return { sucesso: false, erro: e.message }
@@ -652,7 +705,7 @@ const vendas = {
 // CONTAS A RECEBER
 // ============================================================
 const contasReceber = {
-  listar(filtros = {}) {
+  async listar(filtros = {}) {
     let sql = `
       SELECT cr.*,
         cr.nro_docto as numero_docto,
@@ -680,41 +733,40 @@ const contasReceber = {
       params.push(filtros.dataFim)
     }
     sql += ` ORDER BY cr.data_vencimento ASC LIMIT 500`
-    return db.prepare(sql).all(...params)
+    return db.all(sql, params)
   },
 
-  totalAberto() {
-    const row = db
-      .prepare(
-        `SELECT SUM(valor_docto - COALESCE(valor_pagamento,0)) as total FROM contas_receber WHERE situacao_docto = 'A'`,
-      )
-      .get()
+  async totalAberto() {
+    const row = await db.get(
+      `SELECT SUM(valor_docto - COALESCE(valor_pagamento,0)) as total FROM contas_receber WHERE situacao_docto = 'A'`,
+    )
     return { total: row?.total || 0 }
   },
 
-  porOrcamento(orcamento) {
-    return db.prepare(`SELECT * FROM contas_receber WHERE nro_docto = ? AND tipo_docto = 'VD' ORDER BY seq_docto`).all(String(orcamento))
+  async porOrcamento(orcamento) {
+    return db.all(`SELECT * FROM contas_receber WHERE nro_docto = ? AND tipo_docto = 'VD' ORDER BY seq_docto`, [String(orcamento)])
   },
 
-  saldoCliente(codigo_cliente) {
-    const row = db.prepare(`SELECT COALESCE(SUM(valor_docto - COALESCE(valor_pagamento,0)),0) as total FROM contas_receber WHERE codigo_cliente = ? AND situacao_docto = 'A'`).get(codigo_cliente)
+  async saldoCliente(codigo_cliente) {
+    const row = await db.get(`SELECT COALESCE(SUM(valor_docto - COALESCE(valor_pagamento,0)),0) as total FROM contas_receber WHERE codigo_cliente = ? AND situacao_docto = 'A'`, [codigo_cliente])
     return row?.total || 0
   },
 
-  receber(dados) {
-    db.prepare(
+  async receber(dados) {
+    await db.run(
       `UPDATE contas_receber SET situacao_docto='P', data_pagamento=?, valor_pagamento=?,
       valor_desconto=?, valor_acrescimo=?, usuario=?, data_atualizacao=?, hora_atualizacao=?
       WHERE id = ?`,
-    ).run(
-      dados.data_pagamento || hoje(),
-      dados.valor_pagamento,
-      dados.valor_desconto || 0,
-      dados.valor_acrescimo || 0,
-      dados.usuario,
-      hoje(),
-      agora(),
-      dados.id,
+      [
+        dados.data_pagamento || hoje(),
+        dados.valor_pagamento,
+        dados.valor_desconto || 0,
+        dados.valor_acrescimo || 0,
+        dados.usuario,
+        hoje(),
+        agora(),
+        dados.id,
+      ],
     )
     return { sucesso: true }
   },
@@ -724,7 +776,7 @@ const contasReceber = {
 // CONTAS A PAGAR
 // ============================================================
 const contasPagar = {
-  listar(filtros = {}) {
+  async listar(filtros = {}) {
     let sql = `
       SELECT cp.*, f.nome as nome_fornecedor
       FROM contas_pagar cp
@@ -745,44 +797,44 @@ const contasPagar = {
       params.push(filtros.dataFim)
     }
     sql += ` ORDER BY cp.data_vencimento ASC LIMIT 500`
-    return db.prepare(sql).all(...params)
+    return db.all(sql, params)
   },
 
-  totalAberto() {
-    const row = db
-      .prepare(
-        `SELECT SUM(valor_docto - COALESCE(valor_pagamento,0)) as total FROM contas_pagar WHERE situacao_docto = 'A'`,
-      )
-      .get()
+  async totalAberto() {
+    const row = await db.get(
+      `SELECT SUM(valor_docto - COALESCE(valor_pagamento,0)) as total FROM contas_pagar WHERE situacao_docto = 'A'`,
+    )
     return { total: row?.total || 0 }
   },
 
-  pagar(dados) {
-    db.prepare(
+  async pagar(dados) {
+    await db.run(
       `UPDATE contas_pagar SET situacao_docto='P', data_pagamento=?, valor_pagamento=?,
       valor_desconto=?, usuario=?, data_atualizacao=?, hora_atualizacao=?
       WHERE id = ?`,
-    ).run(
-      dados.data_pagamento || hoje(),
-      dados.valor_pagamento,
-      dados.valor_desconto || 0,
-      dados.usuario,
-      hoje(),
-      agora(),
-      dados.id,
+      [
+        dados.data_pagamento || hoje(),
+        dados.valor_pagamento,
+        dados.valor_desconto || 0,
+        dados.usuario,
+        hoje(),
+        agora(),
+        dados.id,
+      ],
     )
     return { sucesso: true }
   },
 
-  salvar(dados) {
+  async salvar(dados) {
     const cols = Object.keys(dados).join(', ')
     const phs = Object.keys(dados)
       .map(() => '?')
       .join(', ')
-    db.prepare(
+    await db.run(
       `INSERT INTO contas_pagar (${cols}, data_atualizacao, hora_atualizacao)
        VALUES (${phs}, ?, ?)`,
-    ).run(...Object.values(dados), hoje(), agora())
+      [...Object.values(dados), hoje(), agora()],
+    )
     return { sucesso: true }
   },
 }
@@ -791,54 +843,52 @@ const contasPagar = {
 // CAIXA
 // ============================================================
 const caixa = {
-  status() {
+  async status() {
     // Retorna o caixa aberto, ou se não houver, o último do dia (para mostrar o fechamento no log)
-    const aberto = db.prepare(`SELECT * FROM movimentos_caixa WHERE situacao = 'A' ORDER BY id DESC LIMIT 1`).get()
+    const aberto = await db.get(`SELECT * FROM movimentos_caixa WHERE situacao = 'A' ORDER BY id DESC LIMIT 1`)
     if (aberto) return aberto
-    return db.prepare(`SELECT * FROM movimentos_caixa WHERE data_abertura = ? ORDER BY id DESC LIMIT 1`).get(hoje())
+    return db.get(`SELECT * FROM movimentos_caixa WHERE data_abertura = ? ORDER BY id DESC LIMIT 1`, [hoje()])
   },
 
-  abrir(dados) {
-    db.prepare(
+  async abrir(dados) {
+    await db.run(
       `INSERT INTO movimentos_caixa (numero_caixa, numero_turno, data_abertura, hora_abertura, usuario_abertura, valor_abertura, situacao)
       VALUES (?, ?, ?, ?, ?, ?, 'A')`,
-    ).run(
-      dados.numero_caixa || '001',
-      dados.numero_turno || '1',
-      hoje(),
-      agora(),
-      dados.usuario,
-      dados.valor_abertura || 0,
+      [
+        dados.numero_caixa || '001',
+        dados.numero_turno || '1',
+        hoje(),
+        agora(),
+        dados.usuario,
+        dados.valor_abertura || 0,
+      ],
     )
-    db.prepare(
-      `UPDATE configuracoes SET valor = 'S' WHERE chave = 'caixa_aberto'`,
-    ).run()
+    await db.run(`UPDATE configuracoes SET valor = 'S' WHERE chave = 'caixa_aberto'`)
     return { sucesso: true }
   },
 
-  sessoesHoje() {
-    return db.prepare(`SELECT * FROM movimentos_caixa WHERE data_abertura = ? ORDER BY id ASC`).all(hoje())
+  async sessoesHoje() {
+    return db.all(`SELECT * FROM movimentos_caixa WHERE data_abertura = ? ORDER BY id ASC`, [hoje()])
   },
 
-  fechar(dados) {
-    db.prepare(
+  async fechar(dados) {
+    await db.run(
       `UPDATE movimentos_caixa SET situacao='F', data_fechamento=?, hora_fechamento=?,
       usuario_fechamento=?, valor_fechamento=?, valor_dinheiro=?, valor_cheque=?,
       valor_cartao_credito=?, valor_cartao_debito=?
       WHERE situacao = 'A'`,
-    ).run(
-      hoje(),
-      agora(),
-      dados.usuario,
-      dados.valor_fechamento || 0,
-      dados.valor_dinheiro || 0,
-      dados.valor_cheque || 0,
-      dados.valor_cartao_credito || 0,
-      dados.valor_cartao_debito || 0,
+      [
+        hoje(),
+        agora(),
+        dados.usuario,
+        dados.valor_fechamento || 0,
+        dados.valor_dinheiro || 0,
+        dados.valor_cheque || 0,
+        dados.valor_cartao_credito || 0,
+        dados.valor_cartao_debito || 0,
+      ],
     )
-    db.prepare(
-      `UPDATE configuracoes SET valor = 'N' WHERE chave = 'caixa_aberto'`,
-    ).run()
+    await db.run(`UPDATE configuracoes SET valor = 'N' WHERE chave = 'caixa_aberto'`)
     return { sucesso: true }
   },
 }
@@ -847,7 +897,7 @@ const caixa = {
 // DASHBOARD
 // ============================================================
 const dashboard = {
-  resumo(periodo = 'hoje') {
+  async resumo(periodo = 'hoje') {
     let dataInicio
     const d = new Date()
     if (periodo === 'hoje') dataInicio = hoje()
@@ -859,48 +909,38 @@ const dashboard = {
       dataInicio = d.toISOString().slice(0, 10)
     } else dataInicio = hoje()
 
-    const vendaTotal = db
-      .prepare(
-        `SELECT COALESCE(SUM(valor_total),0) as total, COUNT(*) as qtde FROM vendas WHERE data >= ? AND situacao = 'N'`,
-      )
-      .get(dataInicio)
+    const vendaTotal = await db.get(
+      `SELECT COALESCE(SUM(valor_total),0) as total, COUNT(*) as qtde FROM vendas WHERE data >= ? AND situacao = 'N'`,
+      [dataInicio],
+    )
     // Entradas de caixa = somente o que efetivamente entrou (dinheiro + cartão + cheque)
     // Exclui a parcela que foi para contas a receber (prazo, convênio)
-    const entradasCaixa = db
-      .prepare(
-        `SELECT COALESCE(SUM(
+    const entradasCaixa = await db.get(
+      `SELECT COALESCE(SUM(
           COALESCE(valor_pago_dinheiro,0) +
           COALESCE(valor_pago_cartao_credito,0) +
           COALESCE(valor_pago_cartao_debito,0) +
           COALESCE(valor_pago_cheque,0) +
           COALESCE(valor_pago_haver,0)
         ),0) as total FROM vendas WHERE data = ? AND situacao = 'N'`,
-      )
-      .get(hoje())
-    const crAberto = db
-      .prepare(
-        `SELECT COALESCE(SUM(valor_docto - COALESCE(valor_pagamento,0)),0) as total FROM contas_receber WHERE situacao_docto = 'A'`,
-      )
-      .get()
-    const cpAberto = db
-      .prepare(
-        `SELECT COALESCE(SUM(valor_docto - COALESCE(valor_pagamento,0)),0) as total FROM contas_pagar WHERE situacao_docto = 'A'`,
-      )
-      .get()
-    const estoqueBaixo = db
-      .prepare(
-        `SELECT COUNT(*) as qtde FROM produtos WHERE estoque_atual <= estoque_minimo AND controla_estoque = 'S' AND situacao_produto = 'A'`,
-      )
-      .get()
-    const ultimas7 = db
-      .prepare(
-        `
+      [hoje()],
+    )
+    const crAberto = await db.get(
+      `SELECT COALESCE(SUM(valor_docto - COALESCE(valor_pagamento,0)),0) as total FROM contas_receber WHERE situacao_docto = 'A'`,
+    )
+    const cpAberto = await db.get(
+      `SELECT COALESCE(SUM(valor_docto - COALESCE(valor_pagamento,0)),0) as total FROM contas_pagar WHERE situacao_docto = 'A'`,
+    )
+    const estoqueBaixo = await db.get(
+      `SELECT COUNT(*) as qtde FROM produtos WHERE estoque_atual <= estoque_minimo AND controla_estoque = 'S' AND situacao_produto = 'A'`,
+    )
+    const ultimas7 = await db.all(
+      `
       SELECT data, COALESCE(SUM(valor_total),0) as total
-      FROM vendas WHERE data >= date('now', '-7 days') AND situacao = 'N'
+      FROM vendas WHERE data >= TO_CHAR(CURRENT_DATE - INTERVAL '7 days', 'YYYY-MM-DD') AND situacao = 'N'
       GROUP BY data ORDER BY data ASC
     `,
-      )
-      .all()
+    )
 
     return {
       vendas: { total: vendaTotal.total, qtde: vendaTotal.qtde },
@@ -917,19 +957,20 @@ const dashboard = {
 // CONFIGURAÇÕES
 // ============================================================
 const config = {
-  get(chave) {
+  async get(chave) {
     if (chave) {
-      const row = db.prepare(`SELECT valor FROM configuracoes WHERE chave = ?`).get(chave)
+      const row = await db.get(`SELECT valor FROM configuracoes WHERE chave = ?`, [chave])
       if (!row) return null
       try { return JSON.parse(row.valor) } catch { return row.valor }
     }
-    return db.prepare(`SELECT * FROM configuracoes`).all()
+    return db.all(`SELECT * FROM configuracoes`)
   },
-  set(chave, valor) {
+  async set(chave, valor) {
     const valorStr = typeof valor === 'object' ? JSON.stringify(valor) : String(valor)
-    db.prepare(
+    await db.run(
       `INSERT INTO configuracoes (chave, valor) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET valor=?`,
-    ).run(chave, valorStr, valorStr)
+      [chave, valorStr, valorStr],
+    )
     return { sucesso: true }
   },
 }
@@ -938,17 +979,12 @@ const config = {
 // PRÉ-VENDAS
 // ============================================================
 const preVendas = {
-  proximoNumero() {
-    const row = db
-      .prepare(
-        `SELECT MAX(CAST(numero AS INTEGER)) as ultimo FROM pre_vendas`,
-      )
-      .get()
-    const proximo = ((row?.ultimo || 0) + 1).toString().padStart(8, '0')
-    return { numero: proximo }
+  async proximoNumero() {
+    const valor = await proximoNumeroAtomico('pre_vendas')
+    return { numero: String(valor).padStart(8, '0') }
   },
 
-  listar(filtros = {}) {
+  async listar(filtros = {}) {
     let sql = `SELECT * FROM pre_vendas WHERE 1=1`
     const params = []
     if (filtros.busca) {
@@ -961,99 +997,94 @@ const preVendas = {
       params.push(filtros.situacao.toUpperCase())
     }
     sql += ` ORDER BY id DESC LIMIT 500`
-    return db.prepare(sql).all(...params)
+    return db.all(sql, params)
   },
 
-  buscar(numero) {
-    const pv = db
-      .prepare(`SELECT * FROM pre_vendas WHERE numero = ?`)
-      .get(numero)
+  async buscar(numero) {
+    const pv = await db.get(`SELECT * FROM pre_vendas WHERE numero = ?`, [numero])
     if (pv) {
-      pv.itens = db
-        .prepare(`SELECT * FROM pre_vendas_itens WHERE numero = ?`)
-        .all(numero)
+      pv.itens = await db.all(`SELECT * FROM pre_vendas_itens WHERE numero = ?`, [numero])
     }
     return pv
   },
 
-  salvar(dados) {
+  async salvar(dados) {
     const { itens, ...pv } = dados
-    const salvarPV = db.transaction(() => {
-      const existe = db
-        .prepare(`SELECT id FROM pre_vendas WHERE numero = ?`)
-        .get(pv.numero)
+    await withTransaction(async (t) => {
+      const existe = await t.get(`SELECT id FROM pre_vendas WHERE numero = ?`, [pv.numero])
       if (existe) {
-        db.prepare(
+        await t.run(
           `UPDATE pre_vendas SET tipo=?, codigo_cliente=?, nome_cliente=?, vendedor=?,
           observacao=?, valor_total=?, qtde_itens=?, situacao=?,
           data_atualizacao=?, hora_atualizacao=? WHERE numero=?`,
-        ).run(
-          pv.tipo,
-          pv.codigo_cliente || '',
-          pv.nome_cliente,
-          pv.vendedor,
-          pv.observacao || '',
-          pv.valor_total,
-          pv.qtde_itens || 0,
-          pv.situacao || 'ABERTA',
-          hoje(),
-          agora(),
-          pv.numero,
+          [
+            pv.tipo,
+            pv.codigo_cliente || '',
+            pv.nome_cliente,
+            pv.vendedor,
+            pv.observacao || '',
+            pv.valor_total,
+            pv.qtde_itens || 0,
+            pv.situacao || 'ABERTA',
+            hoje(),
+            agora(),
+            pv.numero,
+          ],
         )
-        db.prepare(`DELETE FROM pre_vendas_itens WHERE numero = ?`).run(
-          pv.numero,
-        )
+        await t.run(`DELETE FROM pre_vendas_itens WHERE numero = ?`, [pv.numero])
       } else {
-        db.prepare(
+        await t.run(
           `INSERT INTO pre_vendas (numero, tipo, codigo_cliente, nome_cliente, vendedor,
           observacao, valor_total, qtde_itens, situacao, data, hora, data_atualizacao, hora_atualizacao)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        ).run(
-          pv.numero,
-          pv.tipo,
-          pv.codigo_cliente || '',
-          pv.nome_cliente,
-          pv.vendedor,
-          pv.observacao || '',
-          pv.valor_total,
-          pv.qtde_itens || 0,
-          'ABERTA',
-          pv.data || hoje(),
-          agora(),
-          hoje(),
-          agora(),
+          [
+            pv.numero,
+            pv.tipo,
+            pv.codigo_cliente || '',
+            pv.nome_cliente,
+            pv.vendedor,
+            pv.observacao || '',
+            pv.valor_total,
+            pv.qtde_itens || 0,
+            'ABERTA',
+            pv.data || hoje(),
+            agora(),
+            hoje(),
+            agora(),
+          ],
         )
       }
-      const insItem = db.prepare(
-        `INSERT INTO pre_vendas_itens (numero, codigo_produto, descricao, quantidade, preco_unitario, total)
-        VALUES (?,?,?,?,?,?)`,
-      )
       for (const item of itens || []) {
-        insItem.run(
-          pv.numero,
-          item.codigo || item.codigo_produto,
-          item.descricao,
-          item.qty || item.quantidade,
-          item.preco_unitario,
-          item.total,
+        await t.run(
+          `INSERT INTO pre_vendas_itens (numero, codigo_produto, descricao, quantidade, preco_unitario, total)
+          VALUES (?,?,?,?,?,?)`,
+          [
+            pv.numero,
+            item.codigo || item.codigo_produto,
+            item.descricao,
+            item.qty || item.quantidade,
+            item.preco_unitario,
+            item.total,
+          ],
         )
       }
     })
-    salvarPV()
     return { sucesso: true, numero: pv.numero }
   },
 
-  cancelar(numero) {
-    db.prepare(
+  async cancelar(numero) {
+    await db.run(
       `UPDATE pre_vendas SET situacao='CANCELADA', data_atualizacao=?, hora_atualizacao=? WHERE numero=?`,
-    ).run(hoje(), agora(), numero)
+      [hoje(), agora(), numero],
+    )
     return { sucesso: true }
   },
 
-  baixar(numero) {
-    db.prepare(
+  async baixar(numero) {
+    await db.run(
       `UPDATE pre_vendas SET situacao='BAIXADA', data_atualizacao=?, hora_atualizacao=? WHERE numero=?`,
-    ).run(hoje(), agora(), numero)
+      [hoje(), agora(), numero],
+    )
     return { sucesso: true }
   },
 }
@@ -1062,7 +1093,7 @@ const preVendas = {
 // MOVIMENTOS DE ESTOQUE
 // ============================================================
 const movimentosEstoque = {
-  listar(filtros = {}) {
+  async listar(filtros = {}) {
     let sql = `SELECT * FROM movimentos_estoque WHERE 1=1`
     const params = []
     if (filtros.busca) {
@@ -1074,40 +1105,35 @@ const movimentosEstoque = {
       params.push(filtros.tipo)
     }
     sql += ` ORDER BY id DESC LIMIT 500`
-    return db.prepare(sql).all(...params)
+    return db.all(sql, params)
   },
 
-  salvar(dados) {
+  async salvar(dados) {
     const qty = parseFloat(dados.quantidade)
-    db.prepare(
+    await db.run(
       `INSERT INTO movimentos_estoque (tipo, produto_id, produto, quantidade, valor_unitario, total, data, fornecedor, obs, data_atualizacao, hora_atualizacao)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    ).run(
-      dados.tipo,
-      dados.produto_id,
-      dados.produto,
-      qty,
-      parseFloat(dados.valor_unitario || 0),
-      parseFloat(dados.total || 0),
-      dados.data || hoje(),
-      dados.fornecedor || '',
-      dados.obs || '',
-      hoje(),
-      agora(),
+      [
+        dados.tipo,
+        dados.produto_id,
+        dados.produto,
+        qty,
+        parseFloat(dados.valor_unitario || 0),
+        parseFloat(dados.total || 0),
+        dados.data || hoje(),
+        dados.fornecedor || '',
+        dados.obs || '',
+        hoje(),
+        agora(),
+      ],
     )
     // Atualiza estoque do produto
     if (dados.tipo === 'ENTRADA') {
-      db.prepare(
-        `UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE codigo = ?`,
-      ).run(qty, dados.produto_id)
+      await db.run(`UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE codigo = ?`, [qty, dados.produto_id])
     } else if (dados.tipo === 'SAIDA') {
-      db.prepare(
-        `UPDATE produtos SET estoque_atual = estoque_atual - ? WHERE codigo = ?`,
-      ).run(qty, dados.produto_id)
+      await db.run(`UPDATE produtos SET estoque_atual = estoque_atual - ? WHERE codigo = ?`, [qty, dados.produto_id])
     } else if (dados.tipo === 'ACERTO') {
-      db.prepare(
-        `UPDATE produtos SET estoque_atual = ? WHERE codigo = ?`,
-      ).run(qty, dados.produto_id)
+      await db.run(`UPDATE produtos SET estoque_atual = ? WHERE codigo = ?`, [qty, dados.produto_id])
     }
     return { sucesso: true }
   },
@@ -1146,11 +1172,11 @@ function yn(v, d = 'N') {
 }
 
 const importar = {
-  produtos(conteudo) {
+  async produtos(conteudo) {
     const rows = parseCSV(conteudo)
     const resultados = []
 
-    const stmt = db.prepare(`
+    const sql = `
       INSERT INTO produtos (
         codigo, descricao, descricao_menor, referencia, unidade,
         codigo_grupo, codigo_linha,
@@ -1183,54 +1209,50 @@ const importar = {
         controla_estoque = excluded.controla_estoque,
         situacao_produto = excluded.situacao_produto,
         data_atualizacao = @data_cadastro
-    `)
+    `
 
-    const verificarProduto = db.prepare('SELECT 1 FROM produtos WHERE codigo = ?')
-
-    const run = db.transaction(() => {
-      for (const row of rows) {
-        const codigo = str(row['codigo'] || row['cod'])
-        const descricao = str(row['descricao'] || row['nome'] || row['produto'])
-        if (!codigo || !descricao) {
-          resultados.push({ codigo: codigo || '?', status: 'erro', motivo: 'código ou descrição ausente' })
-          continue
-        }
-        try {
-          stmt.run({
-            codigo,
-            descricao,
-            descricao_menor: str(row['descricao_menor'] || descricao.substring(0, 30)),
-            referencia: str(row['referencia'] || row['ref'] || row['ean'] || row['codigo_barras']),
-            unidade: str(row['unidade'] || row['un'] || 'UN'),
-            codigo_grupo: str(row['codigo_grupo'] || row['grupo']),
-            codigo_linha: str(row['codigo_linha'] || row['linha']),
-            preco_venda_vista: num(row['preco_venda_vista'] || row['preco_vista'] || row['preco'] || row['valor']),
-            preco_venda_prazo: num(row['preco_venda_prazo'] || row['preco_prazo'] || row['preco'] || row['valor']),
-            preco_venda_minimo: num(row['preco_venda_minimo'] || row['preco_minimo']),
-            custo_preco_unitario: num(row['custo_preco_unitario'] || row['custo'] || row['preco_custo']),
-            preco_custo_atual: num(row['preco_custo_atual'] || row['custo'] || row['preco_custo']),
-            estoque_atual: num(row['estoque_atual'] || row['estoque'] || row['saldo']),
-            estoque_minimo: num(row['estoque_minimo'] || row['minimo']),
-            controla_estoque: yn(row['controla_estoque'] || row['controla'], 'S'),
-            situacao_produto: str(row['situacao'], 'A'),
-            data_cadastro: hoje(),
-            usuario_cadastro: 'importacao',
-          })
-          resultados.push({ codigo, descricao, status: verificarProduto.get(codigo) ? 'atualizado' : 'inserido' })
-        } catch (e) {
-          resultados.push({ codigo, descricao, status: 'erro', motivo: e.message })
-        }
+    for (const row of rows) {
+      const codigo = str(row['codigo'] || row['cod'])
+      const descricao = str(row['descricao'] || row['nome'] || row['produto'])
+      if (!codigo || !descricao) {
+        resultados.push({ codigo: codigo || '?', status: 'erro', motivo: 'código ou descrição ausente' })
+        continue
       }
-    })
-    run()
+      try {
+        const existiaAntes = !!(await db.get('SELECT 1 FROM produtos WHERE codigo = ?', [codigo]))
+        await db.runNamed(sql, {
+          codigo,
+          descricao,
+          descricao_menor: str(row['descricao_menor'] || descricao.substring(0, 30)),
+          referencia: str(row['referencia'] || row['ref'] || row['ean'] || row['codigo_barras']),
+          unidade: str(row['unidade'] || row['un'] || 'UN'),
+          codigo_grupo: str(row['codigo_grupo'] || row['grupo']),
+          codigo_linha: str(row['codigo_linha'] || row['linha']),
+          preco_venda_vista: num(row['preco_venda_vista'] || row['preco_vista'] || row['preco'] || row['valor']),
+          preco_venda_prazo: num(row['preco_venda_prazo'] || row['preco_prazo'] || row['preco'] || row['valor']),
+          preco_venda_minimo: num(row['preco_venda_minimo'] || row['preco_minimo']),
+          custo_preco_unitario: num(row['custo_preco_unitario'] || row['custo'] || row['preco_custo']),
+          preco_custo_atual: num(row['preco_custo_atual'] || row['custo'] || row['preco_custo']),
+          estoque_atual: num(row['estoque_atual'] || row['estoque'] || row['saldo']),
+          estoque_minimo: num(row['estoque_minimo'] || row['minimo']),
+          controla_estoque: yn(row['controla_estoque'] || row['controla'], 'S'),
+          situacao_produto: str(row['situacao'], 'A'),
+          data_cadastro: hoje(),
+          usuario_cadastro: 'importacao',
+        })
+        resultados.push({ codigo, descricao, status: existiaAntes ? 'atualizado' : 'inserido' })
+      } catch (e) {
+        resultados.push({ codigo, descricao, status: 'erro', motivo: e.message })
+      }
+    }
     return { sucesso: true, resultados, total: rows.length }
   },
 
-  clientes(conteudo) {
+  async clientes(conteudo) {
     const rows = parseCSV(conteudo)
     const resultados = []
 
-    const stmt = db.prepare(`
+    const sql = `
       INSERT INTO clientes (
         codigo, nome, nome_fantasia, cpf, rg, cgc, ie,
         logradouro, numero, bairro, cep, cidade, uf,
@@ -1250,54 +1272,50 @@ const importar = {
         telefone = excluded.telefone, celular = excluded.celular, email = excluded.email,
         limite_credito = excluded.limite_credito, situacao_cliente = excluded.situacao_cliente,
         data_atualizacao = @data_cadastro
-    `)
+    `
 
-    const verificarCliente = db.prepare('SELECT 1 FROM clientes WHERE codigo = ?')
-
-    const run = db.transaction(() => {
-      for (const row of rows) {
-        const codigo = str(row['codigo'] || row['cod'])
-        const nome = str(row['nome'] || row['nome_cliente'] || row['cliente'] || row['razao_social'])
-        if (!codigo || !nome) {
-          resultados.push({ codigo: codigo || '?', status: 'erro', motivo: 'código ou nome ausente' })
-          continue
-        }
-        try {
-          stmt.run({
-            codigo, nome,
-            nome_fantasia: str(row['nome_fantasia'] || row['fantasia']),
-            cpf: str(row['cpf']),
-            rg: str(row['rg']),
-            cgc: str(row['cgc'] || row['cnpj'] || row['cpf_cnpj']),
-            ie: str(row['ie'] || row['inscricao_estadual']),
-            logradouro: str(row['logradouro'] || row['endereco'] || row['rua']),
-            numero: str(row['numero'] || row['num']),
-            bairro: str(row['bairro']),
-            cep: str(row['cep']),
-            cidade: str(row['cidade']),
-            uf: str(row['uf'] || row['estado']),
-            telefone: str(row['telefone'] || row['fone'] || row['tel']),
-            celular: str(row['celular'] || row['cel']),
-            email: str(row['email']),
-            limite_credito: num(row['limite_credito'] || row['limite']),
-            haver: num(row['haver'] || row['credito'] || row['saldo_haver']),
-            situacao_cliente: str(row['situacao'], 'A'),
-            data_cadastro: hoje(),
-            usuario_cadastro: 'importacao',
-          })
-          resultados.push({ codigo, nome, status: verificarCliente.get(codigo) ? 'atualizado' : 'inserido' })
-        } catch (e) {
-          resultados.push({ codigo, nome, status: 'erro', motivo: e.message })
-        }
+    for (const row of rows) {
+      const codigo = str(row['codigo'] || row['cod'])
+      const nome = str(row['nome'] || row['nome_cliente'] || row['cliente'] || row['razao_social'])
+      if (!codigo || !nome) {
+        resultados.push({ codigo: codigo || '?', status: 'erro', motivo: 'código ou nome ausente' })
+        continue
       }
-    })
-    run()
+      try {
+        const existiaAntes = !!(await db.get('SELECT 1 FROM clientes WHERE codigo = ?', [codigo]))
+        await db.runNamed(sql, {
+          codigo, nome,
+          nome_fantasia: str(row['nome_fantasia'] || row['fantasia']),
+          cpf: str(row['cpf']),
+          rg: str(row['rg']),
+          cgc: str(row['cgc'] || row['cnpj'] || row['cpf_cnpj']),
+          ie: str(row['ie'] || row['inscricao_estadual']),
+          logradouro: str(row['logradouro'] || row['endereco'] || row['rua']),
+          numero: str(row['numero'] || row['num']),
+          bairro: str(row['bairro']),
+          cep: str(row['cep']),
+          cidade: str(row['cidade']),
+          uf: str(row['uf'] || row['estado']),
+          telefone: str(row['telefone'] || row['fone'] || row['tel']),
+          celular: str(row['celular'] || row['cel']),
+          email: str(row['email']),
+          limite_credito: num(row['limite_credito'] || row['limite']),
+          haver: num(row['haver'] || row['credito'] || row['saldo_haver']),
+          situacao_cliente: str(row['situacao'], 'A'),
+          data_cadastro: hoje(),
+          usuario_cadastro: 'importacao',
+        })
+        resultados.push({ codigo, nome, status: existiaAntes ? 'atualizado' : 'inserido' })
+      } catch (e) {
+        resultados.push({ codigo, nome, status: 'erro', motivo: e.message })
+      }
+    }
     return { sucesso: true, resultados, total: rows.length }
   },
 }
 
 const haver = {
-  listar(busca) {
+  async listar(busca) {
     let sql = `SELECT codigo, nome, cpf_cnpj, telefone, haver FROM clientes WHERE haver > 0`
     const params = []
     if (busca) {
@@ -1305,18 +1323,17 @@ const haver = {
       params.push(`%${busca}%`, `%${busca}%`, `%${busca}%`)
     }
     sql += ` ORDER BY haver DESC`
-    return db.prepare(sql).all(...params)
+    return db.all(sql, params)
   },
 
-  ajustar(dados) {
+  async ajustar(dados) {
     // dados: { codigo, valor (positivo=credito, negativo=debito), usuario }
-    db.prepare(`UPDATE clientes SET haver = ROUND(MAX(0, haver + ?), 2) WHERE codigo = ?`)
-      .run(dados.valor, dados.codigo)
+    await db.run(`UPDATE clientes SET haver = ROUND(GREATEST(0, haver + ?)::numeric, 2) WHERE codigo = ?`, [dados.valor, dados.codigo])
     return { sucesso: true }
   },
 
-  totalGeral() {
-    const row = db.prepare(`SELECT COALESCE(SUM(haver),0) as total FROM clientes WHERE haver > 0`).get()
+  async totalGeral() {
+    const row = await db.get(`SELECT COALESCE(SUM(haver),0) as total FROM clientes WHERE haver > 0`)
     return { total: row?.total || 0 }
   },
 }
@@ -1325,21 +1342,21 @@ const haver = {
 // PEDIDOS DE COMPRA
 // ============================================================
 const pedidosCompra = {
-  proximoNumero() {
-    const row = db.prepare(`SELECT MAX(CAST(numero AS INTEGER)) as ultimo FROM pedidos_compra`).get()
-    return { numero: ((row?.ultimo || 0) + 1).toString().padStart(6, '0') }
+  async proximoNumero() {
+    const valor = await proximoNumeroAtomico('pedidos_compra')
+    return { numero: String(valor).padStart(6, '0') }
   },
-  listar(filtros = {}) {
+  async listar(filtros = {}) {
     let sql = `SELECT * FROM pedidos_compra WHERE 1=1`
     const params = []
     if (filtros.situacao && filtros.situacao !== 'todos') { sql += ` AND situacao = ?`; params.push(filtros.situacao) }
     if (filtros.busca) { sql += ` AND (fornecedor LIKE ? OR numero LIKE ?)`; const b = `%${filtros.busca}%`; params.push(b, b) }
     sql += ` ORDER BY id DESC LIMIT 200`
-    const rows = db.prepare(sql).all(...params)
+    const rows = await db.all(sql, params)
     if (rows.length === 0) return []
     const placeholders = rows.map(() => '?').join(',')
     const numeros = rows.map(r => r.numero)
-    const itensAll = db.prepare(`SELECT * FROM pedidos_compra_itens WHERE numero IN (${placeholders})`).all(...numeros)
+    const itensAll = await db.all(`SELECT * FROM pedidos_compra_itens WHERE numero IN (${placeholders})`, numeros)
     const itensPorNumero = {}
     for (const item of itensAll) {
       if (!itensPorNumero[item.numero]) itensPorNumero[item.numero] = []
@@ -1347,29 +1364,37 @@ const pedidosCompra = {
     }
     return rows.map(r => ({ ...r, itens: itensPorNumero[r.numero] || [] }))
   },
-  salvar(dados) {
+  async salvar(dados) {
     const { itens, ...pc } = dados
-    db.transaction(() => {
-      const existe = db.prepare(`SELECT id FROM pedidos_compra WHERE numero = ?`).get(pc.numero)
+    await withTransaction(async (t) => {
+      const existe = await t.get(`SELECT id FROM pedidos_compra WHERE numero = ?`, [pc.numero])
       if (existe) {
-        db.prepare(`UPDATE pedidos_compra SET fornecedor=?,data=?,data_previsao=?,situacao=?,valor_total=?,observacao=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE numero=?`)
-          .run(pc.fornecedor, pc.data, pc.data_previsao||null, pc.situacao||'ABERTO', pc.valor_total||0, pc.observacao||'', pc.usuario||'', hoje(), agora(), pc.numero)
-        db.prepare(`DELETE FROM pedidos_compra_itens WHERE numero = ?`).run(pc.numero)
+        await t.run(
+          `UPDATE pedidos_compra SET fornecedor=?,data=?,data_previsao=?,situacao=?,valor_total=?,observacao=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE numero=?`,
+          [pc.fornecedor, pc.data, pc.data_previsao || null, pc.situacao || 'ABERTO', pc.valor_total || 0, pc.observacao || '', pc.usuario || '', hoje(), agora(), pc.numero],
+        )
+        await t.run(`DELETE FROM pedidos_compra_itens WHERE numero = ?`, [pc.numero])
       } else {
-        db.prepare(`INSERT INTO pedidos_compra (numero,fornecedor,data,data_previsao,situacao,valor_total,observacao,usuario,data_atualizacao,hora_atualizacao) VALUES (?,?,?,?,?,?,?,?,?,?)`)
-          .run(pc.numero, pc.fornecedor, pc.data||hoje(), pc.data_previsao||null, 'ABERTO', pc.valor_total||0, pc.observacao||'', pc.usuario||'', hoje(), agora())
+        await t.run(
+          `INSERT INTO pedidos_compra (numero,fornecedor,data,data_previsao,situacao,valor_total,observacao,usuario,data_atualizacao,hora_atualizacao) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          [pc.numero, pc.fornecedor, pc.data || hoje(), pc.data_previsao || null, 'ABERTO', pc.valor_total || 0, pc.observacao || '', pc.usuario || '', hoje(), agora()],
+        )
       }
-      const ins = db.prepare(`INSERT INTO pedidos_compra_itens (numero,codigo_produto,descricao,quantidade,preco_unitario,total) VALUES (?,?,?,?,?,?)`)
-      for (const item of itens || []) ins.run(pc.numero, item.codigo_produto, item.descricao, item.quantidade, item.preco_unitario||0, item.total||0)
-    })()
+      for (const item of itens || []) {
+        await t.run(
+          `INSERT INTO pedidos_compra_itens (numero,codigo_produto,descricao,quantidade,preco_unitario,total) VALUES (?,?,?,?,?,?)`,
+          [pc.numero, item.codigo_produto, item.descricao, item.quantidade, item.preco_unitario || 0, item.total || 0],
+        )
+      }
+    })
     return { sucesso: true, numero: pc.numero }
   },
-  cancelar(numero) {
-    db.prepare(`UPDATE pedidos_compra SET situacao='CANCELADO',data_atualizacao=?,hora_atualizacao=? WHERE numero=?`).run(hoje(), agora(), numero)
+  async cancelar(numero) {
+    await db.run(`UPDATE pedidos_compra SET situacao='CANCELADO',data_atualizacao=?,hora_atualizacao=? WHERE numero=?`, [hoje(), agora(), numero])
     return { sucesso: true }
   },
-  receber(numero) {
-    db.prepare(`UPDATE pedidos_compra SET situacao='RECEBIDO',data_atualizacao=?,hora_atualizacao=? WHERE numero=?`).run(hoje(), agora(), numero)
+  async receber(numero) {
+    await db.run(`UPDATE pedidos_compra SET situacao='RECEBIDO',data_atualizacao=?,hora_atualizacao=? WHERE numero=?`, [hoje(), agora(), numero])
     return { sucesso: true }
   },
 }
@@ -1378,7 +1403,7 @@ const pedidosCompra = {
 // CHEQUES
 // ============================================================
 const cheques = {
-  listar(filtros = {}) {
+  async listar(filtros = {}) {
     let sql = `SELECT * FROM cheques WHERE 1=1`
     const params = []
     if (filtros.tipo) { sql += ` AND tipo = ?`; params.push(filtros.tipo) }
@@ -1387,26 +1412,34 @@ const cheques = {
     if (filtros.dataInicio) { sql += ` AND data_vencimento >= ?`; params.push(filtros.dataInicio) }
     if (filtros.dataFim) { sql += ` AND data_vencimento <= ?`; params.push(filtros.dataFim) }
     sql += ` ORDER BY data_vencimento ASC, id DESC LIMIT 300`
-    return db.prepare(sql).all(...params)
+    return db.all(sql, params)
   },
-  salvar(dados) {
+  async salvar(dados) {
     if (dados.id) {
-      db.prepare(`UPDATE cheques SET tipo=?,numero=?,banco=?,valor=?,data_emissao=?,data_vencimento=?,codigo_pessoa=?,nome_pessoa=?,nro_docto=?,situacao=?,observacao=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`)
-        .run(dados.tipo, dados.numero||'', dados.banco||'', dados.valor||0, dados.data_emissao||null, dados.data_vencimento||null, dados.codigo_pessoa||'', dados.nome_pessoa||'', dados.nro_docto||'', dados.situacao||'A', dados.observacao||'', dados.usuario||'', hoje(), agora(), dados.id)
+      await db.run(
+        `UPDATE cheques SET tipo=?,numero=?,banco=?,valor=?,data_emissao=?,data_vencimento=?,codigo_pessoa=?,nome_pessoa=?,nro_docto=?,situacao=?,observacao=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`,
+        [dados.tipo, dados.numero || '', dados.banco || '', dados.valor || 0, dados.data_emissao || null, dados.data_vencimento || null, dados.codigo_pessoa || '', dados.nome_pessoa || '', dados.nro_docto || '', dados.situacao || 'A', dados.observacao || '', dados.usuario || '', hoje(), agora(), dados.id],
+      )
     } else {
-      db.prepare(`INSERT INTO cheques (tipo,numero,banco,valor,data_emissao,data_vencimento,codigo_pessoa,nome_pessoa,nro_docto,situacao,observacao,usuario,data_atualizacao,hora_atualizacao) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(dados.tipo, dados.numero||'', dados.banco||'', dados.valor||0, dados.data_emissao||null, dados.data_vencimento||null, dados.codigo_pessoa||'', dados.nome_pessoa||'', dados.nro_docto||'', 'A', dados.observacao||'', dados.usuario||'', hoje(), agora())
+      await db.run(
+        `INSERT INTO cheques (tipo,numero,banco,valor,data_emissao,data_vencimento,codigo_pessoa,nome_pessoa,nro_docto,situacao,observacao,usuario,data_atualizacao,hora_atualizacao) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [dados.tipo, dados.numero || '', dados.banco || '', dados.valor || 0, dados.data_emissao || null, dados.data_vencimento || null, dados.codigo_pessoa || '', dados.nome_pessoa || '', dados.nro_docto || '', 'A', dados.observacao || '', dados.usuario || '', hoje(), agora()],
+      )
     }
     return { sucesso: true }
   },
-  baixar(id, data_compensacao, usuario) {
-    db.prepare(`UPDATE cheques SET situacao='C',data_compensacao=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`)
-      .run(data_compensacao || hoje(), usuario||'', hoje(), agora(), id)
+  async baixar(id, data_compensacao, usuario) {
+    await db.run(
+      `UPDATE cheques SET situacao='C',data_compensacao=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`,
+      [data_compensacao || hoje(), usuario || '', hoje(), agora(), id],
+    )
     return { sucesso: true }
   },
-  devolver(id, usuario) {
-    db.prepare(`UPDATE cheques SET situacao='D',usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`)
-      .run(usuario||'', hoje(), agora(), id)
+  async devolver(id, usuario) {
+    await db.run(
+      `UPDATE cheques SET situacao='D',usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`,
+      [usuario || '', hoje(), agora(), id],
+    )
     return { sucesso: true }
   },
 }
@@ -1415,7 +1448,7 @@ const cheques = {
 // LANÇAMENTOS EXTRAS (receitas, despesas, vales)
 // ============================================================
 const lancamentosExtras = {
-  listar(filtros = {}) {
+  async listar(filtros = {}) {
     let sql = `SELECT * FROM lancamentos_extras WHERE 1=1`
     const params = []
     if (filtros.tipo) { sql += ` AND tipo = ?`; params.push(filtros.tipo) }
@@ -1424,26 +1457,28 @@ const lancamentosExtras = {
     if (filtros.dataInicio) { sql += ` AND data >= ?`; params.push(filtros.dataInicio) }
     if (filtros.dataFim) { sql += ` AND data <= ?`; params.push(filtros.dataFim) }
     sql += ` ORDER BY data DESC, id DESC LIMIT 300`
-    return db.prepare(sql).all(...params)
+    return db.all(sql, params)
   },
-  salvar(dados) {
+  async salvar(dados) {
     if (dados.id) {
-      db.prepare(`UPDATE lancamentos_extras SET tipo=?,descricao=?,valor=?,data=?,nome_pessoa=?,forma_pagamento=?,situacao=?,observacao=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`)
-        .run(dados.tipo, dados.descricao, dados.valor||0, dados.data, dados.nome_pessoa||'', dados.forma_pagamento||'', dados.situacao||'A', dados.observacao||'', dados.usuario||'', hoje(), agora(), dados.id)
+      await db.run(
+        `UPDATE lancamentos_extras SET tipo=?,descricao=?,valor=?,data=?,nome_pessoa=?,forma_pagamento=?,situacao=?,observacao=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`,
+        [dados.tipo, dados.descricao, dados.valor || 0, dados.data, dados.nome_pessoa || '', dados.forma_pagamento || '', dados.situacao || 'A', dados.observacao || '', dados.usuario || '', hoje(), agora(), dados.id],
+      )
     } else {
-      db.prepare(`INSERT INTO lancamentos_extras (tipo,descricao,valor,data,nome_pessoa,forma_pagamento,situacao,observacao,usuario,data_atualizacao,hora_atualizacao) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(dados.tipo, dados.descricao, dados.valor||0, dados.data||hoje(), dados.nome_pessoa||'', dados.forma_pagamento||'', 'A', dados.observacao||'', dados.usuario||'', hoje(), agora())
+      await db.run(
+        `INSERT INTO lancamentos_extras (tipo,descricao,valor,data,nome_pessoa,forma_pagamento,situacao,observacao,usuario,data_atualizacao,hora_atualizacao) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [dados.tipo, dados.descricao, dados.valor || 0, dados.data || hoje(), dados.nome_pessoa || '', dados.forma_pagamento || '', 'A', dados.observacao || '', dados.usuario || '', hoje(), agora()],
+      )
     }
     return { sucesso: true }
   },
-  pagar(id, usuario) {
-    db.prepare(`UPDATE lancamentos_extras SET situacao='P',data_pagamento=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`)
-      .run(hoje(), usuario||'', hoje(), agora(), id)
+  async pagar(id, usuario) {
+    await db.run(`UPDATE lancamentos_extras SET situacao='P',data_pagamento=?,usuario=?,data_atualizacao=?,hora_atualizacao=? WHERE id=?`, [hoje(), usuario || '', hoje(), agora(), id])
     return { sucesso: true }
   },
-  cancelar(id) {
-    db.prepare(`UPDATE lancamentos_extras SET situacao='C',data_atualizacao=?,hora_atualizacao=? WHERE id=?`)
-      .run(hoje(), agora(), id)
+  async cancelar(id) {
+    await db.run(`UPDATE lancamentos_extras SET situacao='C',data_atualizacao=?,hora_atualizacao=? WHERE id=?`, [hoje(), agora(), id])
     return { sucesso: true }
   },
 }
@@ -1452,32 +1487,31 @@ const lancamentosExtras = {
 // REAJUSTE DE PREÇOS
 // ============================================================
 const reajustesPreco = {
-  listar(filtros = {}) {
+  async listar(filtros = {}) {
     let sql = `SELECT * FROM reajustes_preco WHERE 1=1`
     const params = []
     if (filtros.dataInicio) { sql += ` AND data >= ?`; params.push(filtros.dataInicio) }
     if (filtros.dataFim) { sql += ` AND data <= ?`; params.push(filtros.dataFim) }
     if (filtros.busca) { sql += ` AND produto LIKE ?`; params.push(`%${filtros.busca}%`) }
     sql += ` ORDER BY id DESC LIMIT 500`
-    return db.prepare(sql).all(...params)
+    return db.all(sql, params)
   },
-  aplicar(codigos, percentual, usuario) {
-    // codigos: array de código de produto; percentual: float (ex: 10 = +10%, -5 = -5%)
+  async aplicar(codigos, percentual, usuario) {
     const fator = 1 + (percentual / 100)
-    const selProd = db.prepare(`SELECT codigo, descricao, preco_venda_vista, preco_venda_prazo FROM produtos WHERE codigo = ?`)
-    const updProd = db.prepare(`UPDATE produtos SET preco_venda_vista=?,preco_venda_prazo=?,data_atualizacao=? WHERE codigo=?`)
-    const insLog = db.prepare(`INSERT INTO reajustes_preco (codigo_produto,produto,preco_anterior,preco_novo,percentual,data,usuario) VALUES (?,?,?,?,?,?,?)`)
     const dataHoje = hoje()
-    db.transaction(() => {
+    await withTransaction(async (t) => {
       for (const codigo of codigos) {
-        const prod = selProd.get(codigo)
+        const prod = await t.get(`SELECT codigo, descricao, preco_venda_vista, preco_venda_prazo FROM produtos WHERE codigo = ?`, [codigo])
         if (!prod) continue
         const novoVista = Math.round(prod.preco_venda_vista * fator * 100) / 100
         const novoPrazo = Math.round(prod.preco_venda_prazo * fator * 100) / 100
-        updProd.run(novoVista, novoPrazo, dataHoje, codigo)
-        insLog.run(codigo, prod.descricao, prod.preco_venda_vista, novoVista, percentual, dataHoje, usuario||'')
+        await t.run(`UPDATE produtos SET preco_venda_vista=?,preco_venda_prazo=?,data_atualizacao=? WHERE codigo=?`, [novoVista, novoPrazo, dataHoje, codigo])
+        await t.run(
+          `INSERT INTO reajustes_preco (codigo_produto,produto,preco_anterior,preco_novo,percentual,data,usuario) VALUES (?,?,?,?,?,?,?)`,
+          [codigo, prod.descricao, prod.preco_venda_vista, novoVista, percentual, dataHoje, usuario || ''],
+        )
       }
-    })()
+    })
     return { sucesso: true, atualizados: codigos.length }
   },
 }
@@ -1486,7 +1520,7 @@ const reajustesPreco = {
 // NF-e
 // ============================================================
 const nfe = {
-  listar(filtros = {}) {
+  async listar(filtros = {}) {
     let sql = `
       SELECT v.orcamento, v.data, v.hora_cadastro, v.valor_total, v.situacao,
         v.numero_nfe, v.codigo_cliente, COALESCE(c.nome, 'Consumidor') as nome_cliente,
@@ -1505,12 +1539,11 @@ const nfe = {
       params.push(b, b, b)
     }
     sql += ` ORDER BY v.data DESC, v.hora_cadastro DESC LIMIT 500`
-    return db.prepare(sql).all(...params)
+    return db.all(sql, params)
   },
 
-  registrar(orcamento, numero_nfe) {
-    db.prepare(`UPDATE vendas SET numero_nfe = ? WHERE orcamento = ?`)
-      .run(numero_nfe || null, orcamento)
+  async registrar(orcamento, numero_nfe) {
+    await db.run(`UPDATE vendas SET numero_nfe = ? WHERE orcamento = ?`, [numero_nfe || null, orcamento])
     return { sucesso: true }
   },
 }
@@ -1519,7 +1552,7 @@ const nfe = {
 // LOG DO SISTEMA
 // ============================================================
 const log = {
-  listar(filtros = {}) {
+  async listar(filtros = {}) {
     const dataInicio = filtros.dataInicio || null
     const dataFim = filtros.dataFim || null
     const categoria = filtros.categoria || null
@@ -1578,7 +1611,7 @@ const log = {
           COALESCE(cr.usuario,''), ''
         FROM contas_receber cr LEFT JOIN clientes c ON cr.codigo_cliente = c.codigo
         WHERE cr.situacao_docto='P' AND cr.data_pagamento IS NOT NULL
-      )
+      ) as eventos
       WHERE 1=1
     `
     const params = []
@@ -1586,18 +1619,18 @@ const log = {
     if (dataFim) { sql += ` AND data <= ?`; params.push(dataFim) }
     if (categoria) { sql += ` AND categoria LIKE ?`; params.push(categoria + '%') }
     sql += ` ORDER BY data DESC, hora DESC LIMIT 500`
-    return db.prepare(sql).all(...params)
+    return db.all(sql, params)
   },
 }
 
 const manutencao = {
   // Cancela CR abertos de vendas que já foram canceladas
-  corrigirCROrfaos() {
-    const resultado = db.prepare(`
+  async corrigirCROrfaos() {
+    const resultado = await db.run(`
       UPDATE contas_receber SET situacao_docto='C', data_atualizacao=?, hora_atualizacao=?
       WHERE tipo_docto='VD' AND situacao_docto='A'
         AND nro_docto IN (SELECT orcamento FROM vendas WHERE situacao='C')
-    `).run(hoje(), agora())
+    `, [hoje(), agora()])
     return { corrigidos: resultado.changes }
   },
 }
@@ -1606,20 +1639,20 @@ const manutencao = {
 // RELATÓRIOS GERENCIAIS
 // ============================================================
 const relatorios = {
-  inventario() {
-    return db.prepare(`
+  async inventario() {
+    return db.all(`
       SELECT codigo, descricao, unidade, estoque_atual, estoque_minimo,
              preco_custo_atual, preco_venda_vista,
-             ROUND(estoque_atual * preco_custo_atual, 4) as valor_custo,
-             ROUND(estoque_atual * preco_venda_vista, 4) as valor_vista
+             ROUND((estoque_atual * preco_custo_atual)::numeric, 4) as valor_custo,
+             ROUND((estoque_atual * preco_venda_vista)::numeric, 4) as valor_vista
       FROM produtos
       WHERE situacao_produto = 'A'
       ORDER BY descricao
-    `).all()
+    `)
   },
 
-  itenisVendidos(dataInicio, dataFim) {
-    return db.prepare(`
+  async itenisVendidos(dataInicio, dataFim) {
+    return db.all(`
       SELECT vi.codigo_produto as codigo, vi.descricao,
              SUM(vi.quantidade) as quantidade,
              SUM(vi.valor_total) as valor_venda
@@ -1628,11 +1661,11 @@ const relatorios = {
       WHERE v.situacao = 'N' AND v.data >= ? AND v.data <= ?
       GROUP BY vi.codigo_produto, vi.descricao
       ORDER BY vi.descricao
-    `).all(dataInicio, dataFim)
+    `, [dataInicio, dataFim])
   },
 
-  entradasMercadoria(dataInicio, dataFim) {
-    return db.prepare(`
+  async entradasMercadoria(dataInicio, dataFim) {
+    return db.all(`
       SELECT produto_id as codigo, produto as descricao,
              SUM(quantidade) as qtde_total,
              SUM(total) as valor_total
@@ -1640,11 +1673,11 @@ const relatorios = {
       WHERE tipo = 'ENTRADA' AND data >= ? AND data <= ?
       GROUP BY produto_id, produto
       ORDER BY produto
-    `).all(dataInicio, dataFim)
+    `, [dataInicio, dataFim])
   },
 
-  extrato(dataInicio, dataFim) {
-    const saldoAntes = db.prepare(`
+  async extrato(dataInicio, dataFim) {
+    const saldoAntes = await db.get(`
       SELECT COALESCE(SUM(valor), 0) as total FROM (
         SELECT valor_pagamento as valor FROM contas_receber
           WHERE situacao_docto = 'P' AND data_pagamento < ?
@@ -1654,10 +1687,10 @@ const relatorios = {
         UNION ALL
         SELECT CASE WHEN tipo = 'RECEITA' THEN valor ELSE -valor END
           FROM lancamentos_extras WHERE situacao = 'P' AND data_pagamento < ?
-      )
-    `).get(dataInicio, dataInicio, dataInicio)
+      ) as antes
+    `, [dataInicio, dataInicio, dataInicio])
 
-    const movimentos = db.prepare(`
+    const movimentos = await db.all(`
       SELECT data, historico, debito, credito, documento, observacao FROM (
         SELECT data_pagamento as data,
                UPPER(COALESCE(NULLIF(forma_pagamento,''), 'PIX')) as historico,
@@ -1680,9 +1713,9 @@ const relatorios = {
                CAST(id AS TEXT), descricao, id
         FROM lancamentos_extras
         WHERE situacao = 'P' AND data_pagamento >= ? AND data_pagamento <= ?
-      )
+      ) as mov
       ORDER BY data, id
-    `).all(dataInicio, dataFim, dataInicio, dataFim, dataInicio, dataFim)
+    `, [dataInicio, dataFim, dataInicio, dataFim, dataInicio, dataFim])
 
     return { saldoInicial: saldoAntes?.total || 0, movimentos }
   },
