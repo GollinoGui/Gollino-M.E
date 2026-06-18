@@ -817,11 +817,13 @@ export default function Estoque({ abaInicial = 'movimentos' }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
               <col style={{ width: 92 }} />
+              <col style={{ width: 100 }} />
               <col />
-              <col style={{ width: 46 }} />
+              <col style={{ width: 80 }} />
               <col style={{ width: 100 }} />
-              <col style={{ width: 100 }} />
-              <col style={{ width: 120 }} />
+              <col style={{ width: 110 }} />
+              <col style={{ width: 130 }} />
+              <col style={{ width: 160 }} />
             </colgroup>
             <thead>
               <tr>

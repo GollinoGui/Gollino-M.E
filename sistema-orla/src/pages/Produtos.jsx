@@ -47,7 +47,7 @@ function EstoqueBadge({ qtd, minimo }) {
     )
   if (q <= m)
     return (
-      <span style={{ ...style, background: 'var(--surface)beb', color: '#d97706' }}>
+      <span style={{ ...style, background: '#fffbeb', color: '#d97706' }}>
         Baixo: {q}
       </span>
     )

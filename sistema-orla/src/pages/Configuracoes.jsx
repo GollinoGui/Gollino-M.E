@@ -90,6 +90,8 @@ export default function Configuracoes() {
       const res = await window.api.backup.importar()
       if (res?.sucesso) {
         setBackupMsg(`Restaurado com sucesso! Reinicie o sistema para aplicar. Segurança salva em: ${res.seguranca}`)
+      } else {
+        setBackupMsg(res?.erro || 'Erro ao restaurar backup.')
       }
     } catch {
       setBackupMsg('Erro ao restaurar backup.')
@@ -104,7 +106,7 @@ export default function Configuracoes() {
     try {
       const res = await window.api.backup.exportar()
       if (res?.sucesso) setBackupMsg(`Backup salvo em: ${res.caminho}`)
-      else setBackupMsg('')
+      else setBackupMsg(res?.erro || 'Erro ao realizar backup.')
     } catch {
       setBackupMsg('Erro ao realizar backup.')
     } finally {

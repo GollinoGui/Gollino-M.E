@@ -96,6 +96,7 @@ export default function PreVendas({ usuario }) {
   const [view, setView] = useState('lista')
   const [editando, setEditando] = useState(null)
   const [busca, setBusca] = useState('')
+  const [filtroSituacao, setFiltroSituacao] = useState('Todas')
   const [buscaProd, setBuscaProd] = useState('')
   const [itemModal, setItemModal] = useState(null)
   const [sucesso, setSucesso] = useState('')
@@ -123,9 +124,12 @@ export default function PreVendas({ usuario }) {
     }
   }
 
+  const situacaoPorFiltro = { Abertas: 'ABERTA', Baixadas: 'BAIXADA', Canceladas: 'CANCELADA' }
+
   const filtradas = preVendas.filter(p =>
-    (p.nome_cliente || '').toLowerCase().includes(busca.toLowerCase()) ||
-    (p.numero || '').includes(busca)
+    ((p.nome_cliente || '').toLowerCase().includes(busca.toLowerCase()) ||
+      (p.numero || '').includes(busca)) &&
+    (filtroSituacao === 'Todas' || p.situacao === situacaoPorFiltro[filtroSituacao])
   )
 
   const prodsFiltrados = useMemo(() =>
@@ -418,7 +422,7 @@ export default function PreVendas({ usuario }) {
           <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por cliente ou número..." style={{ width: '100%', height: 34, paddingLeft: 32 }} />
         </div>
-        <select style={{ height: 34, padding: '0 10px', borderRadius: 'var(--radius-md)' }}>
+        <select value={filtroSituacao} onChange={e => setFiltroSituacao(e.target.value)} style={{ height: 34, padding: '0 10px', borderRadius: 'var(--radius-md)' }}>
           <option>Todas</option>
           <option>Abertas</option>
           <option>Baixadas</option>
