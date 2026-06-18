@@ -26,8 +26,6 @@ dist-electron/
 *.exe
 sistema-orla/dist-electron/
 
-# Conexão com o banco (Supabase) — configurada manualmente em cada máquina
-banco/connection.json
 .env
 
 # Banco local antigo e recibos — dados reais de clientes, não vão pro git

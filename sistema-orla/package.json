@@ -1,7 +1,7 @@
 {
   "name": "sistema-orla",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Sistema de Gestão Gollino M.E",
   "main": "electron/main.js",
   "type": "commonjs",
@@ -15,9 +15,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.108.2",
     "electron-updater": "^6.8.9",
     "lucide-react": "^0.577.0",
-    "pg": "^8.21.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
@@ -45,8 +45,7 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*",
-      "schema.postgres.sql"
+      "electron/**/*"
     ],
     "publish": {
       "provider": "github",

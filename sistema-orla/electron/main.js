@@ -8,7 +8,7 @@ const db = require('./database')
 
 const isDev = !app.isPackaged
 
-// Pasta onde fica a config de conexão: C:\GollinoME\banco\connection.json
+// Pasta local para arquivos gerados pelo app (recibos em PDF)
 function getBancoDir() {
   const base = isDev
     ? path.join(__dirname, '..')
@@ -16,26 +16,6 @@ function getBancoDir() {
   const dir = path.join(base, 'banco')
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
   return dir
-}
-
-// Lê a config de conexão do Postgres/Supabase de banco/connection.json
-// (arquivo local, não commitado — configurado manualmente em cada máquina).
-// Usa campos separados (host/port/database/user/password) em vez de uma
-// única URI, pra evitar problema de escaping quando a senha tem caracteres
-// especiais (#, @, etc).
-function getDbConfig() {
-  const file = path.join(getBancoDir(), 'connection.json')
-  if (!fs.existsSync(file)) {
-    throw new Error(
-      `Arquivo de conexão não encontrado: ${file}\n` +
-      `Crie esse arquivo com: { "host": "...", "port": 5432, "database": "postgres", "user": "postgres", "password": "..." }`,
-    )
-  }
-  const conteudo = JSON.parse(fs.readFileSync(file, 'utf8'))
-  if (!conteudo.host || !conteudo.password) {
-    throw new Error(`"host"/"password" ausentes em ${file}`)
-  }
-  return conteudo
 }
 
 function createWindow() {
@@ -66,14 +46,11 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  // Inicializa o banco de dados (Postgres/Supabase)
-  let dbConfig
   try {
-    dbConfig = getDbConfig()
-    await db.init(dbConfig)
+    await db.init()
   } catch (e) {
-    console.error('❌ Falha ao conectar no banco:', e.message)
-    dialog.showErrorBox('Erro ao conectar no banco de dados', e.message)
+    console.error('❌ Falha ao conectar no Supabase:', e.message)
+    dialog.showErrorBox('Erro ao conectar', e.message)
     app.quit()
     return
   }
@@ -131,7 +108,7 @@ app.on('window-all-closed', () => {
 // --- AUTH ---
 ipcMain.handle('auth:login', async (_, { usuario, senha }) => {
   try {
-    const result = db.login(usuario, senha)
+    const result = await db.login(usuario, senha)
     return result
   } catch (e) {
     return { sucesso: false, erro: e.message }
