@@ -13,6 +13,7 @@ import {
   Clock,
   CheckCircle,
 } from 'lucide-react'
+import ModalAcessoNegado from '../components/ModalAcessoNegado'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -231,6 +232,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
   const [totalClientes, setTotalClientes] = useState(0)
   const [totalProdutos, setTotalProdutos] = useState(0)
   const [cancelandoId, setCancelandoId] = useState(null)
+  const [acessoNegado, setAcessoNegado] = useState(null)
 
   const META_DIARIA = 2000
 
@@ -300,7 +302,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
 
   async function cancelarVenda(orcamento) {
     if ((usuario?.nivel ?? 0) < 2) {
-      window.alert('Você não tem permissão para cancelar vendas. Entre em contato com um administrador.')
+      setAcessoNegado('Você não tem permissão para cancelar vendas. Entre em contato com um administrador.')
       return
     }
     if (!window.confirm(`Cancelar a venda #${orcamento}?`)) return
@@ -415,6 +417,13 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
         .row-hover { transition: background 0.1s; }
         .row-hover:hover { background:#EBF4FD !important; }
       `}</style>
+
+      {acessoNegado && (
+        <ModalAcessoNegado
+          mensagem={acessoNegado}
+          onFechar={() => setAcessoNegado(null)}
+        />
+      )}
 
       {/* ── HEADER AZUL ───────────────────────────────────────── */}
       <div

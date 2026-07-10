@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Search, ArrowDownCircle, ArrowUpCircle, Package, RefreshCw, ShoppingCart, ClipboardList, TrendingUp } from 'lucide-react'
+import ModalAcessoNegado from '../components/ModalAcessoNegado'
 
 const fmt = (v) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -114,7 +115,10 @@ function ModalEntrada({ onClose, onSalvar }) {
   const total =
     (parseFloat(form.quantidade) || 0) * (parseFloat(form.valor_unitario) || 0)
   const valido =
-    form.produto_id && form.quantidade && form.valor_unitario && form.fornecedor
+    form.produto_id &&
+    parseFloat(form.quantidade) > 0 &&
+    parseFloat(form.valor_unitario) > 0 &&
+    form.fornecedor
 
   return (
     <div
@@ -445,7 +449,7 @@ function ModalPedidoCompra({ onClose, onSalvar, numero }) {
   }, [])
 
   function addItem() {
-    if (!prodBusca || !qtde) return
+    if (!prodBusca || !(parseFloat(qtde) > 0) || parseFloat(vlUnit || 0) < 0) return
     setItens((prev) => [...prev, {
       produto_id: prodBusca.codigo,
       produto: prodBusca.descricao,
@@ -498,7 +502,7 @@ function ModalPedidoCompra({ onClose, onSalvar, numero }) {
               <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Vl. unit. (R$)</label>
               <input value={vlUnit} onChange={(e) => setVlUnit(e.target.value)} type='number' min='0' style={{ width: '100%', height: 34, padding: '0 8px', fontSize: 13 }} />
             </div>
-            <button onClick={addItem} disabled={!prodBusca || !qtde} style={{ height: 34, padding: '0 12px', background: 'var(--blue-600)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, opacity: prodBusca && qtde ? 1 : 0.4 }}>
+            <button onClick={addItem} disabled={!prodBusca || !(parseFloat(qtde) > 0)} style={{ height: 34, padding: '0 12px', background: 'var(--blue-600)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, opacity: prodBusca && parseFloat(qtde) > 0 ? 1 : 0.4 }}>
               + Add
             </button>
           </div>
@@ -566,6 +570,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   const [modalAcerto, setModalAcerto] = useState(false)
   const [modalPedido, setModalPedido] = useState(false)
   const [sucesso, setSucesso] = useState('')
+  const [acessoNegado, setAcessoNegado] = useState(null)
 
   // Pedidos de compra
   const [pedidos, setPedidos] = useState([])
@@ -656,7 +661,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
 
   async function cancelarPedido(numero) {
     if ((usuario?.nivel ?? 0) < 2) {
-      window.alert('Você não tem permissão para cancelar pedidos de compra. Entre em contato com um administrador.')
+      setAcessoNegado('Você não tem permissão para cancelar pedidos de compra. Entre em contato com um administrador.')
       return
     }
     if (!window.confirm('Cancelar este pedido de compra?')) return
@@ -750,6 +755,12 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
       {modalSaida && <ModalSaida onClose={() => setModalSaida(false)} onSalvar={salvarMovimento} produtos={produtos} />}
       {modalAcerto && <ModalAcerto onClose={() => setModalAcerto(false)} onSalvar={salvarMovimento} produtos={produtos} />}
       {modalPedido && <ModalPedidoCompra onClose={() => setModalPedido(false)} onSalvar={salvarPedido} numero={proximoNumPedido} />}
+      {acessoNegado && (
+        <ModalAcessoNegado
+          mensagem={acessoNegado}
+          onFechar={() => setAcessoNegado(null)}
+        />
+      )}
 
       {/* ── HEADER COM ABAS ── */}
       <div style={{ padding: '0 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--surface)', flexWrap: 'wrap', gap: 0 }}>

@@ -235,7 +235,7 @@ function ModalNova({ onClose, onSalvar }) {
   const [salvando, setSalvando] = useState(false)
   const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }))
   const valido =
-    form.codigo_fornecedor && form.valor_docto && form.data_vencimento
+    form.codigo_fornecedor && parseFloat(form.valor_docto) > 0 && form.data_vencimento
 
   async function handleSalvar() {
     setSalvando(true)

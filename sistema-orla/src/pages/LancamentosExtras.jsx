@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Search, Plus, CheckCircle, XCircle } from 'lucide-react'
+import ModalAcessoNegado from '../components/ModalAcessoNegado'
 
 const fmt = (v) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('pt-BR') : '-'
@@ -97,6 +98,7 @@ export default function LancamentosExtras({ tipo = 'RECEITA', usuario }) {
   const [filtroSit, setFiltroSit] = useState('todos')
   const [modal, setModal] = useState(false)
   const [sucesso, setSucesso] = useState('')
+  const [acessoNegado, setAcessoNegado] = useState(null)
 
   useEffect(() => { carregar() }, [tipo])
 
@@ -126,7 +128,7 @@ export default function LancamentosExtras({ tipo = 'RECEITA', usuario }) {
 
   async function cancelar(id) {
     if ((usuario?.nivel ?? 0) < 2) {
-      window.alert('Você não tem permissão para cancelar lançamentos. Entre em contato com um administrador.')
+      setAcessoNegado('Você não tem permissão para cancelar lançamentos. Entre em contato com um administrador.')
       return
     }
     if (!window.confirm('Cancelar este lançamento?')) return
@@ -156,6 +158,12 @@ export default function LancamentosExtras({ tipo = 'RECEITA', usuario }) {
         </div>
       )}
       {modal && <ModalLancamento onClose={() => setModal(false)} onSalvar={salvar} tipo={tipo} />}
+      {acessoNegado && (
+        <ModalAcessoNegado
+          mensagem={acessoNegado}
+          onFechar={() => setAcessoNegado(null)}
+        />
+      )}
 
       {/* Resumo */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: 16, borderBottom: '1px solid var(--border)' }}>

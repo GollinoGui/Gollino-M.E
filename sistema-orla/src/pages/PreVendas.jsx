@@ -14,11 +14,19 @@ function StatusBadge({ status }) {
   return <span style={{ background: s.bg, color: s.color, padding: '2px 9px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>{s.label}</span>
 }
 
+function clampDesconto(v) {
+  const n = parseFloat(v)
+  if (isNaN(n)) return 0
+  return Math.min(100, Math.max(0, n))
+}
+
 function ModalItem({ produto, onConfirm, onClose }) {
   const [qty, setQty] = useState('1')
   const [desc, setDesc] = useState('0')
   const preco = produto.preco_venda_vista || 0
-  const total = (parseFloat(qty) || 0) * preco * (1 - (parseFloat(desc) || 0) / 100)
+  const descAplicado = clampDesconto(desc)
+  const total = (parseFloat(qty) || 0) * preco * (1 - descAplicado / 100)
+  const podeConfirmar = (parseFloat(qty) || 0) > 0 && preco > 0
   return (
     <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
       <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-md)', width: 400, padding: 24, boxShadow: '0 16px 40px rgba(0,0,0,0.14)', animation: 'fadeIn 0.15s ease both' }}>
@@ -38,6 +46,9 @@ function ModalItem({ produto, onConfirm, onClose }) {
           <div>
             <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Desconto %</label>
             <input value={desc} onChange={e => setDesc(e.target.value)} type="number" min="0" max="100" style={{ width: '100%', height: 36, padding: '0 10px' }} />
+            {(parseFloat(desc) < 0 || parseFloat(desc) > 100) && (
+              <div style={{ fontSize: 11, color: '#C53030', marginTop: 3 }}>Será aplicado {descAplicado}%.</div>
+            )}
           </div>
           <div>
             <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Total do item</label>
@@ -46,7 +57,11 @@ function ModalItem({ produto, onConfirm, onClose }) {
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
-          <button onClick={() => onConfirm({ ...produto, qty: parseFloat(qty) || 1, desconto: parseFloat(desc) || 0, total, preco_vista: preco })} style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: 'var(--blue-700)', color: 'var(--surface)', fontSize: 13, fontWeight: 500 }}>Confirmar</button>
+          <button
+            disabled={!podeConfirmar}
+            onClick={() => podeConfirmar && onConfirm({ ...produto, qty: parseFloat(qty), desconto: descAplicado, total, preco_vista: preco })}
+            style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: podeConfirmar ? 'var(--blue-700)' : 'var(--gray-200)', color: podeConfirmar ? 'var(--surface)' : 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: podeConfirmar ? 'pointer' : 'not-allowed' }}
+          >Confirmar</button>
         </div>
       </div>
     </div>

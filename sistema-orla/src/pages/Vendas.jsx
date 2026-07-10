@@ -7,6 +7,7 @@ import {
   FileText,
   RotateCcw,
 } from 'lucide-react'
+import ModalAcessoNegado from '../components/ModalAcessoNegado'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -48,12 +49,20 @@ function EstoqueBadge({ qtd }) {
   )
 }
 
+function clampDesconto(v) {
+  const n = parseFloat(v)
+  if (isNaN(n)) return 0
+  return Math.min(100, Math.max(0, n))
+}
+
 function ModalItem({ produto, onConfirm, onClose }) {
   const preco = produto.preco_venda_vista || produto.preco_vista || 0
   const fracionavel = UNIDADES_FRACIONAVEIS.has(produto.unidade)
   const [qty, setQty] = useState('1')
   const [desc, setDesc] = useState('0')
-  const total = parseQtd(qty) * preco * (1 - (parseFloat(desc) || 0) / 100)
+  const descAplicado = clampDesconto(desc)
+  const total = parseQtd(qty) * preco * (1 - descAplicado / 100)
+  const podeConfirmar = parseQtd(qty) > 0 && preco > 0
 
   return (
     <div
@@ -168,6 +177,11 @@ function ModalItem({ produto, onConfirm, onClose }) {
                 border: '1px solid var(--border-md)',
               }}
             />
+            {(parseFloat(desc) < 0 || parseFloat(desc) > 100) && (
+              <div style={{ fontSize: 11, color: '#C53030', marginTop: 3 }}>
+                Desconto deve ser entre 0% e 100% — será aplicado {descAplicado}%.
+              </div>
+            )}
           </div>
           <div>
             <label
@@ -212,21 +226,24 @@ function ModalItem({ produto, onConfirm, onClose }) {
             Cancelar (Esc)
           </button>
           <button
+            disabled={!podeConfirmar}
             onClick={() =>
+              podeConfirmar &&
               onConfirm({
                 ...produto,
-                qty: parseQtd(qty) || 1,
-                desconto: parseFloat(desc) || 0,
+                qty: parseQtd(qty),
+                desconto: descAplicado,
                 total,
               })
             }
             style={{
               padding: '8px 20px',
               borderRadius: 8,
-              background: '#185FA5',
-              color: 'var(--surface)',
+              background: podeConfirmar ? '#185FA5' : 'var(--border-md)',
+              color: podeConfirmar ? 'var(--surface)' : 'var(--text-muted)',
               fontSize: 13,
               fontWeight: 600,
+              cursor: podeConfirmar ? 'pointer' : 'not-allowed',
             }}
           >
             Confirmar (Ctrl+S)
@@ -419,6 +436,7 @@ export default function Vendas({ onNavigate, usuario }) {
   const [observacao, setObservacao] = useState('')
   const [ultimasVendas, setUltimasVendas] = useState([])
   const [cancelando, setCancelando] = useState(null)
+  const [acessoNegado, setAcessoNegado] = useState(null)
 
   // Dados do banco
   const [todosProds, setTodosProds] = useState([])
@@ -467,7 +485,7 @@ export default function Vendas({ onNavigate, usuario }) {
 
   async function cancelarVenda(orcamento) {
     if ((usuario?.nivel ?? 0) < 2) {
-      window.alert('Você não tem permissão para cancelar vendas. Entre em contato com um administrador.')
+      setAcessoNegado('Você não tem permissão para cancelar vendas. Entre em contato com um administrador.')
       return
     }
     if (!window.confirm(`Cancelar venda #${orcamento}? O estoque será revertido.`)) return
@@ -703,6 +721,12 @@ export default function Vendas({ onNavigate, usuario }) {
           clienteAnonimo={!clienteSel || clienteSel.codigo === '000001'}
           onClose={() => setPagModal(false)}
           onFinalizar={finalizarVenda}
+        />
+      )}
+      {acessoNegado && (
+        <ModalAcessoNegado
+          mensagem={acessoNegado}
+          onFechar={() => setAcessoNegado(null)}
         />
       )}
 

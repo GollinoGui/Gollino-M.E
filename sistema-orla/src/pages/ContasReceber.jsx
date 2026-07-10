@@ -48,8 +48,11 @@ function ModalReceber({ conta, onClose, onConfirm, erro }) {
   const [valor, setValor] = useState(emAberto.toFixed(2))
   const [salvando, setSalvando] = useState(false)
 
+  const valorValido = parseFloat(valor) > 0
+  const podeConfirmar = forma && valorValido
+
   async function handleConfirm() {
-    if (!forma) return
+    if (!podeConfirmar) return
     setSalvando(true)
     await onConfirm(conta.id, forma, parseFloat(valor))
     setSalvando(false)
@@ -164,6 +167,11 @@ function ModalReceber({ conta, onClose, onConfirm, erro }) {
                 }}
                 autoFocus
               />
+              {valor !== '' && !valorValido && (
+                <div style={{ fontSize: 11, color: '#C53030', marginTop: 4 }}>
+                  Informe um valor maior que zero.
+                </div>
+              )}
             </div>
           )}
           {erro && (
@@ -198,16 +206,16 @@ function ModalReceber({ conta, onClose, onConfirm, erro }) {
               Cancelar
             </button>
             <button
-              disabled={!forma || salvando}
+              disabled={!podeConfirmar || salvando}
               onClick={handleConfirm}
               style={{
                 padding: '8px 20px',
                 borderRadius: 8,
-                background: forma ? '#185FA5' : 'var(--border-md)',
-                color: forma ? 'var(--surface)' : 'var(--text-muted)',
+                background: podeConfirmar ? '#185FA5' : 'var(--border-md)',
+                color: podeConfirmar ? 'var(--surface)' : 'var(--text-muted)',
                 fontSize: 13,
                 fontWeight: 600,
-                cursor: forma ? 'pointer' : 'not-allowed',
+                cursor: podeConfirmar ? 'pointer' : 'not-allowed',
               }}
             >
               {salvando ? 'Salvando...' : 'Confirmar (F5)'}
