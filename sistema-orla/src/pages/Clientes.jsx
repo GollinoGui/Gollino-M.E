@@ -179,9 +179,10 @@ export default function Clientes() {
     }
     try {
       setExcluindo(true)
-      // Tenta login com usuário ELTER ou admin
+      // Exclusão exige senha de um administrador/gerente — não aceita a
+      // própria senha do operador logado (nível 1), só admin/elter (nível 2+).
       let ok = false
-      for (const usr of ['ELTER', 'admin', 'ROSANGELA']) {
+      for (const usr of ['ELTER', 'admin']) {
         const res = await window.api.auth.login({
           usuario: usr,
           senha: senhaExcluir,
@@ -192,7 +193,7 @@ export default function Clientes() {
         }
       }
       if (!ok) {
-        setErroSenha('Senha incorreta!')
+        setErroSenha('Senha incorreta ou sem permissão de administrador!')
         setExcluindo(false)
         return
       }
@@ -1346,14 +1347,14 @@ function ModalExcluir({
               marginBottom: 6,
             }}
           >
-            Digite sua senha para confirmar:
+            Digite a senha de um administrador para confirmar:
           </label>
           <input
             type='password'
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && onConfirmar()}
-            placeholder='Sua senha'
+            placeholder='Senha do administrador'
             autoFocus
             style={{
               width: '100%',

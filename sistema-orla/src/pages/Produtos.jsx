@@ -187,8 +187,8 @@ export default function Produtos({ usuario }) {
         preco_venda_vista: parseMoney(form.preco_venda_vista),
         preco_venda_prazo: parseMoney(form.preco_venda_prazo),
         preco_custo_atual: parseMoney(form.preco_custo_atual),
-        estoque_atual: parseFloat(form.estoque_atual) || 0,
-        estoque_minimo: parseFloat(form.estoque_minimo) || 0,
+        estoque_atual: parseMoney(form.estoque_atual),
+        estoque_minimo: parseMoney(form.estoque_minimo),
         aliquota_icms: parseFloat(form.aliquota_icms) || 0,
         aliquota_pis: parseFloat(form.aliquota_pis) || 0,
         aliquota_cofins: parseFloat(form.aliquota_cofins) || 0,
@@ -210,8 +210,10 @@ export default function Produtos({ usuario }) {
     }
     try {
       setExcluindo(true)
+      // Exclusão exige senha de um administrador/gerente — não aceita a
+      // própria senha do operador logado (nível 1), só admin/elter (nível 2+).
       let ok = false
-      for (const usr of ['admin', 'elter', 'rosangela']) {
+      for (const usr of ['admin', 'elter']) {
         const res = await window.api.auth.login({
           usuario: usr,
           senha: senhaExcluir,
@@ -222,7 +224,7 @@ export default function Produtos({ usuario }) {
         }
       }
       if (!ok) {
-        setErroSenha('Senha incorreta!')
+        setErroSenha('Senha incorreta ou sem permissão de administrador!')
         setExcluindo(false)
         return
       }
@@ -605,6 +607,7 @@ export default function Produtos({ usuario }) {
             campo={campo}
             novo={novo}
             salvando={salvando}
+            usuario={usuario}
             onSalvar={salvar}
             onFechar={fechar}
           />
@@ -1026,6 +1029,7 @@ export default function Produtos({ usuario }) {
           campo={campo}
           novo={novo}
           salvando={salvando}
+          usuario={usuario}
           onSalvar={salvar}
           onFechar={fechar}
         />
@@ -1051,11 +1055,30 @@ export default function Produtos({ usuario }) {
 }
 
 // ── Formulário ─────────────────────────────────────────────────
+const UNIDADES = [
+  { codigo: 'UN', label: 'Unidade' },
+  { codigo: 'PC', label: 'Peça' },
+  { codigo: 'PCT', label: 'Pacote' },
+  { codigo: 'KG', label: 'Quilograma' },
+  { codigo: 'G', label: 'Grama' },
+  { codigo: 'MT', label: 'Metro' },
+  { codigo: 'CM', label: 'Centímetro' },
+  { codigo: 'M2', label: 'Metro quadrado' },
+  { codigo: 'LT', label: 'Litro' },
+  { codigo: 'CX', label: 'Caixa' },
+  { codigo: 'FD', label: 'Fardo' },
+  { codigo: 'RO', label: 'Rolo' },
+  { codigo: 'PAR', label: 'Par' },
+  { codigo: 'DZ', label: 'Dúzia' },
+  { codigo: 'GL', label: 'Galão' },
+]
+
 function FormularioProduto({
   form,
   campo,
   novo,
   salvando,
+  usuario,
   onSalvar,
   onFechar,
 }) {
@@ -1131,11 +1154,11 @@ function FormularioProduto({
               onChange={(e) => campo('unidade', e.target.value)}
               style={{ width: '100%', height: 34, padding: '0 10px' }}
             >
-              {['PC', 'UN', 'KG', 'MT', 'M2', 'CX', 'FD', 'RO', 'LT', 'GL'].map(
-                (u) => (
-                  <option key={u}>{u}</option>
-                ),
-              )}
+              {UNIDADES.map((u) => (
+                <option key={u.codigo} value={u.codigo}>
+                  {u.codigo} — {u.label}
+                </option>
+              ))}
             </select>
           </C>
           <C label='Descrição *' col={2}>
@@ -1501,14 +1524,14 @@ function ModalExcluir({
               marginBottom: 6,
             }}
           >
-            Digite sua senha para confirmar:
+            Digite a senha de um administrador para confirmar:
           </label>
           <input
             type='password'
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && onConfirmar()}
-            placeholder='Sua senha'
+            placeholder='Senha do administrador'
             autoFocus
             style={{
               width: '100%',

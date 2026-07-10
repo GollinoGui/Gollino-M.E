@@ -80,6 +80,7 @@ function ModalReceber({ conta, onClose, onConfirm, erro }) {
         <div style={{ background: '#185FA5', padding: '16px 20px' }}>
           <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>
             {conta.nome_cliente || conta.codigo_cliente}
+            {conta.telefone_cliente ? ` · ${conta.telefone_cliente}` : ''}
           </div>
           <div
             style={{
@@ -570,13 +571,19 @@ export default function ContasReceber({ usuario }) {
                     <td
                       style={{
                         ...tdStyle,
-                        fontWeight: 500,
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                       }}
                     >
-                      {c.nome_cliente || c.codigo_cliente}
+                      <div style={{ fontWeight: 500 }}>
+                        {c.nome_cliente || c.codigo_cliente}
+                      </div>
+                      {c.telefone_cliente && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          {c.telefone_cliente}
+                        </div>
+                      )}
                     </td>
                     <td style={{ ...tdStyle, fontSize: 12 }}>
                       {fmtDate(c.data_docto)}

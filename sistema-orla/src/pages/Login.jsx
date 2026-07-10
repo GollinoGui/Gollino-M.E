@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import logoGollino from '../assets/gollino-logo.png'
 
+const CHAVE_SESSAO = 'gollino_sessao'
+
 const SVGCalha = ({ style }) => (
   <svg viewBox='0 0 200 60' style={style} fill='none'>
     <path
@@ -99,6 +101,7 @@ export default function Login({ onLogin }) {
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
   const [splashSaindo, setSplashSaindo] = useState(false)
+  const [lembrar, setLembrar] = useState(true)
 
   useEffect(() => {
     const t1 = setTimeout(() => setSplashSaindo(true), 2200)
@@ -119,6 +122,11 @@ export default function Login({ onLogin }) {
         senha,
       })
       if (result.sucesso) {
+        if (lembrar) {
+          localStorage.setItem(CHAVE_SESSAO, JSON.stringify(result.usuario))
+        } else {
+          localStorage.removeItem(CHAVE_SESSAO)
+        }
         onLogin(result.usuario)
       } else {
         setErro(result.erro || 'Usuário ou senha incorretos.')
@@ -526,6 +534,25 @@ export default function Login({ onLogin }) {
                 </button>
               </div>
             </div>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              <input
+                type='checkbox'
+                checked={lembrar}
+                onChange={(e) => setLembrar(e.target.checked)}
+                style={{ width: 15, height: 15, cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                Manter conectado neste computador
+              </span>
+            </label>
             <button
               type='submit'
               className='btn-login'

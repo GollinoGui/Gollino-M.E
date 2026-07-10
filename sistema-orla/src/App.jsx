@@ -25,6 +25,9 @@ import Assistente from './components/Assistente'
 import BuscaGlobal from './components/BuscaGlobal'
 import Login from './pages/Login'
 import AtalhosTecla from './components/AtalhosTecla'
+
+const CHAVE_SESSAO = 'gollino_sessao'
+
 const titulos = {
   dashboard: 'Início',
   vendas: 'Vendas',
@@ -83,8 +86,21 @@ export default function App() {
   const [pagina, setPagina] = useState('dashboard')
   const [caixaAberto, setCaixaAberto] = useState(false)
   const [buscaAberta, setBuscaAberta] = useState(false)
-  const [usuario, setUsuario] = useState(null)
+  const [usuario, setUsuario] = useState(() => {
+    try {
+      const salvo = localStorage.getItem(CHAVE_SESSAO)
+      return salvo ? JSON.parse(salvo) : null
+    } catch {
+      return null
+    }
+  })
   const [temaEscuro, setTemaEscuro] = useState(false)
+
+  function handleLogout() {
+    localStorage.removeItem(CHAVE_SESSAO)
+    setUsuario(null)
+    setPagina('dashboard')
+  }
 
   useEffect(() => {
     window.api.caixa.status().then((s) => setCaixaAberto(s?.situacao === 'A')).catch(() => {})
@@ -296,6 +312,7 @@ export default function App() {
         temaEscuro={temaEscuro}
         setTemaEscuro={setTemaEscuro}
         usuario={usuario}
+        onLogout={handleLogout}
       />
       <div
         style={{

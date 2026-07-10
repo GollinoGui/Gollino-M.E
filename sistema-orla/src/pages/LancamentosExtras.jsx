@@ -125,6 +125,10 @@ export default function LancamentosExtras({ tipo = 'RECEITA', usuario }) {
   }
 
   async function cancelar(id) {
+    if ((usuario?.nivel ?? 0) < 2) {
+      window.alert('Você não tem permissão para cancelar lançamentos. Entre em contato com um administrador.')
+      return
+    }
     if (!window.confirm('Cancelar este lançamento?')) return
     await window.api.lancamentosExtras.cancelar(id)
     await carregar()

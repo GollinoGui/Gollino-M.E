@@ -29,6 +29,7 @@ import {
   Search,
   AlertCircle,
   ScrollText,
+  LogOut,
 } from 'lucide-react'
 import { Sun, Moon } from 'lucide-react'
 const menus = [
@@ -181,6 +182,7 @@ export default function TopBar({
   temaEscuro,
   setTemaEscuro,
   usuario,
+  onLogout,
 }) {
   const [openMenu, setOpenMenu] = useState(null)
   const [dropdownLeft, setDropdownLeft] = useState(0)
@@ -496,6 +498,36 @@ export default function TopBar({
         <span className='topbar-user' style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap' }}>
           {usuario?.nome || usuario?.usuario || ''}
         </span>
+        <button
+          onClick={() => {
+            if (window.confirm('Sair do sistema?')) onLogout?.()
+          }}
+          title='Sair'
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(255,255,255,0.1)',
+            border: '1px solid rgba(255,255,255,0.18)',
+            color: 'rgba(255,255,255,0.8)',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(220,38,38,0.35)'
+            e.currentTarget.style.color = '#fff'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.1)'
+            e.currentTarget.style.color = 'rgba(255,255,255,0.8)'
+          }}
+        >
+          <LogOut size={14} />
+        </button>
       </div>
     </div>
   )

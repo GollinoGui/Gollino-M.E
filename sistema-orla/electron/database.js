@@ -11,10 +11,17 @@ function orValue(v) {
 // busca os nomes em uma segunda query e mescla em JS.
 async function anexarNomeCliente(linhas) {
   const codigos = [...new Set(linhas.map((v) => v.codigo_cliente).filter(Boolean))]
-  if (!codigos.length) return linhas.map((v) => ({ ...v, nome_cliente: null }))
-  const { data } = await supabase.from('clientes').select('codigo, nome').in('codigo', codigos)
-  const nomePorCodigo = Object.fromEntries((data || []).map((c) => [c.codigo, c.nome]))
-  return linhas.map((v) => ({ ...v, nome_cliente: nomePorCodigo[v.codigo_cliente] || null }))
+  if (!codigos.length)
+    return linhas.map((v) => ({ ...v, nome_cliente: null, telefone_cliente: null }))
+  const { data } = await supabase.from('clientes').select('codigo, nome, telefone, celular').in('codigo', codigos)
+  const infoPorCodigo = Object.fromEntries(
+    (data || []).map((c) => [c.codigo, { nome: c.nome, telefone: c.telefone || c.celular }]),
+  )
+  return linhas.map((v) => ({
+    ...v,
+    nome_cliente: infoPorCodigo[v.codigo_cliente]?.nome || null,
+    telefone_cliente: infoPorCodigo[v.codigo_cliente]?.telefone || null,
+  }))
 }
 
 async function anexarNomeFornecedor(linhas) {

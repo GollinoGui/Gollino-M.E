@@ -11,6 +11,15 @@ import {
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
+const UNIDADES_FRACIONAVEIS = new Set(['KG', 'G', 'MT', 'CM', 'M2', 'LT'])
+
+function maskQtd(v) {
+  return v.replace(/[^0-9,]/g, '')
+}
+function parseQtd(v) {
+  return parseFloat(String(v).replace(',', '.')) || 0
+}
+
 function EstoqueBadge({ qtd }) {
   const style = {
     padding: '2px 8px',
@@ -41,10 +50,10 @@ function EstoqueBadge({ qtd }) {
 
 function ModalItem({ produto, onConfirm, onClose }) {
   const preco = produto.preco_venda_vista || produto.preco_vista || 0
+  const fracionavel = UNIDADES_FRACIONAVEIS.has(produto.unidade)
   const [qty, setQty] = useState('1')
   const [desc, setDesc] = useState('0')
-  const total =
-    (parseFloat(qty) || 0) * preco * (1 - (parseFloat(desc) || 0) / 100)
+  const total = parseQtd(qty) * preco * (1 - (parseFloat(desc) || 0) / 100)
 
   return (
     <div
@@ -93,14 +102,13 @@ function ModalItem({ produto, onConfirm, onClose }) {
                 marginBottom: 4,
               }}
             >
-              Quantidade
+              Quantidade {produto.unidade ? `(${produto.unidade})` : ''}
             </label>
             <input
               value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              type='number'
-              min='0.001'
-              step='1'
+              onChange={(e) => setQty(maskQtd(e.target.value))}
+              inputMode='decimal'
+              placeholder={fracionavel ? '0,000' : '1'}
               style={{
                 width: '100%',
                 height: 36,
@@ -207,7 +215,7 @@ function ModalItem({ produto, onConfirm, onClose }) {
             onClick={() =>
               onConfirm({
                 ...produto,
-                qty: parseFloat(qty) || 1,
+                qty: parseQtd(qty) || 1,
                 desconto: parseFloat(desc) || 0,
                 total,
               })
@@ -244,21 +252,27 @@ function gerarParcelas(total, qtde, primeiroPgto) {
   })
 }
 
-function ModalPagamento({ total, onClose, onFinalizar }) {
+function ModalPagamento({ total, clienteAnonimo, onClose, onFinalizar }) {
   const [forma, setForma] = useState(null)
   const [valor, setValor] = useState(total.toFixed(2))
 
-  // parcelamento
+  // parcelamento / fiado
   const d30 = new Date(); d30.setDate(d30.getDate() + 30)
-  const [numParcelas, setNumParcelas] = useState(2)
+  const [numParcelas, setNumParcelas] = useState(1)
   const [primeiroPgto, setPrimeiroPgto] = useState(d30.toISOString().slice(0, 10))
+  const [nomeFiado, setNomeFiado] = useState('')
+  const [telefoneFiado, setTelefoneFiado] = useState('')
 
   const pago = parseFloat(valor) || 0
   const troco = Math.max(0, pago - total)
   const faltam = Math.max(0, total - pago)
   const ePrazo = forma === 'A Prazo'
+  const precisaContato = ePrazo && clienteAnonimo
   const parcelas = ePrazo ? gerarParcelas(total, numParcelas, primeiroPgto) : []
-  const podeFinalizar = forma && (ePrazo || (forma === 'Convênio') || faltam === 0)
+  const podeFinalizar =
+    forma &&
+    (ePrazo || forma === 'Convênio' || faltam === 0) &&
+    (!precisaContato || (nomeFiado.trim() && telefoneFiado.trim()))
 
   return (
     <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
@@ -291,15 +305,32 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
                   <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Nº de parcelas</label>
                   <select value={numParcelas} onChange={e => setNumParcelas(Number(e.target.value))}
                     style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)' }}>
-                    {[2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x de {fmt(Math.floor(total / n * 100) / 100)}</option>)}
+                    {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n === 1 ? 'À vista, fiado (1x)' : `${n}x`} de {fmt(Math.floor(total / n * 100) / 100)}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>1º vencimento</label>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>{numParcelas === 1 ? 'Data combinada p/ pagar' : '1º vencimento'}</label>
                   <input type='date' value={primeiroPgto} onChange={e => setPrimeiroPgto(e.target.value)}
                     style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)' }} />
                 </div>
               </div>
+              {precisaContato && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12, background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, padding: 10 }}>
+                  <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#92400E', fontWeight: 500 }}>
+                    Venda sem cliente cadastrado — informe nome e telefone para cobrança:
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Nome</label>
+                    <input value={nomeFiado} onChange={e => setNomeFiado(e.target.value)} placeholder='Nome do cliente'
+                      style={{ width: '100%', height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Telefone</label>
+                    <input value={telefoneFiado} onChange={e => setTelefoneFiado(e.target.value.replace(/[^0-9()\- ]/g, ''))} placeholder='(00) 00000-0000'
+                      style={{ width: '100%', height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)' }} />
+                  </div>
+                </div>
+              )}
               <div style={{ background: 'var(--gray-50)', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
@@ -353,7 +384,14 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
               Voltar (Esc)
             </button>
             <button disabled={!podeFinalizar}
-              onClick={() => onFinalizar({ forma, valor: ePrazo ? total : (pago - troco), troco: ePrazo ? 0 : troco, parcelas: ePrazo ? parcelas : undefined })}
+              onClick={() => onFinalizar({
+                forma,
+                valor: ePrazo ? total : (pago - troco),
+                troco: ePrazo ? 0 : troco,
+                parcelas: ePrazo ? parcelas : undefined,
+                nomeFiado: precisaContato ? nomeFiado.trim() : undefined,
+                telefoneFiado: precisaContato ? telefoneFiado.trim() : undefined,
+              })}
               style={{ padding: '9px 22px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: 'none', cursor: podeFinalizar ? 'pointer' : 'not-allowed',
                 background: podeFinalizar ? '#185FA5' : 'var(--border-md)',
                 color: podeFinalizar ? 'var(--surface)' : 'var(--text-muted)' }}>
@@ -511,10 +549,41 @@ export default function Vendas({ onNavigate, usuario }) {
     setItens((prev) => prev.filter((i) => i.codigo !== codigo))
   }
 
-  async function finalizarVenda({ forma, valor, troco, parcelas }) {
+  async function proximoCodigoCliente() {
+    const todos = await window.api.clientes.listar({})
+    const maxCod = todos.reduce((max, c) => {
+      const n = parseInt(c.codigo) || 0
+      return n > max ? n : max
+    }, 0)
+    return String(maxCod + 1).padStart(6, '0')
+  }
+
+  async function finalizarVenda({ forma, valor, troco, parcelas, nomeFiado, telefoneFiado }) {
     if (!clienteSel) return
     setSalvando(true)
     try {
+      let codigoCliente = clienteSel.codigo
+
+      // Fiado sem cliente cadastrado: cria um cadastro rápido com nome/telefone
+      // para permitir a cobrança posterior (contas a receber).
+      if (nomeFiado && telefoneFiado) {
+        const codigoNovo = await proximoCodigoCliente()
+        const resCliente = await window.api.clientes.salvar({
+          codigo: codigoNovo,
+          nome: nomeFiado,
+          telefone: telefoneFiado,
+          celular: telefoneFiado,
+          codigo_situacao_cliente: 'A',
+          usuario_cadastro: usuario?.usuario || 'sistema',
+        })
+        if (!resCliente?.sucesso) {
+          setErroVenda('Erro ao cadastrar cliente para o fiado: ' + (resCliente?.erro || ''))
+          setTimeout(() => setErroVenda(''), 5000)
+          return
+        }
+        codigoCliente = codigoNovo
+      }
+
       // Monta campos de pagamento
       const pagamento = {
         codigo_forma_pagamento1: forma,
@@ -532,7 +601,7 @@ export default function Vendas({ onNavigate, usuario }) {
 
       const resultado = await window.api.vendas.salvar({
         orcamento: orcamentoAtual,
-        codigo_cliente: clienteSel.codigo,
+        codigo_cliente: codigoCliente,
         data: new Date().toISOString().slice(0, 10),
         tipo_venda: 'V',
         situacao: 'N',
@@ -631,6 +700,7 @@ export default function Vendas({ onNavigate, usuario }) {
       {pagModal && (
         <ModalPagamento
           total={total}
+          clienteAnonimo={!clienteSel || clienteSel.codigo === '000001'}
           onClose={() => setPagModal(false)}
           onFinalizar={finalizarVenda}
         />

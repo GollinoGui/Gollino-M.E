@@ -299,13 +299,17 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
   }
 
   async function cancelarVenda(orcamento) {
+    if ((usuario?.nivel ?? 0) < 2) {
+      window.alert('Você não tem permissão para cancelar vendas. Entre em contato com um administrador.')
+      return
+    }
     if (!window.confirm(`Cancelar a venda #${orcamento}?`)) return
     setCancelandoId(orcamento)
     try {
       await window.api.vendas.cancelar({
         orcamento,
         motivo: 'Cancelado pelo usuário',
-        usuario: usuario?.nome || 'sistema',
+        usuario: usuario?.usuario || 'sistema',
       })
       await carregarDados(periodo)
     } catch (err) {
