@@ -37,9 +37,13 @@ export default function Devolucao({ usuario }) {
     }
   }
 
+  function disponivelDevolucao(item) {
+    return Math.max(0, (item?.quantidade || 0) - (item?.quantidade_devolvida || 0))
+  }
+
   function setQtd(cod, val) {
     const item = venda?.itens?.find(i => i.codigo_produto === cod)
-    const max = item?.quantidade || 0
+    const max = disponivelDevolucao(item)
     const v = Math.min(Math.max(0, parseFloat(val) || 0), max)
     setQtds(prev => ({ ...prev, [cod]: v }))
   }
@@ -137,7 +141,7 @@ export default function Devolucao({ usuario }) {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Código', 'Descrição', 'Qtd vendida', 'Preço unit.', 'Qtd a devolver', 'Valor'].map(h => (
+                  {['Código', 'Descrição', 'Qtd vendida', 'Já devolvida', 'Preço unit.', 'Qtd a devolver', 'Valor'].map(h => (
                     <th key={h} style={{ padding: '7px 10px', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', textAlign: 'left', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>{h}</th>
                   ))}
                 </tr>
@@ -146,6 +150,7 @@ export default function Devolucao({ usuario }) {
                 {(venda.itens || []).map(item => {
                   const qtdDev = qtds[item.codigo_produto] || 0
                   const valorItem = qtdDev * (item.preco_unitario || 0)
+                  const disponivel = disponivelDevolucao(item)
                   return (
                     <tr key={item.codigo_produto}
                       style={{ background: qtdDev > 0 ? 'var(--amber-50)' : 'transparent' }}
@@ -154,14 +159,16 @@ export default function Devolucao({ usuario }) {
                       <td style={{ padding: '8px 10px', fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', borderBottom: '1px solid var(--border)' }}>{item.codigo_produto}</td>
                       <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{item.descricao}</td>
                       <td style={{ padding: '8px 10px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'center' }}>{item.quantidade}</td>
+                      <td style={{ padding: '8px 10px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'center', color: item.quantidade_devolvida > 0 ? 'var(--amber-600)' : 'var(--text-muted)' }}>{item.quantidade_devolvida || 0}</td>
                       <td style={{ padding: '8px 10px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{fmt(item.preco_unitario)}</td>
                       <td style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
                         <input
-                          type='number' min='0' max={item.quantidade} step='1'
+                          type='number' min='0' max={disponivel} step='1'
                           value={qtdDev || ''}
                           onChange={e => setQtd(item.codigo_produto, e.target.value)}
                           placeholder='0'
-                          style={{ width: 70, height: 30, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border-md)', fontSize: 13, textAlign: 'center' }}
+                          disabled={disponivel === 0}
+                          style={{ width: 70, height: 30, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border-md)', fontSize: 13, textAlign: 'center', background: disponivel === 0 ? 'var(--gray-50)' : 'var(--surface)' }}
                         />
                       </td>
                       <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 600, color: qtdDev > 0 ? 'var(--amber-600)' : 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
@@ -173,7 +180,7 @@ export default function Devolucao({ usuario }) {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={5} style={{ padding: '10px', fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', background: 'var(--gray-50)', borderTop: '1px solid var(--border)' }}>
+                  <td colSpan={6} style={{ padding: '10px', fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', background: 'var(--gray-50)', borderTop: '1px solid var(--border)' }}>
                     Total a devolver
                   </td>
                   <td style={{ padding: '10px', fontSize: 14, fontWeight: 700, color: 'var(--amber-600)', background: 'var(--gray-50)', borderTop: '1px solid var(--border)' }}>

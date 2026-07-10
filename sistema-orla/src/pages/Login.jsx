@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import logoGollino from '../assets/gollino-logo.png'
 
 const SVGCalha = ({ style }) => (
   <svg viewBox='0 0 200 60' style={style} fill='none'>
@@ -201,29 +202,17 @@ export default function Login({ onLogin }) {
             zIndex: 2,
           }}
         >
-          <div
+          <img
+            src={logoGollino}
+            alt='Gollino M.E'
             style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 6,
               width: 64,
               height: 64,
+              borderRadius: 16,
+              objectFit: 'cover',
+              animation: 'splashEntrada 0.6s ease 0.1s both',
             }}
-          >
-            {[0, 1, 2, 3].map((i) => (
-              <div
-                key={i}
-                style={{
-                  background:
-                    i % 2 === 0
-                      ? 'rgba(255,255,255,0.95)'
-                      : 'rgba(255,255,255,0.4)',
-                  borderRadius: 10,
-                  animation: `splashEntrada 0.6s ease ${0.1 + i * 0.08}s both`,
-                }}
-              />
-            ))}
-          </div>
+          />
           <div style={{ textAlign: 'center' }}>
             <div
               style={{
@@ -356,28 +345,16 @@ export default function Login({ onLogin }) {
               marginBottom: 16,
             }}
           >
-            <div
+            <img
+              src={logoGollino}
+              alt='Gollino M.E'
               style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: 5,
                 width: 48,
                 height: 48,
+                borderRadius: 12,
+                objectFit: 'cover',
               }}
-            >
-              {[0, 1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  style={{
-                    background:
-                      i % 2 === 0
-                        ? 'rgba(255,255,255,0.95)'
-                        : 'rgba(255,255,255,0.4)',
-                    borderRadius: 8,
-                  }}
-                />
-              ))}
-            </div>
+            />
           </div>
           <div
             style={{

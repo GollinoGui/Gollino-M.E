@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import logoGollino from '../../assets/gollino-logo.png'
 import {
   ShoppingCart,
   FileText,
@@ -228,29 +229,17 @@ export default function TopBar({
           cursor: 'pointer',
         }}
       >
-        <div
+        <img
+          src={logoGollino}
+          alt='Gollino M.E'
           style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: 3,
             width: 26,
             height: 26,
+            borderRadius: 6,
             flexShrink: 0,
+            objectFit: 'cover',
           }}
-        >
-          {[0, 1, 2, 3].map((i) => (
-            <div
-              key={i}
-              style={{
-                background:
-                  i % 2 === 0
-                    ? 'rgba(255,255,255,0.95)'
-                    : 'rgba(255,255,255,0.5)',
-                borderRadius: 3,
-              }}
-            />
-          ))}
-        </div>
+        />
         <span
           className='topbar-logo-text'
           style={{

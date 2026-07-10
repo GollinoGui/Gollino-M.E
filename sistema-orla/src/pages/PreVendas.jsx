@@ -227,41 +227,13 @@ export default function PreVendas({ usuario }) {
     if (!pvBaixar) return
     setBaixando(true)
     try {
-      const pvCompleta = await window.api.preVendas.buscar(pvBaixar.numero)
-      const { numero: orcamento } = await window.api.vendas.proximoNumero()
-
-      const pagamento = {
-        valor_pago_dinheiro: forma === 'Dinheiro' ? pvCompleta.valor_total : 0,
-        valor_pago_cartao_credito: forma === 'Cartão Crédito' ? pvCompleta.valor_total : 0,
-        valor_pago_cartao_debito: forma === 'Cartão Débito' ? pvCompleta.valor_total : 0,
-        valor_pago_cheque: forma === 'Cheque' ? pvCompleta.valor_total : 0,
-        valor_pago_haver: forma === 'Haver' ? pvCompleta.valor_total : 0,
-      }
-
-      const resultado = await window.api.vendas.salvar({
-        orcamento,
-        codigo_cliente: pvCompleta.codigo_cliente || '',
-        data: new Date().toISOString().slice(0, 10),
-        tipo_venda: 'V',
-        situacao: 'N',
-        valor_total: pvCompleta.valor_total,
-        valor_produtos: pvCompleta.valor_total,
-        codigo_forma_pagamento1: forma,
-        usuario_cadastro: usuario?.usuario || 'sistema',
-        numero_caixa: '001',
-        numero_turno: '1',
-        ...pagamento,
-        itens: (pvCompleta.itens || []).map(i => ({
-          codigo_produto: i.codigo_produto,
-          descricao: i.descricao,
-          quantidade: i.quantidade,
-          unidade: 'UN',
-          preco_unitario: i.preco_unitario,
-          preco_custo: 0,
-          valor_desconto: 0,
-          valor_acrescimo: 0,
-          valor_total: i.total,
-        })),
+      // Conversão em venda + baixa da pré-venda acontecem em uma única transação no
+      // banco (pre_vendas_converter), então não tem como gerar venda duplicada mesmo
+      // se a conexão cair no meio do processo.
+      const resultado = await window.api.preVendas.converter({
+        numero: pvBaixar.numero,
+        forma,
+        usuario: usuario?.usuario || 'sistema',
       })
 
       if (!resultado.sucesso) {
@@ -270,7 +242,7 @@ export default function PreVendas({ usuario }) {
         return
       }
 
-      await window.api.preVendas.baixar(pvBaixar.numero)
+      const orcamento = resultado.orcamento
       setPvBaixar(null)
       await carregarLista()
       setSucesso(`Venda #${orcamento} gerada com sucesso!`)

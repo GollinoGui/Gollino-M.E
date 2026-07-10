@@ -655,6 +655,10 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   }
 
   async function cancelarPedido(numero) {
+    if ((usuario?.nivel ?? 0) < 2) {
+      window.alert('Você não tem permissão para cancelar pedidos de compra. Entre em contato com um administrador.')
+      return
+    }
     if (!window.confirm('Cancelar este pedido de compra?')) return
     try {
       const resultado = await window.api.pedidosCompra.cancelar(numero)

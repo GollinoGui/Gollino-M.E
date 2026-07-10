@@ -219,6 +219,7 @@ handle('preVendas:buscar', (_, numero) => db.preVendas.buscar(numero))
 handle('preVendas:salvar', (_, dados) => db.preVendas.salvar(dados))
 handle('preVendas:cancelar', (_, numero) => db.preVendas.cancelar(numero))
 handle('preVendas:baixar', (_, numero) => db.preVendas.baixar(numero))
+handle('preVendas:converter', (_, { numero, forma, usuario }) => db.preVendas.converter(numero, forma, usuario))
 handle('preVendas:proximoNumero', () => db.preVendas.proximoNumero())
 
 // --- MOVIMENTOS DE ESTOQUE ---

@@ -502,6 +502,15 @@ const preVendas = {
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
+
+  // Converte a pré-venda em venda e marca como baixada em uma única transação
+  // no banco (pre_vendas_converter), evitando que uma falha entre as duas etapas
+  // deixe a pré-venda "aberta" de novo e permita gerar uma venda duplicada.
+  async converter(numero, forma, usuario) {
+    const { data, error } = await supabase.rpc('pre_vendas_converter', { p_numero: numero, p_forma: forma, p_usuario: usuario })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true, orcamento: data }
+  },
 }
 
 // ============================================================

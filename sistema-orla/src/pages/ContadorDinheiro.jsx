@@ -6,6 +6,65 @@ const fmt = (v) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currenc
 const CEDULAS = [200, 100, 50, 20, 10, 5, 2]
 const MOEDAS = [1, 0.5, 0.25, 0.1, 0.05]
 
+function Linha({ valor, tipo, qtd, onChangeQtd }) {
+  const subtotal = valor * qtd
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '10px 14px',
+        borderRadius: 10,
+        border: '1px solid var(--border-md)',
+        marginBottom: 6,
+        background: qtd > 0 ? 'var(--blue-50)' : 'var(--surface)',
+      }}
+    >
+      <div
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: '50%',
+          flexShrink: 0,
+          background: tipo === 'cedula' ? '#EAF6EE' : '#FFF7E6',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {tipo === 'cedula' ? (
+          <Banknote size={16} style={{ color: '#22863A' }} />
+        ) : (
+          <Coins size={16} style={{ color: '#B7791F' }} />
+        )}
+      </div>
+      <div style={{ width: 90, fontSize: 14, fontWeight: 600 }}>{fmt(valor)}</div>
+      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>×</span>
+      <input
+        type='number'
+        min='0'
+        step='1'
+        value={qtd || ''}
+        onChange={(e) => onChangeQtd(valor, e.target.value)}
+        placeholder='0'
+        style={{
+          width: 80,
+          height: 34,
+          padding: '0 10px',
+          borderRadius: 8,
+          border: '1px solid var(--border-md)',
+          fontSize: 14,
+          textAlign: 'center',
+        }}
+      />
+      <div style={{ flex: 1, textAlign: 'right', fontSize: 14, fontWeight: 600, color: qtd > 0 ? 'var(--blue-700)' : 'var(--text-muted)' }}>
+        {fmt(subtotal)}
+      </div>
+    </div>
+  )
+}
+
 export default function ContadorDinheiro() {
   const [qtds, setQtds] = useState({})
 
@@ -22,66 +81,6 @@ export default function ContadorDinheiro() {
     (s, v) => s + v * (qtds[v] || 0),
     0,
   )
-
-  function Linha({ valor, tipo }) {
-    const qtd = qtds[valor] || 0
-    const subtotal = valor * qtd
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          padding: '10px 14px',
-          borderRadius: 10,
-          border: '1px solid var(--border-md)',
-          marginBottom: 6,
-          background: qtd > 0 ? 'var(--blue-50)' : 'var(--surface)',
-        }}
-      >
-        <div
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: '50%',
-            flexShrink: 0,
-            background: tipo === 'cedula' ? '#EAF6EE' : '#FFF7E6',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          {tipo === 'cedula' ? (
-            <Banknote size={16} style={{ color: '#22863A' }} />
-          ) : (
-            <Coins size={16} style={{ color: '#B7791F' }} />
-          )}
-        </div>
-        <div style={{ width: 90, fontSize: 14, fontWeight: 600 }}>{fmt(valor)}</div>
-        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>×</span>
-        <input
-          type='number'
-          min='0'
-          step='1'
-          value={qtd || ''}
-          onChange={(e) => setQtd(valor, e.target.value)}
-          placeholder='0'
-          style={{
-            width: 80,
-            height: 34,
-            padding: '0 10px',
-            borderRadius: 8,
-            border: '1px solid var(--border-md)',
-            fontSize: 14,
-            textAlign: 'center',
-          }}
-        />
-        <div style={{ flex: 1, textAlign: 'right', fontSize: 14, fontWeight: 600, color: qtd > 0 ? 'var(--blue-700)' : 'var(--text-muted)' }}>
-          {fmt(subtotal)}
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: 24, background: 'var(--bg)' }}>
@@ -110,11 +109,11 @@ export default function ContadorDinheiro() {
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '18px 20px', marginBottom: 20 }}>
           <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 10, letterSpacing: '0.03em' }}>CÉDULAS</div>
           {CEDULAS.map((v) => (
-            <Linha key={v} valor={v} tipo='cedula' />
+            <Linha key={v} valor={v} tipo='cedula' qtd={qtds[v] || 0} onChangeQtd={setQtd} />
           ))}
           <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', margin: '16px 0 10px', letterSpacing: '0.03em' }}>MOEDAS</div>
           {MOEDAS.map((v) => (
-            <Linha key={v} valor={v} tipo='moeda' />
+            <Linha key={v} valor={v} tipo='moeda' qtd={qtds[v] || 0} onChangeQtd={setQtd} />
           ))}
         </div>
 

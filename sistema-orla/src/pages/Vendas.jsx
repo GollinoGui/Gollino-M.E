@@ -428,6 +428,10 @@ export default function Vendas({ onNavigate, usuario }) {
   }
 
   async function cancelarVenda(orcamento) {
+    if ((usuario?.nivel ?? 0) < 2) {
+      window.alert('Você não tem permissão para cancelar vendas. Entre em contato com um administrador.')
+      return
+    }
     if (!window.confirm(`Cancelar venda #${orcamento}? O estoque será revertido.`)) return
     setCancelando(orcamento)
     try {
@@ -949,16 +953,14 @@ export default function Vendas({ onNavigate, usuario }) {
                     {v.nome_cliente || 'Consumidor'} · {fmt(v.valor_total)}
                   </div>
                 </div>
-                {(usuario?.nivel ?? 0) >= 2 && (
-                  <button
-                    onClick={() => cancelarVenda(v.orcamento)}
-                    disabled={cancelando === v.orcamento}
-                    title="Cancelar venda"
-                    style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6, border: '1px solid #FECACA', background: '#FFF0F0', color: '#C53030', cursor: 'pointer', flexShrink: 0 }}
-                  >
-                    {cancelando === v.orcamento ? '...' : 'Cancelar'}
-                  </button>
-                )}
+                <button
+                  onClick={() => cancelarVenda(v.orcamento)}
+                  disabled={cancelando === v.orcamento}
+                  title="Cancelar venda"
+                  style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6, border: '1px solid #FECACA', background: '#FFF0F0', color: '#C53030', cursor: 'pointer', flexShrink: 0 }}
+                >
+                  {cancelando === v.orcamento ? '...' : 'Cancelar'}
+                </button>
               </div>
             ))}
           </div>
