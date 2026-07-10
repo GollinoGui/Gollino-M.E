@@ -174,6 +174,7 @@ const vendas = {
     if (filtros.dataInicio) q = q.gte('data', filtros.dataInicio)
     if (filtros.dataFim) q = q.lte('data', filtros.dataFim)
     if (filtros.situacao) q = q.eq('situacao', filtros.situacao)
+    if (filtros.caixaSessaoId) q = q.eq('caixa_sessao_id', filtros.caixaSessaoId)
     if (filtros.cliente) {
       const { data: porNome } = await supabase.from('clientes').select('codigo').like('nome', `%${filtros.cliente}%`)
       const codigos = new Set((porNome || []).map((c) => c.codigo))
@@ -282,19 +283,15 @@ const contasReceber = {
   },
 
   async receber(dados) {
-    const { error } = await supabase
-      .from('contas_receber')
-      .update({
-        situacao_docto: 'P',
-        data_pagamento: dados.data_pagamento || hoje(),
-        valor_pagamento: dados.valor_pagamento,
-        valor_desconto: dados.valor_desconto || 0,
-        valor_acrescimo: dados.valor_acrescimo || 0,
-        usuario: dados.usuario,
-        data_atualizacao: hoje(),
-        hora_atualizacao: agora(),
-      })
-      .eq('id', dados.id)
+    const { error } = await supabase.rpc('contas_receber_receber', {
+      p_id: dados.id,
+      p_valor_pagamento: dados.valor_pagamento,
+      p_valor_desconto: dados.valor_desconto || 0,
+      p_valor_acrescimo: dados.valor_acrescimo || 0,
+      p_forma: dados.forma || null,
+      p_data_pagamento: dados.data_pagamento || hoje(),
+      p_usuario: dados.usuario,
+    })
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
@@ -366,21 +363,40 @@ const caixa = {
     return { sucesso: true }
   },
 
-  async sessoesHoje() {
-    const { data, error } = await supabase.from('movimentos_caixa').select('*').eq('data_abertura', hoje()).order('id')
+  // Resumo em tempo real da sessão de caixa aberta no momento — calculado no
+  // banco a partir das vendas ligadas a essa sessão (não por data do dia),
+  // porque a sessão pode ter sido aberta no dia anterior.
+  async resumoAtual() {
+    const { data, error } = await supabase.rpc('caixa_resumo_sessao_atual')
+    if (error) throw new Error(error.message)
+    return data
+  },
+
+  // Histórico de sessões (abertas/fechadas) já com o resumo calculado —
+  // usado tanto na tela de Caixa (sessões recentes) quanto no relatório.
+  async historico(filtros = {}) {
+    const { data, error } = await supabase.rpc('caixa_historico', {
+      p_data_inicio: filtros.dataInicio || null,
+      p_data_fim: filtros.dataFim || null,
+    })
     if (error) throw new Error(error.message)
     return data
   },
 
   async fechar(dados) {
-    const { error } = await supabase.rpc('caixa_fechar', {
-      p_usuario: dados.usuario,
-      p_valor_fechamento: dados.valor_fechamento || 0,
-      p_valor_dinheiro: dados.valor_dinheiro || 0,
-      p_valor_cheque: dados.valor_cheque || 0,
-      p_valor_cartao_credito: dados.valor_cartao_credito || 0,
-      p_valor_cartao_debito: dados.valor_cartao_debito || 0,
-    })
+    const { data, error } = await supabase.rpc('caixa_fechar', { p_usuario: dados.usuario })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true, resumo: data }
+  },
+
+  async sangria(dados) {
+    const { error } = await supabase.rpc('caixa_sangria', { p_valor: dados.valor, p_motivo: dados.motivo || '', p_usuario: dados.usuario })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+
+  async reforco(dados) {
+    const { error } = await supabase.rpc('caixa_reforco', { p_valor: dados.valor, p_motivo: dados.motivo || '', p_usuario: dados.usuario })
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
@@ -701,8 +717,10 @@ const pedidosCompra = {
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
-  async receber(numero) {
-    const { error } = await supabase.from('pedidos_compra').update({ situacao: 'RECEBIDO', data_atualizacao: hoje(), hora_atualizacao: agora() }).eq('numero', numero)
+  // Marca o pedido como recebido E lança a entrada de estoque de cada item
+  // (produtos.estoque_atual + movimentos_estoque), tudo atomicamente via RPC.
+  async receber(numero, usuario) {
+    const { error } = await supabase.rpc('pedidos_compra_receber', { p_numero: numero, p_usuario: usuario })
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
@@ -788,10 +806,7 @@ const lancamentosExtras = {
     return { sucesso: true }
   },
   async pagar(id, usuario) {
-    const { error } = await supabase
-      .from('lancamentos_extras')
-      .update({ situacao: 'P', data_pagamento: hoje(), usuario: usuario || '', data_atualizacao: hoje(), hora_atualizacao: agora() })
-      .eq('id', id)
+    const { error } = await supabase.rpc('lancamentos_extras_pagar', { p_id: id, p_usuario: usuario || '' })
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },

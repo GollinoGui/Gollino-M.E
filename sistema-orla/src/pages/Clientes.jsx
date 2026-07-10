@@ -651,7 +651,7 @@ export default function Clientes() {
           </div>
         )}
 
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
           {carregando ? (
             <div
               style={{

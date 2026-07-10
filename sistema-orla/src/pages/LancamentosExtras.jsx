@@ -90,7 +90,7 @@ function ModalLancamento({ onClose, onSalvar, tipo }) {
   )
 }
 
-export default function LancamentosExtras({ tipo = 'RECEITA' }) {
+export default function LancamentosExtras({ tipo = 'RECEITA', usuario }) {
   const cfg = tipoConfig[tipo] || tipoConfig.RECEITA
   const [lancamentos, setLancamentos] = useState([])
   const [busca, setBusca] = useState('')
@@ -119,14 +119,14 @@ export default function LancamentosExtras({ tipo = 'RECEITA' }) {
   }
 
   async function pagar(id) {
-    await window.api.lancamentosExtras.pagar({ id })
+    await window.api.lancamentosExtras.pagar({ id, usuario: usuario?.usuario || 'sistema' })
     await carregar()
     mostrarSucesso(tipo === 'RECEITA' ? 'Receita recebida!' : tipo === 'VALE' ? 'Vale pago!' : 'Despesa paga!')
   }
 
   async function cancelar(id) {
     if (!window.confirm('Cancelar este lançamento?')) return
-    await window.api.lancamentosExtras.cancelar({ id })
+    await window.api.lancamentosExtras.cancelar(id)
     await carregar()
     mostrarSucesso('Lançamento cancelado.')
   }

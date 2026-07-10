@@ -11,6 +11,7 @@ import {
   Truck,
   Archive,
   FileText,
+  Wallet,
 } from 'lucide-react'
 
 const fmt = (v) =>
@@ -75,6 +76,7 @@ const abas = [
   { id: 'rel-vendas', label: 'Vendas', icon: BarChart2 },
   { id: 'rel-itens-vendidos', label: 'Itens Vendidos', icon: ShoppingCart },
   { id: 'rel-entradas', label: 'Entradas', icon: Truck },
+  { id: 'rel-caixa', label: 'Fechamento de Caixa', icon: Wallet },
   { id: 'rel-inventario', label: 'Inventário', icon: Archive },
   { id: 'rel-extrato', label: 'Extrato', icon: FileText },
   { id: 'rel-produtos', label: 'Produtos', icon: Package },
@@ -2072,6 +2074,126 @@ function RelEntradasMercadoria() {
   )
 }
 
+// ── FECHAMENTO DE CAIXA ────────────────────────────────────────────────────────
+const fmtHora = (h) => h || '--:--'
+
+function RelFechamentoCaixa() {
+  const { ini, fim } = mesAtual()
+  const [dataInicio, setDataInicio] = useState(ini)
+  const [dataFim, setDataFim] = useState(fim)
+  const [sessoes, setSessoes] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  async function carregar() {
+    setLoading(true)
+    try {
+      const data = await window.api.caixa.historico({ dataInicio, dataFim })
+      setSessoes(data || [])
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { carregar() }, [])
+
+  const fechadas = sessoes.filter((s) => s.situacao === 'F')
+  const totalVendas = fechadas.reduce((s, c) => s + (c.qtde_vendas || 0), 0)
+  const totalGeral = fechadas.reduce((s, c) => s + (c.valor_total || 0), 0)
+  const totalDinheiro = fechadas.reduce((s, c) => s + (c.valor_dinheiro || 0), 0)
+  const totalCartaoC = fechadas.reduce((s, c) => s + (c.valor_cartao_credito || 0), 0)
+  const totalCartaoD = fechadas.reduce((s, c) => s + (c.valor_cartao_debito || 0), 0)
+  const totalCheque = fechadas.reduce((s, c) => s + (c.valor_cheque || 0), 0)
+
+  return (
+    <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>De</label>
+          <input type='date' value={dataInicio} onChange={e => setDataInicio(e.target.value)}
+            style={{ height: 32, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: 13 }} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Até</label>
+          <input type='date' value={dataFim} onChange={e => setDataFim(e.target.value)}
+            style={{ height: 32, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: 13 }} />
+        </div>
+        <button onClick={carregar} style={{ height: 32, padding: '0 16px', borderRadius: 6, background: 'var(--blue-700)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+          {loading ? 'Carregando…' : 'Atualizar'}
+        </button>
+        <BtnExportar onClick={() => exportarCSV(sessoes.map(s => ({
+          'Abertura (data)': fmtDate(s.data_abertura), 'Abertura (hora)': fmtHora(s.hora_abertura), 'Usuário abertura': s.usuario_abertura || '—',
+          'Fechamento (data)': fmtDate(s.data_fechamento), 'Fechamento (hora)': fmtHora(s.hora_fechamento), 'Usuário fechamento': s.usuario_fechamento || '—',
+          Situação: s.situacao === 'F' ? 'Fechado' : 'Aberto',
+          'Qtde vendas': s.qtde_vendas || 0,
+          'Dinheiro (R$)': (s.valor_dinheiro || 0).toFixed(2).replace('.', ','),
+          'Cartão Créd. (R$)': (s.valor_cartao_credito || 0).toFixed(2).replace('.', ','),
+          'Cartão Déb. (R$)': (s.valor_cartao_debito || 0).toFixed(2).replace('.', ','),
+          'Cheque (R$)': (s.valor_cheque || 0).toFixed(2).replace('.', ','),
+          'Total (R$)': (s.valor_total || 0).toFixed(2).replace('.', ','),
+        })), `fechamento_caixa_${dataInicio}_${dataFim}`)} />
+      </div>
+
+      {!loading && (
+        <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+          <CardMetrica label='Fechamentos no período' value={fechadas.length} />
+          <CardMetrica label='Vendas no período' value={totalVendas} />
+          <CardMetrica label='Total geral' value={fmt(totalGeral)} color='var(--blue-700)' />
+        </div>
+      )}
+
+      {loading ? <Carregando /> : (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--gray-50)', borderBottom: '2px solid var(--border)' }}>
+                {['ABERTURA', 'POR', 'FECHAMENTO', 'POR', 'SITUAÇÃO', 'VENDAS', 'DINHEIRO', 'CARTÃO CRÉD.', 'CARTÃO DÉB.', 'CHEQUE', 'TOTAL'].map((h) => (
+                  <th key={h} style={{ padding: '8px 10px', textAlign: ['ABERTURA', 'POR', 'FECHAMENTO', 'SITUAÇÃO'].includes(h) ? 'left' : 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sessoes.map((s) => (
+                <tr key={s.id} style={{ borderBottom: '1px solid var(--border)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{fmtDate(s.data_abertura)} {fmtHora(s.hora_abertura)}</td>
+                  <td style={{ padding: '7px 10px' }}>{s.usuario_abertura || '—'}</td>
+                  <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{s.situacao === 'F' ? `${fmtDate(s.data_fechamento)} ${fmtHora(s.hora_fechamento)}` : '—'}</td>
+                  <td style={{ padding: '7px 10px' }}>{s.usuario_fechamento || '—'}</td>
+                  <td style={{ padding: '7px 10px' }}>
+                    <span style={{
+                      padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600,
+                      background: s.situacao === 'F' ? 'var(--gray-50)' : '#EAF6EE',
+                      color: s.situacao === 'F' ? 'var(--text-muted)' : '#22863A',
+                    }}>
+                      {s.situacao === 'F' ? 'Fechado' : 'Aberto'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right' }}>{s.qtde_vendas || 0}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmt(s.valor_dinheiro)}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmt(s.valor_cartao_credito)}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmt(s.valor_cartao_debito)}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmt(s.valor_cheque)}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600 }}>{fmt(s.valor_total)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ background: 'var(--gray-50)', borderTop: '2px solid var(--border)', fontWeight: 700 }}>
+                <td colSpan={5} style={{ padding: '8px 10px' }}>TOTAL — {fechadas.length} fechamento(s)</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{totalVendas}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{fmt(totalDinheiro)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{fmt(totalCartaoC)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{fmt(totalCartaoD)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{fmt(totalCheque)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right', color: 'var(--blue-700)' }}>{fmt(totalGeral)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── INVENTÁRIO DE PRODUTOS ────────────────────────────────────────────────────
 function RelInventario() {
   const [itens, setItens] = useState([])
@@ -2341,6 +2463,8 @@ export default function Relatorios({ paginaAtiva }) {
         return <RelItenisVendidos />
       case 'rel-entradas':
         return <RelEntradasMercadoria />
+      case 'rel-caixa':
+        return <RelFechamentoCaixa />
       case 'rel-inventario':
         return <RelInventario />
       case 'rel-extrato':

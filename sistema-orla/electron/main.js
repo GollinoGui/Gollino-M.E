@@ -34,6 +34,14 @@ function createWindow() {
     title: 'Gollino M.E — Sistema de Gestão',
   })
 
+  // Após um dialog nativo (window.confirm/window.alert) fechar, o Windows às
+  // vezes devolve o foco pra janela mas não pro conteúdo web — o clique
+  // seguinte num campo não registra até clicar em outro lugar e voltar.
+  // Forçando o foco no webContents sempre que a janela ganha foco evita isso.
+  win.on('focus', () => {
+    win.webContents.focus()
+  })
+
   // Em dev carrega o Vite; em produção carrega o build
   if (isDev) {
     win.loadURL('http://localhost:5173')
@@ -162,7 +170,10 @@ handle('contasPagar:totalAberto', () => db.contasPagar.totalAberto())
 handle('caixa:status', () => db.caixa.status())
 handle('caixa:abrir', (_, dados) => db.caixa.abrir(dados))
 handle('caixa:fechar', (_, dados) => db.caixa.fechar(dados))
-handle('caixa:sessoesHoje', () => db.caixa.sessoesHoje())
+handle('caixa:resumoAtual', () => db.caixa.resumoAtual())
+handle('caixa:historico', (_, filtros) => db.caixa.historico(filtros))
+handle('caixa:sangria', (_, dados) => db.caixa.sangria(dados))
+handle('caixa:reforco', (_, dados) => db.caixa.reforco(dados))
 handle('manutencao:corrigirCR', () => db.manutencao.corrigirCROrfaos())
 
 // --- LOG DO SISTEMA ---
@@ -176,7 +187,7 @@ handle('nfe:registrar', (_, { orcamento, numero_nfe }) => db.nfe.registrar(orcam
 handle('pedidosCompra:listar', (_, filtros) => db.pedidosCompra.listar(filtros))
 handle('pedidosCompra:salvar', (_, dados) => db.pedidosCompra.salvar(dados))
 handle('pedidosCompra:cancelar', (_, numero) => db.pedidosCompra.cancelar(numero))
-handle('pedidosCompra:receber', (_, numero) => db.pedidosCompra.receber(numero))
+handle('pedidosCompra:receber', (_, { numero, usuario }) => db.pedidosCompra.receber(numero, usuario))
 handle('pedidosCompra:proximoNumero', () => db.pedidosCompra.proximoNumero())
 
 // --- CHEQUES ---

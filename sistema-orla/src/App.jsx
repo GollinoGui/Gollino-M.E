@@ -20,6 +20,7 @@ import LogSistema from './pages/LogSistema'
 import NotaFiscal from './pages/NotaFiscal'
 import Cheques from './pages/Cheques'
 import LancamentosExtras from './pages/LancamentosExtras'
+import ContadorDinheiro from './pages/ContadorDinheiro'
 import Assistente from './components/Assistente'
 import BuscaGlobal from './components/BuscaGlobal'
 import Login from './pages/Login'
@@ -230,17 +231,17 @@ export default function App() {
       case 'entrada-mercadoria':
       case 'movimento-produto':
       case 'estoque-consulta':
-        return <Estoque abaInicial='movimentos' />
+        return <Estoque abaInicial='movimentos' usuario={usuario} />
       case 'pedido-compra':
-        return <Estoque abaInicial='pedido-compra' />
+        return <Estoque abaInicial='pedido-compra' usuario={usuario} />
       case 'saida-mercadoria':
-        return <Estoque abaInicial='saida-mercadoria' />
+        return <Estoque abaInicial='saida-mercadoria' usuario={usuario} />
       case 'acerto-estoque':
-        return <Estoque abaInicial='acerto-estoque' />
+        return <Estoque abaInicial='acerto-estoque' usuario={usuario} />
       case 'contagem-estoque':
-        return <Estoque abaInicial='contagem-estoque' />
+        return <Estoque abaInicial='contagem-estoque' usuario={usuario} />
       case 'consulta-reajustes':
-        return <Estoque abaInicial='reajustes' />
+        return <Estoque abaInicial='reajustes' usuario={usuario} />
 
       // Relatórios
       case 'rel-vendas':
@@ -270,11 +271,13 @@ export default function App() {
       case 'cheques-pagar':
         return <Cheques tipo='P' />
       case 'outras-receitas':
-        return <LancamentosExtras tipo='RECEITA' />
+        return <LancamentosExtras tipo='RECEITA' usuario={usuario} />
       case 'vales':
-        return <LancamentosExtras tipo='VALE' />
+        return <LancamentosExtras tipo='VALE' usuario={usuario} />
       case 'despesas':
-        return <LancamentosExtras tipo='DESPESA' />
+        return <LancamentosExtras tipo='DESPESA' usuario={usuario} />
+      case 'contador-dinheiro':
+        return <ContadorDinheiro />
 
       // Telas ainda não construídas
       default:

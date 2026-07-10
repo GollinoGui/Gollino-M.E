@@ -555,7 +555,7 @@ function ModalPedidoCompra({ onClose, onSalvar, numero }) {
   )
 }
 
-export default function Estoque({ abaInicial = 'movimentos' }) {
+export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   const [aba, setAba] = useState(abaInicial)
   const [movimentos, setMovimentos] = useState([])
   const [produtos, setProdutos] = useState([])
@@ -654,24 +654,28 @@ export default function Estoque({ abaInicial = 'movimentos' }) {
     }
   }
 
-  async function cancelarPedido(id) {
+  async function cancelarPedido(numero) {
     if (!window.confirm('Cancelar este pedido de compra?')) return
     try {
-      await window.api.pedidosCompra.cancelar({ id })
+      const resultado = await window.api.pedidosCompra.cancelar(numero)
+      if (!resultado.sucesso) throw new Error(resultado.erro)
       await carregarDados()
       mostrarSucesso('Pedido cancelado.')
     } catch (err) {
       console.error(err)
+      window.alert(`Não foi possível cancelar o pedido: ${err.message}`)
     }
   }
 
-  async function receberPedido(id) {
+  async function receberPedido(numero) {
     try {
-      await window.api.pedidosCompra.receber({ id })
+      const resultado = await window.api.pedidosCompra.receber(numero, usuario?.nome || 'sistema')
+      if (!resultado.sucesso) throw new Error(resultado.erro)
       await carregarDados()
       mostrarSucesso('Pedido recebido! Estoque atualizado.')
     } catch (err) {
       console.error(err)
+      window.alert(`Não foi possível receber o pedido: ${err.message}`)
     }
   }
 
@@ -705,7 +709,7 @@ export default function Estoque({ abaInicial = 'movimentos' }) {
 
   async function aplicarReajuste() {
     const perc = parseFloat(percReajuste)
-    if (!perc || prodsSelecionados.length === 0) return
+    if (!perc || (tipoReajuste === 'selecionados' && prodsSelecionados.length === 0)) return
     setSalvandoReajuste(true)
     try {
       await window.api.reajustesPreco.aplicar({
@@ -725,7 +729,7 @@ export default function Estoque({ abaInicial = 'movimentos' }) {
   }
 
   const statusPedido = (s) => {
-    if (s === 'PENDENTE') return { label: 'Pendente', bg: '#FEF9C3', color: '#854D0E', border: '#FDE047' }
+    if (s === 'ABERTO') return { label: 'Pendente', bg: '#FEF9C3', color: '#854D0E', border: '#FDE047' }
     if (s === 'RECEBIDO') return { label: 'Recebido', bg: '#F0FDF4', color: '#166534', border: '#86EFAC' }
     if (s === 'CANCELADO') return { label: 'Cancelado', bg: '#FEF2F2', color: '#991B1B', border: '#FCA5A5' }
     return { label: s, bg: 'var(--gray-50)', color: 'var(--text-secondary)', border: 'var(--border)' }
@@ -1007,7 +1011,7 @@ export default function Estoque({ abaInicial = 'movimentos' }) {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {pedidos.map((p) => {
-                const st = statusPedido(p.status)
+                const st = statusPedido(p.situacao)
                 return (
                   <div key={p.id} style={{ background: 'var(--surface)', border: '1px solid var(--border-md)', borderRadius: 'var(--radius-md)', padding: '14px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -1018,10 +1022,10 @@ export default function Estoque({ abaInicial = 'movimentos' }) {
                       </div>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(p.data)}</span>
-                        {p.status === 'PENDENTE' && (
+                        {p.situacao === 'ABERTO' && (
                           <>
-                            <button onClick={() => receberPedido(p.id)} style={{ padding: '4px 12px', background: 'var(--green-500)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 12, fontWeight: 500 }}>Receber</button>
-                            <button onClick={() => cancelarPedido(p.id)} style={{ padding: '4px 10px', background: 'var(--red-50)', color: 'var(--red-500)', border: '1px solid var(--red-100)', borderRadius: 'var(--radius-md)', fontSize: 12 }}>Cancelar</button>
+                            <button onClick={() => receberPedido(p.numero)} style={{ padding: '4px 12px', background: 'var(--green-500)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 12, fontWeight: 500 }}>Receber</button>
+                            <button onClick={() => cancelarPedido(p.numero)} style={{ padding: '4px 10px', background: 'var(--red-50)', color: 'var(--red-500)', border: '1px solid var(--red-100)', borderRadius: 'var(--radius-md)', fontSize: 12 }}>Cancelar</button>
                           </>
                         )}
                       </div>

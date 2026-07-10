@@ -54,7 +54,10 @@ contextBridge.exposeInMainWorld('api', {
     status: () => ipcRenderer.invoke('caixa:status'),
     abrir: (dados) => ipcRenderer.invoke('caixa:abrir', dados),
     fechar: (dados) => ipcRenderer.invoke('caixa:fechar', dados),
-    sessoesHoje: () => ipcRenderer.invoke('caixa:sessoesHoje'),
+    resumoAtual: () => ipcRenderer.invoke('caixa:resumoAtual'),
+    historico: (filtros) => ipcRenderer.invoke('caixa:historico', filtros),
+    sangria: (dados) => ipcRenderer.invoke('caixa:sangria', dados),
+    reforco: (dados) => ipcRenderer.invoke('caixa:reforco', dados),
   },
 
   // MANUTENÇÃO
@@ -130,7 +133,7 @@ contextBridge.exposeInMainWorld('api', {
     listar: (filtros) => ipcRenderer.invoke('pedidosCompra:listar', filtros),
     salvar: (dados) => ipcRenderer.invoke('pedidosCompra:salvar', dados),
     cancelar: (numero) => ipcRenderer.invoke('pedidosCompra:cancelar', numero),
-    receber: (numero) => ipcRenderer.invoke('pedidosCompra:receber', numero),
+    receber: (numero, usuario) => ipcRenderer.invoke('pedidosCompra:receber', { numero, usuario }),
     proximoNumero: () => ipcRenderer.invoke('pedidosCompra:proximoNumero'),
   },
 

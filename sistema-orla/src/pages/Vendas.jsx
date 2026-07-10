@@ -353,7 +353,7 @@ function ModalPagamento({ total, onClose, onFinalizar }) {
               Voltar (Esc)
             </button>
             <button disabled={!podeFinalizar}
-              onClick={() => onFinalizar({ forma, valor: ePrazo ? total : pago, troco: ePrazo ? 0 : troco, parcelas: ePrazo ? parcelas : undefined })}
+              onClick={() => onFinalizar({ forma, valor: ePrazo ? total : (pago - troco), troco: ePrazo ? 0 : troco, parcelas: ePrazo ? parcelas : undefined })}
               style={{ padding: '9px 22px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: 'none', cursor: podeFinalizar ? 'pointer' : 'not-allowed',
                 background: podeFinalizar ? '#185FA5' : 'var(--border-md)',
                 color: podeFinalizar ? 'var(--surface)' : 'var(--text-muted)' }}>

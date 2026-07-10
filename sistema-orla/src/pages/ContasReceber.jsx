@@ -42,7 +42,7 @@ function StatusBadge({ status }) {
   )
 }
 
-function ModalReceber({ conta, onClose, onConfirm }) {
+function ModalReceber({ conta, onClose, onConfirm, erro }) {
   const emAberto = conta.valor_docto - (conta.valor_pagamento || 0)
   const [forma, setForma] = useState(null)
   const [valor, setValor] = useState(emAberto.toFixed(2))
@@ -165,6 +165,24 @@ function ModalReceber({ conta, onClose, onConfirm }) {
               />
             </div>
           )}
+          {erro && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                marginBottom: 14,
+                padding: '8px 10px',
+                borderRadius: 8,
+                background: '#FEF2F2',
+                border: '1px solid #FCA5A5',
+                color: '#B91C1C',
+                fontSize: 12,
+              }}
+            >
+              {erro}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button
               onClick={onClose}
@@ -208,6 +226,7 @@ export default function ContasReceber({ usuario }) {
   const [selecionadas, setSelecionadas] = useState([])
   const [contaRecebendo, setContaRecebendo] = useState(null)
   const [sucesso, setSucesso] = useState(false)
+  const [erroRecebimento, setErroRecebimento] = useState('')
 
   // ── Carrega do banco ─────────────────────────────────────────
   async function carregar() {
@@ -260,13 +279,19 @@ export default function ContasReceber({ usuario }) {
   }
 
   async function confirmarRecebimento(id, forma, valor) {
+    setErroRecebimento('')
     try {
-      await window.api.contasReceber.receber({
+      const resultado = await window.api.contasReceber.receber({
         id,
         valor_pagamento: valor,
+        forma,
         data_pagamento: new Date().toISOString().slice(0, 10),
         usuario: usuario?.usuario || 'sistema',
       })
+      if (!resultado.sucesso) {
+        setErroRecebimento(resultado.erro || 'Erro ao receber conta.')
+        return
+      }
       setContaRecebendo(null)
       setSelecionadas([])
       setSucesso(true)
@@ -274,6 +299,7 @@ export default function ContasReceber({ usuario }) {
       await carregar()
     } catch (err) {
       console.error('Erro ao receber conta:', err)
+      setErroRecebimento('Erro ao receber conta.')
     }
   }
 
@@ -315,8 +341,9 @@ export default function ContasReceber({ usuario }) {
       {contaRecebendo && (
         <ModalReceber
           conta={contaRecebendo}
-          onClose={() => setContaRecebendo(null)}
+          onClose={() => { setContaRecebendo(null); setErroRecebimento('') }}
           onConfirm={confirmarRecebimento}
+          erro={erroRecebimento}
         />
       )}
 
