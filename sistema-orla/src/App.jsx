@@ -25,8 +25,14 @@ import Assistente from './components/Assistente'
 import BuscaGlobal from './components/BuscaGlobal'
 import Login from './pages/Login'
 import AtalhosTecla from './components/AtalhosTecla'
+import AvisoCaixaAtrasado from './components/AvisoCaixaAtrasado'
 
 const CHAVE_SESSAO = 'gollino_sessao'
+
+function hojeStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 const titulos = {
   dashboard: 'Início',
@@ -85,6 +91,7 @@ const titulos = {
 export default function App() {
   const [pagina, setPagina] = useState('dashboard')
   const [caixaAberto, setCaixaAberto] = useState(false)
+  const [caixaAtrasado, setCaixaAtrasado] = useState(null)
   const [buscaAberta, setBuscaAberta] = useState(false)
   const [usuario, setUsuario] = useState(() => {
     try {
@@ -103,7 +110,12 @@ export default function App() {
   }
 
   useEffect(() => {
-    window.api.caixa.status().then((s) => setCaixaAberto(s?.situacao === 'A')).catch(() => {})
+    window.api.caixa.status().then((s) => {
+      setCaixaAberto(s?.situacao === 'A')
+      if (s?.situacao === 'A' && s.data_abertura !== hojeStr()) {
+        setCaixaAtrasado(s)
+      }
+    }).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -305,6 +317,16 @@ export default function App() {
   if (!usuario) return <Login onLogin={setUsuario} />
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {caixaAtrasado && (
+        <AvisoCaixaAtrasado
+          status={caixaAtrasado}
+          usuario={usuario}
+          onFechado={() => {
+            setCaixaAtrasado(null)
+            setCaixaAberto(false)
+          }}
+        />
+      )}
       <TopBar
         activePage={pagina}
         onNavigate={setPagina}
