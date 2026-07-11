@@ -42,18 +42,23 @@ function formatarTexto(texto) {
   })
 }
 
-export default function Assistente({ caixaAberto }) {
+export default function Assistente({ caixaAberto, onNavigate, usuario }) {
   const [aberto, setAberto] = useState(false)
   const [mensagens, setMensagens] = useState(mensagensIniciais)
   const [input, setInput] = useState('')
   const [digitando, setDigitando] = useState(false)
   const [notificacoes, setNotificacoes] = useState(0)
+  const [aprovacoesPendentes, setAprovacoesPendentes] = useState([])
+  const [processandoAprovacao, setProcessandoAprovacao] = useState(null)
+  const [resultadosAprovacao, setResultadosAprovacao] = useState([])
   const [dados, setDados] = useState({
     resumo: null,
     contasReceber: [],
     contasPagar: [],
     produtosBaixo: [],
   })
+  const podeAprovar = (usuario?.nivel ?? 0) >= 2
+  const nomeUsuarioAtual = usuario?.nome || usuario?.usuario || ''
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -68,6 +73,19 @@ export default function Assistente({ caixaAberto }) {
 
   const alertas = [
     !caixaAberto && { tipo: 'danger', texto: 'Caixa não foi aberto hoje ainda!' },
+    ...resultadosAprovacao.map((s) => ({
+      tipo: 'resultado_aprovacao',
+      texto:
+        s.situacao === 'APROVADO'
+          ? `✅ Sua contagem de estoque foi aprovada por ${s.usuario_aprovador || 'um administrador'}. Estoque atualizado.`
+          : `❌ Sua contagem de estoque foi rejeitada por ${s.usuario_aprovador || 'um administrador'}.`,
+      solicitacao: s,
+    })),
+    ...aprovacoesPendentes.map((s) => ({
+      tipo: 'aprovacao',
+      texto: `${s.usuario_solicitante || 'Alguém'} solicitou aprovação de contagem de estoque (${(s.itens || []).length} produto${(s.itens || []).length !== 1 ? 's' : ''})`,
+      solicitacao: s,
+    })),
     ...crVencidos.slice(0, 2).map((r) => ({
       tipo: 'warning',
       texto: `${r.nome_cliente || 'Cliente'} — ${fmt(r.valor_em_aberto)} vence hoje`,
@@ -79,16 +97,63 @@ export default function Assistente({ caixaAberto }) {
     ...dados.produtosBaixo.slice(0, 2).map((pr) => ({
       tipo: 'info',
       texto: `${pr.descricao} com estoque baixo (${pr.estoque_atual} un.)`,
+      nav: 'estoque-posicao',
     })),
   ].filter(Boolean)
 
+  function irParaAlerta(a) {
+    if (!a.nav || !onNavigate) return
+    onNavigate(a.nav)
+    setAberto(false)
+  }
+
+  async function aprovarSolicitacao(solicitacao) {
+    setProcessandoAprovacao(solicitacao.id)
+    try {
+      const resultado = await window.api.aprovacoes.aprovar(solicitacao.id, usuario?.nome || usuario?.usuario || 'sistema')
+      if (!resultado.sucesso) throw new Error(resultado.erro)
+      await carregarDados()
+    } catch (err) {
+      console.error('Erro ao aprovar solicitação:', err)
+      await window.api.dialog.alert(`Não foi possível aprovar: ${err.message}`)
+    } finally {
+      setProcessandoAprovacao(null)
+    }
+  }
+
+  async function rejeitarSolicitacao(solicitacao) {
+    if (!(await window.api.dialog.confirm('Rejeitar esta contagem de estoque? As quantidades não serão alteradas.'))) return
+    setProcessandoAprovacao(solicitacao.id)
+    try {
+      const resultado = await window.api.aprovacoes.rejeitar(solicitacao.id, usuario?.nome || usuario?.usuario || 'sistema', '')
+      if (!resultado.sucesso) throw new Error(resultado.erro)
+      await carregarDados()
+    } catch (err) {
+      console.error('Erro ao rejeitar solicitação:', err)
+      await window.api.dialog.alert(`Não foi possível rejeitar: ${err.message}`)
+    } finally {
+      setProcessandoAprovacao(null)
+    }
+  }
+
+  async function dispensarResultadoAprovacao(solicitacao) {
+    setResultadosAprovacao((prev) => prev.filter((s) => s.id !== solicitacao.id))
+    try {
+      await window.api.aprovacoes.marcarVisualizado(solicitacao.id)
+    } catch (err) {
+      console.error('Erro ao marcar aprovação como vista:', err)
+    }
+  }
+
   async function carregarDados() {
     try {
-      const [resumo, cr, cp, prods] = await Promise.all([
+      const [resumo, cr, cp, prods, pendentes, resolvidas] = await Promise.all([
         window.api.dashboard.resumo('hoje'),
         window.api.contasReceber.listar({ situacao: 'A' }),
         window.api.contasPagar.listar({ situacao: 'A' }),
         window.api.produtos.listar({ estoqueBaixo: true }),
+        podeAprovar ? window.api.aprovacoes.listarPendentes({ tipo: 'CONTAGEM_ESTOQUE' }) : Promise.resolve([]),
+        nomeUsuarioAtual ? window.api.aprovacoes.listarResolvidasNaoVistas(nomeUsuarioAtual) : Promise.resolve([]),
       ])
       const novosDados = {
         resumo,
@@ -97,10 +162,12 @@ export default function Assistente({ caixaAberto }) {
         produtosBaixo: prods || [],
       }
       setDados(novosDados)
+      setAprovacoesPendentes(pendentes || [])
+      setResultadosAprovacao(resolvidas || [])
       const hoje = new Date().toISOString().slice(0, 10)
       const nCrVenc = (cr || []).filter((r) => r.data_vencimento <= hoje).length
       const nCpVenc = (cp || []).filter((p) => p.data_vencimento <= hoje).length
-      const total = (!caixaAberto ? 1 : 0) + nCrVenc + nCpVenc + (prods?.length || 0)
+      const total = (!caixaAberto ? 1 : 0) + nCrVenc + nCpVenc + (prods?.length || 0) + (pendentes?.length || 0) + (resolvidas?.length || 0)
       setNotificacoes(total)
     } catch (err) {
       console.error('Assistente: erro ao carregar dados', err)
@@ -165,7 +232,7 @@ export default function Assistente({ caixaAberto }) {
     carregarDados()
     const intervalo = setInterval(carregarDados, 2 * 60 * 1000) // refresh a cada 2 minutos
     return () => clearInterval(intervalo)
-  }, [caixaAberto])
+  }, [caixaAberto, podeAprovar, nomeUsuarioAtual])
 
   useEffect(() => {
     if (aberto) {
@@ -237,9 +304,9 @@ export default function Assistente({ caixaAberto }) {
     )
   }
 
-  const corAlerta = { danger: '#C53030', warning: '#B7791F', info: '#185FA5' }
-  const bgAlerta = { danger: '#FFF0F0', warning: '#FFF8E6', info: '#EBF3FC' }
-  const bdAlerta = { danger: '#FECACA', warning: '#FFE8A3', info: '#C5DEFA' }
+  const corAlerta = { danger: '#C53030', warning: '#B7791F', info: '#185FA5', aprovacao: '#6B21A8', resultado_aprovacao: '#185FA5' }
+  const bgAlerta = { danger: '#FFF0F0', warning: '#FFF8E6', info: '#EBF3FC', aprovacao: '#F5F0FF', resultado_aprovacao: '#EBF3FC' }
+  const bdAlerta = { danger: '#FECACA', warning: '#FFE8A3', info: '#C5DEFA', aprovacao: '#DDD1F7', resultado_aprovacao: '#C5DEFA' }
 
   return (
     <>
@@ -331,6 +398,7 @@ export default function Assistente({ caixaAberto }) {
           {alertas.slice(0, 2).map((a, i) => (
             <div
               key={i}
+              onClick={() => irParaAlerta(a)}
               style={{
                 fontSize: 12,
                 color: corAlerta[a.tipo],
@@ -339,9 +407,11 @@ export default function Assistente({ caixaAberto }) {
                 borderRadius: 8,
                 padding: '6px 10px',
                 marginBottom: i < 1 ? 6 : 0,
+                cursor: a.nav ? 'pointer' : 'default',
               }}
             >
               {a.texto}
+              {a.nav && <span style={{ marginLeft: 4, fontWeight: 600 }}>→</span>}
             </div>
           ))}
           <button
@@ -460,30 +530,120 @@ export default function Assistente({ caixaAberto }) {
               >
                 ALERTAS ATIVOS
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {alertas.map((a, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      fontSize: 11,
-                      color: corAlerta[a.tipo],
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 5,
-                    }}
-                  >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {alertas.map((a, i) =>
+                  a.tipo === 'resultado_aprovacao' ? (
                     <div
+                      key={i}
                       style={{
-                        width: 5,
-                        height: 5,
-                        borderRadius: '50%',
-                        background: corAlerta[a.tipo],
-                        flexShrink: 0,
+                        fontSize: 11,
+                        color: a.solicitacao.situacao === 'APROVADO' ? '#22863A' : '#C53030',
+                        background: a.solicitacao.situacao === 'APROVADO' ? '#EAF6EE' : '#FFF0F0',
+                        border: `1px solid ${a.solicitacao.situacao === 'APROVADO' ? '#9AE6B4' : '#FECACA'}`,
+                        borderRadius: 8,
+                        padding: '6px 8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
                       }}
-                    />
-                    {a.texto}
-                  </div>
-                ))}
+                    >
+                      <div style={{ flex: 1 }}>{a.texto}</div>
+                      <button
+                        onClick={() => dispensarResultadoAprovacao(a.solicitacao)}
+                        style={{
+                          padding: '3px 9px',
+                          borderRadius: 6,
+                          fontSize: 11,
+                          fontWeight: 600,
+                          background: 'rgba(255,255,255,0.6)',
+                          color: 'inherit',
+                          border: '1px solid currentColor',
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                        }}
+                      >
+                        OK
+                      </button>
+                    </div>
+                  ) : a.tipo === 'aprovacao' ? (
+                    <div
+                      key={i}
+                      style={{
+                        fontSize: 11,
+                        color: corAlerta.aprovacao,
+                        background: bgAlerta.aprovacao,
+                        border: `1px solid ${bdAlerta.aprovacao}`,
+                        borderRadius: 8,
+                        padding: '6px 8px',
+                      }}
+                    >
+                      <div style={{ marginBottom: 6 }}>{a.texto}</div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          onClick={() => aprovarSolicitacao(a.solicitacao)}
+                          disabled={processandoAprovacao === a.solicitacao.id}
+                          style={{
+                            flex: 1,
+                            padding: '5px 0',
+                            borderRadius: 6,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            background: '#22863A',
+                            color: '#fff',
+                            border: 'none',
+                            cursor: 'pointer',
+                            opacity: processandoAprovacao === a.solicitacao.id ? 0.6 : 1,
+                          }}
+                        >
+                          Aprovar
+                        </button>
+                        <button
+                          onClick={() => rejeitarSolicitacao(a.solicitacao)}
+                          disabled={processandoAprovacao === a.solicitacao.id}
+                          style={{
+                            flex: 1,
+                            padding: '5px 0',
+                            borderRadius: 6,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            background: '#fff',
+                            color: '#C53030',
+                            border: '1px solid #FCA5A5',
+                            cursor: 'pointer',
+                            opacity: processandoAprovacao === a.solicitacao.id ? 0.6 : 1,
+                          }}
+                        >
+                          Rejeitar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      key={i}
+                      onClick={() => irParaAlerta(a)}
+                      style={{
+                        fontSize: 11,
+                        color: corAlerta[a.tipo],
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        cursor: a.nav ? 'pointer' : 'default',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 5,
+                          height: 5,
+                          borderRadius: '50%',
+                          background: corAlerta[a.tipo],
+                          flexShrink: 0,
+                        }}
+                      />
+                      {a.texto}
+                      {a.nav && <span style={{ marginLeft: 2, fontWeight: 600 }}>→</span>}
+                    </div>
+                  ),
+                )}
               </div>
             </div>
           )}

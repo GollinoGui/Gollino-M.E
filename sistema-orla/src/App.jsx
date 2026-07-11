@@ -58,6 +58,7 @@ const titulos = {
   'movimento-produto': 'Estoque — Movimento de produto',
   'consulta-reajustes': 'Estoque — Consulta de reajustes',
   'estoque-consulta': 'Estoque',
+  'estoque-posicao': 'Estoque — Posição de estoque',
   'caixas-fechados': 'Financeiro — Caixas fechados',
   haver: 'Financeiro — Haver',
   'cheques-receber': 'Financeiro — Cheques a receber',
@@ -104,6 +105,7 @@ export default function App() {
   const [temaEscuro, setTemaEscuro] = useState(false)
 
   function handleLogout() {
+    window.api.auth.logout().catch(() => {})
     localStorage.removeItem(CHAVE_SESSAO)
     setUsuario(null)
     setPagina('dashboard')
@@ -246,7 +248,7 @@ export default function App() {
       case 'abrir-caixa':
       case 'fechar-caixa':
         return (
-          <Caixa caixaAberto={caixaAberto} setCaixaAberto={setCaixaAberto} usuario={usuario} />
+          <Caixa caixaAberto={caixaAberto} setCaixaAberto={setCaixaAberto} usuario={usuario} onNavigate={setPagina} />
         )
       case 'clientes':
       case 'cad-clientes':
@@ -260,6 +262,8 @@ export default function App() {
       case 'movimento-produto':
       case 'estoque-consulta':
         return <Estoque abaInicial='movimentos' usuario={usuario} />
+      case 'estoque-posicao':
+        return <Estoque abaInicial='posicao' usuario={usuario} />
       case 'pedido-compra':
         return <Estoque abaInicial='pedido-compra' usuario={usuario} />
       case 'saida-mercadoria':
@@ -376,7 +380,7 @@ export default function App() {
           onClose={() => setBuscaAberta(false)}
         />
       )}
-      <Assistente caixaAberto={caixaAberto} onNavigate={setPagina} />
+      <Assistente caixaAberto={caixaAberto} onNavigate={setPagina} usuario={usuario} />
       <AtalhosTecla />
     </div>
   )

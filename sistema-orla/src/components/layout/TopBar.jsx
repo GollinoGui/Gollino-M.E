@@ -41,6 +41,7 @@ const menus = [
       { id: 'pre-vendas', label: 'Pré-Vendas', icon: FileText },
       { id: 'devolucao', label: 'Devolução', icon: Undo2 },
       { id: 'contas-receber', label: 'Contas a receber', icon: Wallet },
+      { id: 'contas-pagar', label: 'Contas a pagar', icon: DollarSign },
       { id: 'boletos', label: 'Boletos', icon: Receipt },
       { id: 'despesas', label: 'Despesas', icon: ArrowDownCircle },
       { id: 'sangrias', label: 'Sangrias', icon: ArrowDownCircle },
@@ -98,7 +99,6 @@ const menus = [
       { id: 'haver', label: 'Haver', icon: Wallet },
       { id: 'cheques-receber', label: 'Cheques a receber', icon: CreditCard },
       { id: 'cheques-pagar', label: 'Cheques a pagar', icon: CreditCard },
-      { id: 'contas-pagar', label: 'Contas a pagar', icon: DollarSign },
       { id: 'outras-receitas', label: 'Outras receitas', icon: ArrowUpCircle },
       {
         id: 'consulta-recebimentos',
@@ -499,8 +499,8 @@ export default function TopBar({
           {usuario?.nome || usuario?.usuario || ''}
         </span>
         <button
-          onClick={() => {
-            if (window.confirm('Sair do sistema?')) onLogout?.()
+          onClick={async () => {
+            if (await window.api.dialog.confirm('Sair do sistema?')) onLogout?.()
           }}
           title='Sair'
           style={{

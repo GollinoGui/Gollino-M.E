@@ -6,6 +6,13 @@ contextBridge.exposeInMainWorld('api', {
   // AUTH
   auth: {
     login: (dados) => ipcRenderer.invoke('auth:login', dados),
+    logout: () => ipcRenderer.invoke('auth:logout'),
+  },
+
+  // DIÁLOGOS (confirm/alert nativos via processo principal — ver main.js)
+  dialog: {
+    confirm: (mensagem) => ipcRenderer.invoke('dialog:confirm', mensagem),
+    alert: (mensagem) => ipcRenderer.invoke('dialog:alert', mensagem),
   },
 
   // CLIENTES
@@ -166,5 +173,15 @@ contextBridge.exposeInMainWorld('api', {
     itenisVendidos: (f) => ipcRenderer.invoke('relatorios:itenisVendidos', f),
     entradasMercadoria: (f) => ipcRenderer.invoke('relatorios:entradasMercadoria', f),
     extrato: (f) => ipcRenderer.invoke('relatorios:extrato', f),
+  },
+
+  // APROVAÇÕES (contagem de estoque etc.)
+  aprovacoes: {
+    listarPendentes: (filtros) => ipcRenderer.invoke('aprovacoes:listarPendentes', filtros),
+    solicitar: (dados) => ipcRenderer.invoke('aprovacoes:solicitar', dados),
+    aprovar: (id, usuario) => ipcRenderer.invoke('aprovacoes:aprovar', { id, usuario }),
+    rejeitar: (id, usuario, motivo) => ipcRenderer.invoke('aprovacoes:rejeitar', { id, usuario, motivo }),
+    listarResolvidasNaoVistas: (usuarioSolicitante) => ipcRenderer.invoke('aprovacoes:listarResolvidasNaoVistas', usuarioSolicitante),
+    marcarVisualizado: (id) => ipcRenderer.invoke('aprovacoes:marcarVisualizado', id),
   },
 })

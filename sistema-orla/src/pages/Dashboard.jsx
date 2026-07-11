@@ -305,7 +305,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
       setAcessoNegado('Você não tem permissão para cancelar vendas. Entre em contato com um administrador.')
       return
     }
-    if (!window.confirm(`Cancelar a venda #${orcamento}?`)) return
+    if (!(await window.api.dialog.confirm(`Cancelar a venda #${orcamento}?`))) return
     setCancelandoId(orcamento)
     try {
       await window.api.vendas.cancelar({
@@ -378,7 +378,15 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
       (s, v) => s + (v.valor_pago_cartao_debito || 0),
       0,
     )
-    const total = dinheiro + cartaoC + cartaoD || 1
+    const cheque = vendasHoje.reduce(
+      (s, v) => s + (v.valor_pago_cheque || 0),
+      0,
+    )
+    const haver = vendasHoje.reduce(
+      (s, v) => s + (v.valor_pago_haver || 0),
+      0,
+    )
+    const total = dinheiro + cartaoC + cartaoD + cheque + haver || 1
     return [
       {
         forma: 'Dinheiro',
@@ -397,6 +405,18 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
         valor: cartaoD,
         pct: Math.round((cartaoD / total) * 100),
         cor: '#B7791F',
+      },
+      {
+        forma: 'Cheque',
+        valor: cheque,
+        pct: Math.round((cheque / total) * 100),
+        cor: '#6B21A8',
+      },
+      {
+        forma: 'Haver',
+        valor: haver,
+        pct: Math.round((haver / total) * 100),
+        cor: '#0E7490',
       },
     ].filter((f) => f.valor > 0)
   })()
@@ -1418,7 +1438,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
               }}
             >
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
-                Contas a vencer
+                A receber — vencendo em breve
               </div>
               <button
                 onClick={() => onNavigate('contas-receber')}
@@ -1622,7 +1642,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                 </div>
                 <button
                   className='btn-action'
-                  onClick={() => onNavigate('estoque')}
+                  onClick={() => onNavigate('estoque-posicao')}
                   style={{
                     fontSize: 11,
                     color: '#185FA5',
@@ -1725,7 +1745,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3,1fr)',
+            gridTemplateColumns: 'repeat(4,1fr)',
             gap: 12,
             paddingBottom: 28,
           }}
@@ -1742,6 +1762,12 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
               icon: Wallet,
               gradient: 'linear-gradient(135deg,#155724,#22863A)',
               nav: 'contas-receber',
+            },
+            {
+              label: 'Contas a pagar',
+              icon: DollarSign,
+              gradient: 'linear-gradient(135deg,#8A4B0C,#C97A1E)',
+              nav: 'contas-pagar',
             },
             {
               label: caixaAberto ? 'Fechar caixa' : 'Abrir caixa',

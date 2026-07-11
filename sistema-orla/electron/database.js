@@ -93,6 +93,11 @@ async function login(usuario, senha) {
   return { sucesso: true, usuario: usuarioSemAtivo }
 }
 
+async function logout() {
+  await supabase.auth.signOut()
+  return { sucesso: true }
+}
+
 // ============================================================
 // CLIENTES
 // ============================================================
@@ -217,9 +222,31 @@ const vendas = {
   },
 
   async salvar(dados) {
-    const { itens, ...venda } = dados
+    const { itens, nome_cliente, cheque_numero, cheque_banco, cheque_vencimento, ...venda } = dados
     const { error } = await supabase.rpc('vendas_salvar', { p_venda: venda, p_itens: itens || [] })
     if (error) return { sucesso: false, erro: error.message }
+
+    // Venda paga (ao menos em parte) com cheque: gera o registro em
+    // "Cheques a receber" automaticamente, senão o cheque fica sem rastro.
+    if ((venda.valor_pago_cheque || 0) > 0) {
+      const resCheque = await cheques.salvar({
+        tipo: 'R',
+        codigo_pessoa: venda.codigo_cliente,
+        nome_pessoa: nome_cliente || venda.codigo_cliente,
+        valor: venda.valor_pago_cheque,
+        numero: cheque_numero || '',
+        banco: cheque_banco || '',
+        data_emissao: venda.data,
+        data_vencimento: cheque_vencimento || venda.data,
+        nro_docto: venda.orcamento,
+        observacao: `Pagamento da venda #${venda.orcamento}`,
+        usuario: venda.usuario_cadastro || '',
+      })
+      if (!resCheque.sucesso) {
+        console.error('Venda salva, mas falhou ao gerar cheque a receber:', resCheque.erro)
+      }
+    }
+
     return { sucesso: true, orcamento: venda.orcamento }
   },
 
@@ -723,8 +750,18 @@ const pedidosCompra = {
     return rows.map((r) => ({ ...r, itens: itensPorNumero[r.numero] || [] }))
   },
   async salvar(dados) {
-    const { itens, ...pc } = dados
-    const { error } = await supabase.rpc('pedidos_compra_salvar', { p_pc: pc, p_itens: itens || [] })
+    const { itens, obs, previsao_entrega, ...pc } = dados
+    pc.observacao = obs || ''
+    pc.data_previsao = previsao_entrega || null
+    pc.valor_total = (itens || []).reduce((s, i) => s + (parseFloat(i.quantidade) || 0) * (parseFloat(i.valor_unitario) || 0), 0)
+    const itensMapeados = (itens || []).map((i) => ({
+      codigo_produto: i.produto_id,
+      descricao: i.produto,
+      quantidade: parseFloat(i.quantidade) || 0,
+      preco_unitario: parseFloat(i.valor_unitario) || 0,
+      total: (parseFloat(i.quantidade) || 0) * (parseFloat(i.valor_unitario) || 0),
+    }))
+    const { error } = await supabase.rpc('pedidos_compra_salvar', { p_pc: pc, p_itens: itensMapeados })
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true, numero: pc.numero }
   },
@@ -854,6 +891,109 @@ const reajustesPreco = {
 }
 
 // ============================================================
+// SOLICITAÇÕES DE APROVAÇÃO
+// (ex.: contagem de estoque feita por usuário nível 1, que só é
+// aplicada de fato depois que um gerente/admin aprova)
+// ============================================================
+const aprovacoes = {
+  async listarPendentes(filtros = {}) {
+    let q = supabase.from('solicitacoes_aprovacao').select('*').eq('situacao', 'PENDENTE')
+    if (filtros.tipo) q = q.eq('tipo', filtros.tipo)
+    const { data, error } = await q.order('id', { ascending: false })
+    if (error) throw new Error(error.message)
+    return data
+  },
+  async solicitar(dados) {
+    const { error } = await supabase.from('solicitacoes_aprovacao').insert({
+      tipo: dados.tipo,
+      itens: dados.itens || [],
+      situacao: 'PENDENTE',
+      usuario_solicitante: dados.usuario_solicitante || '',
+      data_solicitacao: hoje(),
+      hora_solicitacao: agora(),
+    })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+  async aprovar(id, usuario) {
+    const { data: solicitacao, error: errBusca } = await supabase
+      .from('solicitacoes_aprovacao')
+      .select('*')
+      .eq('id', id)
+      .single()
+    if (errBusca) return { sucesso: false, erro: errBusca.message }
+    if (!solicitacao || solicitacao.situacao !== 'PENDENTE') {
+      return { sucesso: false, erro: 'Solicitação não está mais pendente.' }
+    }
+
+    if (solicitacao.tipo === 'CONTAGEM_ESTOQUE') {
+      for (const item of solicitacao.itens || []) {
+        const { error } = await supabase.rpc('movimentos_estoque_salvar', {
+          p_dados: {
+            produto_id: item.produto_id,
+            produto: item.produto,
+            quantidade: item.quantidade_nova,
+            tipo: 'ACERTO',
+            valor_unitario: 0,
+            total: 0,
+            obs: `Contagem de estoque (solicitado por ${solicitacao.usuario_solicitante}, aprovado por ${usuario})`,
+            data: hoje(),
+          },
+        })
+        if (error) return { sucesso: false, erro: error.message }
+      }
+    }
+
+    const { error: errUpdate } = await supabase
+      .from('solicitacoes_aprovacao')
+      .update({
+        situacao: 'APROVADO',
+        usuario_aprovador: usuario,
+        data_aprovacao: hoje(),
+        hora_aprovacao: agora(),
+      })
+      .eq('id', id)
+    if (errUpdate) return { sucesso: false, erro: errUpdate.message }
+    return { sucesso: true }
+  },
+  async rejeitar(id, usuario, motivo) {
+    const { error } = await supabase
+      .from('solicitacoes_aprovacao')
+      .update({
+        situacao: 'REJEITADO',
+        usuario_aprovador: usuario,
+        data_aprovacao: hoje(),
+        hora_aprovacao: agora(),
+        motivo_rejeicao: motivo || '',
+      })
+      .eq('id', id)
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+  // Solicitações já decididas (aprovadas/rejeitadas) que o próprio solicitante
+  // ainda não visualizou — usado para notificar quem pediu a aprovação.
+  async listarResolvidasNaoVistas(usuarioSolicitante) {
+    const { data, error } = await supabase
+      .from('solicitacoes_aprovacao')
+      .select('*')
+      .eq('usuario_solicitante', usuarioSolicitante)
+      .eq('visualizado_solicitante', false)
+      .in('situacao', ['APROVADO', 'REJEITADO'])
+      .order('id', { ascending: false })
+    if (error) throw new Error(error.message)
+    return data
+  },
+  async marcarVisualizado(id) {
+    const { error } = await supabase
+      .from('solicitacoes_aprovacao')
+      .update({ visualizado_solicitante: true })
+      .eq('id', id)
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+}
+
+// ============================================================
 // NF-e
 // ============================================================
 const nfe = {
@@ -940,6 +1080,7 @@ const relatorios = {
 module.exports = {
   init,
   login,
+  logout,
   clientes,
   produtos,
   vendas,
@@ -960,4 +1101,5 @@ module.exports = {
   lancamentosExtras,
   reajustesPreco,
   relatorios,
+  aprovacoes,
 }

@@ -832,6 +832,7 @@ export default function ContasPagar({ usuario }) {
                         type='checkbox'
                         checked={sel}
                         onChange={() => toggleSel(c.id)}
+                        onClick={(e) => e.stopPropagation()}
                         style={{ width: 14, height: 14 }}
                       />
                     </td>

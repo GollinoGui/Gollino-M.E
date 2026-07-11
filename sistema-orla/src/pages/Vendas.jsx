@@ -8,6 +8,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import ModalAcessoNegado from '../components/ModalAcessoNegado'
+import ModalAviso from '../components/ModalAviso'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -269,146 +270,241 @@ function gerarParcelas(total, qtde, primeiroPgto) {
   })
 }
 
-function ModalPagamento({ total, clienteAnonimo, onClose, onFinalizar }) {
-  const [forma, setForma] = useState(null)
-  const [valor, setValor] = useState(total.toFixed(2))
+const FORMAS_DIRETAS = ['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'Cheque', 'Haver']
 
-  // parcelamento / fiado
+function ModalPagamento({ total, clienteAnonimo, onClose, onFinalizar }) {
+  const [ativas, setAtivas] = useState([]) // formas diretas selecionadas (pagamento misto)
+  const [valores, setValores] = useState({}) // forma -> string do input
+  const [convenio, setConvenio] = useState(false)
+  const [parcelasCartao, setParcelasCartao] = useState(1) // parcelamento na maquininha (só informativo)
+  const [chequeNumero, setChequeNumero] = useState('')
+  const [chequeBanco, setChequeBanco] = useState('')
+  const [chequeVencimento, setChequeVencimento] = useState(new Date().toISOString().slice(0, 10))
+
+  // parcelamento do restante / fiado
   const d30 = new Date(); d30.setDate(d30.getDate() + 30)
   const [numParcelas, setNumParcelas] = useState(1)
   const [primeiroPgto, setPrimeiroPgto] = useState(d30.toISOString().slice(0, 10))
   const [nomeFiado, setNomeFiado] = useState('')
   const [telefoneFiado, setTelefoneFiado] = useState('')
 
-  const pago = parseFloat(valor) || 0
-  const troco = Math.max(0, pago - total)
-  const faltam = Math.max(0, total - pago)
-  const ePrazo = forma === 'A Prazo'
-  const precisaContato = ePrazo && clienteAnonimo
-  const parcelas = ePrazo ? gerarParcelas(total, numParcelas, primeiroPgto) : []
+  function sugestaoParaForma(f) {
+    const outrasSoma = ativas.filter((x) => x !== f).reduce((s, x) => s + (parseFloat(valores[x]) || 0), 0)
+    return Math.max(0, Math.round((total - outrasSoma) * 100) / 100)
+  }
+
+  function toggleForma(f) {
+    setConvenio(false)
+    setAtivas((prev) => {
+      if (prev.includes(f)) {
+        if (f === 'Cartão Crédito') setParcelasCartao(1)
+        return prev.filter((x) => x !== f)
+      }
+      setValores((v) => ({ ...v, [f]: v[f] || sugestaoParaForma(f).toFixed(2) }))
+      return [...prev, f]
+    })
+  }
+
+  function selecionarConvenio() {
+    setConvenio(true)
+    setAtivas([])
+  }
+
+  const pagoBruto = ativas.reduce((s, f) => s + (parseFloat(valores[f]) || 0), 0)
+  const troco = Math.max(0, Math.round((pagoBruto - total) * 100) / 100)
+  const restante = Math.max(0, Math.round((total - pagoBruto) * 100) / 100)
+  const temRestante = restante > 0.001
+  const precisaContato = temRestante && clienteAnonimo
+  const parcelas = temRestante ? gerarParcelas(restante, numParcelas, primeiroPgto) : []
   const podeFinalizar =
-    forma &&
-    (ePrazo || forma === 'Convênio' || faltam === 0) &&
-    (!precisaContato || (nomeFiado.trim() && telefoneFiado.trim()))
+    convenio || !precisaContato || (nomeFiado.trim() && telefoneFiado.trim())
+
+  async function confirmar() {
+    if (convenio) {
+      onFinalizar({ tipo: 'convenio' })
+      return
+    }
+    if (temRestante) {
+      const dataFmt = new Date(primeiroPgto + 'T12:00:00').toLocaleDateString('pt-BR')
+      const ok = await window.api.dialog.confirm(
+        `Faltam ${fmt(restante)}. Esse valor ficará em aberto no "A Receber" do cliente, com vencimento em ${dataFmt}. Confirmar mesmo assim?`,
+      )
+      if (!ok) return
+    }
+    onFinalizar({
+      tipo: 'misto',
+      valores: FORMAS_DIRETAS.reduce((acc, f) => ({ ...acc, [f]: parseFloat(valores[f]) || 0 }), {}),
+      parcelasCartao: ativas.includes('Cartão Crédito') ? parcelasCartao : 1,
+      troco,
+      restante,
+      parcelas: temRestante ? parcelas : [],
+      nomeFiado: precisaContato ? nomeFiado.trim() : undefined,
+      telefoneFiado: precisaContato ? telefoneFiado.trim() : undefined,
+      chequeNumero: ativas.includes('Cheque') ? chequeNumero.trim() : undefined,
+      chequeBanco: ativas.includes('Cheque') ? chequeBanco.trim() : undefined,
+      chequeVencimento: ativas.includes('Cheque') ? chequeVencimento : undefined,
+    })
+  }
 
   return (
     <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
-      <div style={{ background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border-md)', width: ePrazo ? 520 : 460, boxShadow: '0 20px 50px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border-md)', width: temRestante ? 520 : 460, boxShadow: '0 20px 50px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
         <div style={{ background: '#185FA5', padding: '16px 22px' }}>
           <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginBottom: 2 }}>Total da venda</div>
           <div style={{ color: 'var(--surface)', fontSize: 28, fontWeight: 600 }}>{fmt(total)}</div>
         </div>
         <div style={{ padding: '18px 22px' }}>
           <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, fontWeight: 500 }}>FORMA DE PAGAMENTO</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, fontWeight: 500 }}>FORMA DE PAGAMENTO (pode combinar mais de uma)</div>
             <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-              {['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'A Prazo', 'Convênio', 'Cheque', 'Haver'].map((f) => (
-                <button key={f} onClick={() => { setForma(f); setValor(total.toFixed(2)) }}
+              {FORMAS_DIRETAS.map((f) => (
+                <button key={f} onClick={() => toggleForma(f)}
                   style={{ padding: '7px 14px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
-                    border: forma === f ? '2px solid #185FA5' : '1px solid var(--border-md)',
-                    background: forma === f ? '#EBF3FC' : 'var(--surface)',
-                    color: forma === f ? '#185FA5' : 'var(--text-secondary)',
-                    fontWeight: forma === f ? 600 : 400 }}>
+                    border: ativas.includes(f) ? '2px solid #185FA5' : '1px solid var(--border-md)',
+                    background: ativas.includes(f) ? '#EBF3FC' : 'var(--surface)',
+                    color: ativas.includes(f) ? '#185FA5' : 'var(--text-secondary)',
+                    fontWeight: ativas.includes(f) ? 600 : 400 }}>
                   {f}
                 </button>
               ))}
+              <button onClick={selecionarConvenio}
+                style={{ padding: '7px 14px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+                  border: convenio ? '2px solid #185FA5' : '1px solid var(--border-md)',
+                  background: convenio ? '#EBF3FC' : 'var(--surface)',
+                  color: convenio ? '#185FA5' : 'var(--text-secondary)',
+                  fontWeight: convenio ? 600 : 400 }}>
+                Convênio
+              </button>
             </div>
           </div>
 
-          {ePrazo ? (
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-                <div>
-                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Nº de parcelas</label>
-                  <select value={numParcelas} onChange={e => setNumParcelas(Number(e.target.value))}
-                    style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)' }}>
-                    {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n === 1 ? 'À vista, fiado (1x)' : `${n}x`} de {fmt(Math.floor(total / n * 100) / 100)}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>{numParcelas === 1 ? 'Data combinada p/ pagar' : '1º vencimento'}</label>
-                  <input type='date' value={primeiroPgto} onChange={e => setPrimeiroPgto(e.target.value)}
-                    style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)' }} />
-                </div>
-              </div>
-              {precisaContato && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12, background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, padding: 10 }}>
-                  <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#92400E', fontWeight: 500 }}>
-                    Venda sem cliente cadastrado — informe nome e telefone para cobrança:
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Nome</label>
-                    <input value={nomeFiado} onChange={e => setNomeFiado(e.target.value)} placeholder='Nome do cliente'
-                      style={{ width: '100%', height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)' }} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Telefone</label>
-                    <input value={telefoneFiado} onChange={e => setTelefoneFiado(e.target.value.replace(/[^0-9()\- ]/g, ''))} placeholder='(00) 00000-0000'
-                      style={{ width: '100%', height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)' }} />
-                  </div>
-                </div>
-              )}
-              <div style={{ background: 'var(--gray-50)', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      {['Parcela', 'Vencimento', 'Valor'].map(h => (
-                        <th key={h} style={{ padding: '6px 10px', fontSize: 11, color: 'var(--text-secondary)', textAlign: 'left', background: 'var(--gray-100)', borderBottom: '1px solid var(--border)' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {parcelas.map(p => (
-                      <tr key={p.seq}>
-                        <td style={{ padding: '5px 10px', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{p.seq}</td>
-                        <td style={{ padding: '5px 10px', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{new Date(p.data_vencimento + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
-                        <td style={{ padding: '5px 10px', fontSize: 13, fontWeight: 600, color: 'var(--blue-700)', borderBottom: '1px solid var(--border)' }}>{fmt(p.valor)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : forma === 'Convênio' ? (
+          {convenio ? (
             <div style={{ background: 'var(--blue-50)', border: '1px solid var(--blue-100)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: 'var(--blue-800)' }}>
               Venda será lançada em Contas a Receber com vencimento em 30 dias.
             </div>
-          ) : forma ? (
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Valor recebido</label>
-              <input value={valor} onChange={(e) => setValor(e.target.value)} type='number' autoFocus
-                style={{ width: '100%', height: 40, padding: '0 12px', fontSize: 16, fontWeight: 500, borderRadius: 8, border: '1px solid var(--border-md)' }} />
-            </div>
-          ) : null}
-
-          {forma && !ePrazo && forma !== 'Convênio' && (
-            <div style={{ background: 'var(--gray-50)', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
-              {[
-                { label: 'Faltam', value: faltam, color: faltam > 0 ? '#C53030' : 'var(--text-muted)' },
-                { label: 'Troco', value: troco, color: troco > 0 ? '#22863A' : 'var(--text-muted)' },
-                { label: 'Valor pago', value: pago, color: 'var(--text-primary)' },
-              ].map((row) => (
-                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{row.label}</span>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: row.color }}>{fmt(row.value)}</span>
+          ) : (
+            <>
+              {ativas.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+                  {ativas.map((f) => (
+                    <div key={f} style={{ display: 'grid', gridTemplateColumns: f === 'Cartão Crédito' ? '1fr 110px' : '1fr', gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Valor em {f}</label>
+                        <input value={valores[f] ?? ''} onChange={(e) => setValores((v) => ({ ...v, [f]: e.target.value }))} type='number' autoFocus
+                          style={{ width: '100%', height: 38, padding: '0 12px', fontSize: 15, fontWeight: 500, borderRadius: 8, border: '1px solid var(--border-md)' }} />
+                      </div>
+                      {f === 'Cartão Crédito' && (
+                        <div>
+                          <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Parcelas</label>
+                          <select value={parcelasCartao} onChange={(e) => setParcelasCartao(Number(e.target.value))}
+                            style={{ width: '100%', height: 38, padding: '0 8px', borderRadius: 8, border: '1px solid var(--border-md)' }}>
+                            {[1,2,3,4,5,6,7,8,9,10,11,12].map((n) => <option key={n} value={n}>{n}x</option>)}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {ativas.includes('Cheque') && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, background: 'var(--gray-50)', borderRadius: 8, padding: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Nº do cheque</label>
+                        <input value={chequeNumero} onChange={(e) => setChequeNumero(e.target.value)}
+                          style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 13, borderRadius: 8, border: '1px solid var(--border-md)' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Banco</label>
+                        <input value={chequeBanco} onChange={(e) => setChequeBanco(e.target.value)} placeholder='Ex: Bradesco'
+                          style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 13, borderRadius: 8, border: '1px solid var(--border-md)' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Bom para</label>
+                        <input type='date' value={chequeVencimento} onChange={(e) => setChequeVencimento(e.target.value)}
+                          style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 13, borderRadius: 8, border: '1px solid var(--border-md)' }} />
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
+              )}
+
+              <div style={{ background: 'var(--gray-50)', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
+                {[
+                  { label: 'Valor informado', value: pagoBruto, color: 'var(--text-primary)' },
+                  { label: 'Troco', value: troco, color: troco > 0 ? '#22863A' : 'var(--text-muted)' },
+                  { label: 'Faltam (vai para "A Receber")', value: restante, color: restante > 0 ? '#C53030' : 'var(--text-muted)' },
+                ].map((row) => (
+                  <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{row.label}</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: row.color }}>{fmt(row.value)}</span>
+                  </div>
+                ))}
+              </div>
+
+              {temRestante && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ background: '#FFF8E6', border: '1px solid #FDE68A', borderRadius: 8, padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#92400E' }}>
+                    ⚠️ {fmt(restante)} não foi pago agora. Esse valor ficará em aberto no "A Receber" do cliente — combine com ele quando/como vai abater o restante.
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Nº de parcelas do restante</label>
+                      <select value={numParcelas} onChange={e => setNumParcelas(Number(e.target.value))}
+                        style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)' }}>
+                        {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n === 1 ? '1x' : `${n}x`} de {fmt(Math.floor(restante / n * 100) / 100)}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>{numParcelas === 1 ? 'Data combinada p/ pagar' : '1º vencimento'}</label>
+                      <input type='date' value={primeiroPgto} onChange={e => setPrimeiroPgto(e.target.value)}
+                        style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)' }} />
+                    </div>
+                  </div>
+                  {precisaContato && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12, background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, padding: 10 }}>
+                      <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#92400E', fontWeight: 500 }}>
+                        Venda sem cliente cadastrado — informe nome e telefone para cobrança:
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Nome</label>
+                        <input value={nomeFiado} onChange={e => setNomeFiado(e.target.value)} placeholder='Nome do cliente'
+                          style={{ width: '100%', height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Telefone</label>
+                        <input value={telefoneFiado} onChange={e => setTelefoneFiado(e.target.value.replace(/[^0-9()\- ]/g, ''))} placeholder='(00) 00000-0000'
+                          style={{ width: '100%', height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)' }} />
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ background: 'var(--gray-50)', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          {['Parcela', 'Vencimento', 'Valor'].map(h => (
+                            <th key={h} style={{ padding: '6px 10px', fontSize: 11, color: 'var(--text-secondary)', textAlign: 'left', background: 'var(--gray-100)', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {parcelas.map(p => (
+                          <tr key={p.seq}>
+                            <td style={{ padding: '5px 10px', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{p.seq}</td>
+                            <td style={{ padding: '5px 10px', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{new Date(p.data_vencimento + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
+                            <td style={{ padding: '5px 10px', fontSize: 13, fontWeight: 600, color: 'var(--blue-700)', borderBottom: '1px solid var(--border)' }}>{fmt(p.valor)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer' }}>
               Voltar (Esc)
             </button>
-            <button disabled={!podeFinalizar}
-              onClick={() => onFinalizar({
-                forma,
-                valor: ePrazo ? total : (pago - troco),
-                troco: ePrazo ? 0 : troco,
-                parcelas: ePrazo ? parcelas : undefined,
-                nomeFiado: precisaContato ? nomeFiado.trim() : undefined,
-                telefoneFiado: precisaContato ? telefoneFiado.trim() : undefined,
-              })}
+            <button disabled={!podeFinalizar} onClick={confirmar}
               style={{ padding: '9px 22px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: 'none', cursor: podeFinalizar ? 'pointer' : 'not-allowed',
                 background: podeFinalizar ? '#185FA5' : 'var(--border-md)',
                 color: podeFinalizar ? 'var(--surface)' : 'var(--text-muted)' }}>
@@ -437,6 +533,7 @@ export default function Vendas({ onNavigate, usuario }) {
   const [ultimasVendas, setUltimasVendas] = useState([])
   const [cancelando, setCancelando] = useState(null)
   const [acessoNegado, setAcessoNegado] = useState(null)
+  const [avisoEstoque, setAvisoEstoque] = useState(null)
 
   // Dados do banco
   const [todosProds, setTodosProds] = useState([])
@@ -488,7 +585,7 @@ export default function Vendas({ onNavigate, usuario }) {
       setAcessoNegado('Você não tem permissão para cancelar vendas. Entre em contato com um administrador.')
       return
     }
-    if (!window.confirm(`Cancelar venda #${orcamento}? O estoque será revertido.`)) return
+    if (!(await window.api.dialog.confirm(`Cancelar venda #${orcamento}? O estoque será revertido.`))) return
     setCancelando(orcamento)
     try {
       await window.api.vendas.cancelar({ orcamento, motivo: 'Cancelado pelo operador', usuario: usuario?.usuario || 'sistema' })
@@ -540,9 +637,14 @@ export default function Vendas({ onNavigate, usuario }) {
       const qtdTotal = qtdNoCarrinho + item.qty
       const estoque = item.estoque_atual || 0
       if (qtdTotal > estoque) {
-        alert(
-          `Estoque insuficiente!\nDisponível: ${estoque}\nNo carrinho: ${qtdNoCarrinho}\nSolicitado: ${item.qty}`,
-        )
+        setAvisoEstoque({
+          mensagem: `O produto "${item.descricao}" não tem estoque suficiente para essa venda.`,
+          detalhes: [
+            { label: 'Disponível', value: estoque },
+            { label: 'Já no carrinho', value: qtdNoCarrinho },
+            { label: 'Solicitado', value: item.qty },
+          ],
+        })
         return
       }
     }
@@ -576,11 +678,12 @@ export default function Vendas({ onNavigate, usuario }) {
     return String(maxCod + 1).padStart(6, '0')
   }
 
-  async function finalizarVenda({ forma, valor, troco, parcelas, nomeFiado, telefoneFiado }) {
+  async function finalizarVenda(pagamentoInfo) {
     if (!clienteSel) return
     setSalvando(true)
     try {
       let codigoCliente = clienteSel.codigo
+      const { nomeFiado, telefoneFiado } = pagamentoInfo
 
       // Fiado sem cliente cadastrado: cria um cadastro rápido com nome/telefone
       // para permitir a cobrança posterior (contas a receber).
@@ -603,14 +706,39 @@ export default function Vendas({ onNavigate, usuario }) {
       }
 
       // Monta campos de pagamento
-      const pagamento = {
-        codigo_forma_pagamento1: forma,
-        valor_pago_dinheiro: forma === 'Dinheiro' ? valor : 0,
-        valor_pago_cartao_credito: forma === 'Cartão Crédito' ? valor : 0,
-        valor_pago_cartao_debito: forma === 'Cartão Débito' ? valor : 0,
-        valor_pago_cheque: forma === 'Cheque' ? valor : 0,
-        valor_pago_haver: forma === 'Haver' ? valor : 0,
-        valor_troco: troco,
+      let pagamento
+      let parcelas
+      if (pagamentoInfo.tipo === 'convenio') {
+        pagamento = {
+          codigo_forma_pagamento1: 'Convênio',
+          valor_pago_dinheiro: 0,
+          valor_pago_cartao_credito: 0,
+          valor_pago_cartao_debito: 0,
+          valor_pago_cheque: 0,
+          valor_pago_haver: 0,
+          valor_troco: 0,
+          valor_entrada: 0,
+          valor_restante: total,
+        }
+      } else {
+        const { valores, troco, restante, parcelasCartao } = pagamentoInfo
+        const dinheiroAplicado = Math.max(0, (valores.Dinheiro || 0) - troco)
+        const formasUsadas = FORMAS_DIRETAS.filter((f) => (valores[f] || 0) > 0).map((f) =>
+          f === 'Cartão Crédito' && parcelasCartao > 1 ? `Cartão Crédito ${parcelasCartao}x` : f,
+        )
+        const label = [...formasUsadas, ...(restante > 0 ? ['A Receber'] : [])].join(' + ')
+        pagamento = {
+          codigo_forma_pagamento1: label,
+          valor_pago_dinheiro: dinheiroAplicado,
+          valor_pago_cartao_credito: valores['Cartão Crédito'] || 0,
+          valor_pago_cartao_debito: valores['Cartão Débito'] || 0,
+          valor_pago_cheque: valores.Cheque || 0,
+          valor_pago_haver: valores.Haver || 0,
+          valor_troco: troco,
+          valor_entrada: total - restante,
+          valor_restante: restante,
+        }
+        parcelas = pagamentoInfo.parcelas
       }
 
       const orcamentoAtual = numeroVenda
@@ -620,6 +748,7 @@ export default function Vendas({ onNavigate, usuario }) {
       const resultado = await window.api.vendas.salvar({
         orcamento: orcamentoAtual,
         codigo_cliente: codigoCliente,
+        nome_cliente: clienteSel.nome,
         data: new Date().toISOString().slice(0, 10),
         tipo_venda: 'V',
         situacao: 'N',
@@ -631,6 +760,9 @@ export default function Vendas({ onNavigate, usuario }) {
         numero_turno: '1',
         ...pagamento,
         ...(parcelas ? { parcelas } : {}),
+        ...(pagamentoInfo.chequeNumero !== undefined ? { cheque_numero: pagamentoInfo.chequeNumero } : {}),
+        ...(pagamentoInfo.chequeBanco !== undefined ? { cheque_banco: pagamentoInfo.chequeBanco } : {}),
+        ...(pagamentoInfo.chequeVencimento !== undefined ? { cheque_vencimento: pagamentoInfo.chequeVencimento } : {}),
         itens: itens.map((item) => ({
           codigo_produto: item.codigo,
           descricao: item.descricao,
@@ -647,10 +779,27 @@ export default function Vendas({ onNavigate, usuario }) {
       })
 
       if (!resultado.sucesso) {
-        setErroVenda(resultado.erro || 'Erro ao salvar venda.')
-        setTimeout(() => setErroVenda(''), 5000)
+        const msg = resultado.erro || 'Erro ao salvar venda.'
+        if (msg.includes('Estoque insuficiente')) {
+          setAvisoEstoque({ mensagem: msg })
+        } else {
+          setErroVenda(msg)
+          setTimeout(() => setErroVenda(''), 5000)
+        }
         return
       }
+
+      // Estoque pode ter ficado desatualizado no navegador desde o carregamento
+      // inicial (ex: outra venda no mesmo turno). Atualiza localmente para o
+      // produto não continuar aparecendo como disponível se acabou de zerar.
+      setTodosProds((prev) =>
+        prev.map((p) => {
+          const vendido = itens.find((i) => i.codigo === p.codigo)
+          return vendido
+            ? { ...p, estoque_atual: Math.max(0, (p.estoque_atual || 0) - vendido.qty) }
+            : p
+        }),
+      )
 
       // Pega próximo número
       const num = await window.api.vendas.proximoNumero()
@@ -727,6 +876,14 @@ export default function Vendas({ onNavigate, usuario }) {
         <ModalAcessoNegado
           mensagem={acessoNegado}
           onFechar={() => setAcessoNegado(null)}
+        />
+      )}
+      {avisoEstoque && (
+        <ModalAviso
+          titulo="Estoque insuficiente"
+          mensagem={avisoEstoque.mensagem}
+          detalhes={avisoEstoque.detalhes}
+          onFechar={() => setAvisoEstoque(null)}
         />
       )}
 
@@ -1198,9 +1355,9 @@ export default function Vendas({ onNavigate, usuario }) {
                         p.controla_estoque === 'S' &&
                         (p.estoque_atual || 0) <= 0
                       if (semEstoque) {
-                        alert(
-                          `Produto "${p.descricao}" está sem estoque e não pode ser vendido.`,
-                        )
+                        setAvisoEstoque({
+                          mensagem: `O produto "${p.descricao}" está sem estoque e não pode ser vendido.`,
+                        })
                         return
                       }
                       setItemModal(p)

@@ -77,7 +77,7 @@ function ModalMovimento({ tipo, onClose, onConfirm, salvando, erro }) {
   )
 }
 
-export default function Caixa({ caixaAberto, setCaixaAberto, usuario }) {
+export default function Caixa({ caixaAberto, setCaixaAberto, usuario, onNavigate }) {
   const [confirmando, setConfirmando] = useState(false)
   const [statusCaixa, setStatusCaixa] = useState(null)
   const [resumoSessao, setResumoSessao] = useState(null)
@@ -85,6 +85,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario }) {
   const [loading, setLoading] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [sucesso, setSucesso] = useState('')
+  const [sugestaoAberta, setSugestaoAberta] = useState(false)
   const [modalMovimento, setModalMovimento] = useState(null) // 'SANGRIA' | 'REFORCO' | null
   const [erroMovimento, setErroMovimento] = useState('')
   const [salvandoMovimento, setSalvandoMovimento] = useState(false)
@@ -172,6 +173,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario }) {
       setConfirmando(false)
       setSucesso('✅ Caixa aberto com sucesso!')
       setTimeout(() => setSucesso(''), 2500)
+      setSugestaoAberta(true)
       await carregar()
     } catch (err) {
       console.error('Erro ao abrir caixa:', err)
@@ -197,7 +199,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario }) {
       await carregar()
     } catch (err) {
       console.error('Erro ao fechar caixa:', err)
-      window.alert(`Não foi possível fechar o caixa: ${err.message}`)
+      await window.api.dialog.alert(`Não foi possível fechar o caixa: ${err.message}`)
     } finally {
       setSalvando(false)
     }
@@ -273,6 +275,97 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario }) {
           onClose={() => { setModalMovimento(null); setErroMovimento('') }}
           onConfirm={confirmarMovimento}
         />
+      )}
+
+      {sugestaoAberta && caixaAberto && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(0,0,0,0.35)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 350,
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--surface)',
+              borderRadius: 14,
+              border: '1px solid var(--border-md)',
+              width: 360,
+              padding: 24,
+              boxShadow: '0 16px 40px rgba(0,0,0,0.14)',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: '50%',
+                background: '#EAF6EE',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 14px',
+              }}
+            >
+              <FolderOpen size={24} style={{ color: '#22863A' }} />
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>
+              Caixa aberto!
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+              O que você quer fazer agora?
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                onClick={() => { setSugestaoAberta(false); onNavigate?.('vendas') }}
+                style={{
+                  height: 40,
+                  background: '#185FA5',
+                  color: '#fff',
+                  borderRadius: 8,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                Fazer uma venda
+              </button>
+              <button
+                onClick={() => { setSugestaoAberta(false); onNavigate?.('dashboard') }}
+                style={{
+                  height: 40,
+                  background: 'var(--gray-50)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-md)',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                Voltar ao início
+              </button>
+              <button
+                onClick={() => setSugestaoAberta(false)}
+                style={{
+                  height: 32,
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                Ficar aqui
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── CARDS DO TOPO ── */}

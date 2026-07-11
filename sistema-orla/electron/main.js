@@ -123,6 +123,41 @@ ipcMain.handle('auth:login', async (_, { usuario, senha }) => {
   }
 })
 
+ipcMain.handle('auth:logout', async () => {
+  try {
+    return await db.logout()
+  } catch (e) {
+    return { sucesso: false, erro: e.message }
+  }
+})
+
+// --- DIÁLOGOS ---
+// window.confirm/window.alert (JS dialog do próprio renderer) têm um bug
+// conhecido no Windows/Electron: depois de fechados, o foco às vezes não
+// volta pro campo/input focado antes, travando cliques e digitação até
+// reiniciar o app. Usar dialog.showMessageBox do processo principal (a mesma
+// API por trás de tudo isso, mas devolvendo o foco corretamente) evita o problema.
+ipcMain.handle('dialog:confirm', async (event, mensagem) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'question',
+    buttons: ['Cancelar', 'Confirmar'],
+    defaultId: 1,
+    cancelId: 0,
+    message: mensagem,
+  })
+  return response === 1
+})
+
+ipcMain.handle('dialog:alert', async (event, mensagem) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  await dialog.showMessageBox(win, {
+    type: 'warning',
+    buttons: ['OK'],
+    message: mensagem,
+  })
+})
+
 // Helper: wraps handler with try/catch, retorna { sucesso: false, erro } em caso de falha
 function handle(channel, fn) {
   ipcMain.handle(channel, async (event, ...args) => {
@@ -205,6 +240,14 @@ handle('lancamentosExtras:cancelar', (_, id) => db.lancamentosExtras.cancelar(id
 // --- REAJUSTES DE PREÇO ---
 handle('reajustesPreco:listar', (_, filtros) => db.reajustesPreco.listar(filtros))
 handle('reajustesPreco:aplicar', (_, { codigos, percentual, usuario }) => db.reajustesPreco.aplicar(codigos, percentual, usuario))
+
+// --- APROVAÇÕES ---
+handle('aprovacoes:listarPendentes', (_, filtros) => db.aprovacoes.listarPendentes(filtros))
+handle('aprovacoes:solicitar', (_, dados) => db.aprovacoes.solicitar(dados))
+handle('aprovacoes:aprovar', (_, { id, usuario }) => db.aprovacoes.aprovar(id, usuario))
+handle('aprovacoes:rejeitar', (_, { id, usuario, motivo }) => db.aprovacoes.rejeitar(id, usuario, motivo))
+handle('aprovacoes:listarResolvidasNaoVistas', (_, usuarioSolicitante) => db.aprovacoes.listarResolvidasNaoVistas(usuarioSolicitante))
+handle('aprovacoes:marcarVisualizado', (_, id) => db.aprovacoes.marcarVisualizado(id))
 
 // --- DASHBOARD ---
 handle('dashboard:resumo', (_, periodo) => db.dashboard.resumo(periodo))

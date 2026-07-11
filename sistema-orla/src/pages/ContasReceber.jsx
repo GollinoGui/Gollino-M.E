@@ -7,10 +7,17 @@ const fmt = (v) =>
 const fmtDate = (d) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-'
 
+// Conta gerada automaticamente por venda no cartão de crédito: o repasse é
+// automático da operadora, então não precisa (nem pode) ser confirmada na mão.
+function isCartaoAutomatico(c) {
+  return c.tipo_docto === 'CC' && c.situacao_docto === 'A'
+}
+
 // Calcula situação real com base na data de vencimento
 function getSituacao(c) {
   if (c.situacao_docto === 'P') return 'BAIXADO'
   if (c.situacao_docto === 'C') return 'CANCELADO'
+  if (isCartaoAutomatico(c)) return 'CARTAO'
   const hoje = new Date().toISOString().slice(0, 10)
   if (c.data_vencimento && c.data_vencimento < hoje) return 'VENCIDO'
   return 'ABERTO'
@@ -22,6 +29,7 @@ function StatusBadge({ status }) {
     BAIXADO: { bg: '#EAF6EE', color: '#22863A', label: 'Baixado' },
     VENCIDO: { bg: '#FFF0F0', color: '#C53030', label: 'Vencido' },
     CANCELADO: { bg: '#F7F7F7', color: 'var(--text-muted)', label: 'Cancelado' },
+    CARTAO: { bg: '#F3EEFC', color: '#6B3FA0', label: 'Cartão (auto)' },
   }
   const s = cfg[status] || cfg.ABERTO
   return (
@@ -282,6 +290,8 @@ export default function ContasReceber({ usuario }) {
   const totalDocto = filtrados.reduce((s, c) => s + (c.valor_docto || 0), 0)
 
   function toggleSel(id) {
+    const conta = dados.find((c) => c.id === id)
+    if (conta && isCartaoAutomatico(conta)) return
     setSelecionadas((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
     )
@@ -520,19 +530,21 @@ export default function ContasReceber({ usuario }) {
                 const sel = selecionadas.includes(c.id)
                 const sit = getSituacao(c)
                 const vencido = sit === 'VENCIDO'
+                const auto = isCartaoAutomatico(c)
                 const emAberto = c.valor_docto - (c.valor_pagamento || 0)
                 return (
                   <tr
                     key={c.id}
                     onClick={() => toggleSel(c.id)}
-                    onDoubleClick={() => c.situacao_docto === 'A' && setContaRecebendo(c)}
+                    onDoubleClick={() => c.situacao_docto === 'A' && !auto && setContaRecebendo(c)}
                     style={{
                       background: sel
                         ? '#EBF3FC'
                         : vencido
                           ? '#FFF5F5'
                           : 'transparent',
-                      cursor: 'pointer',
+                      cursor: auto ? 'default' : 'pointer',
+                      opacity: auto ? 0.75 : 1,
                       transition: 'background 0.08s',
                     }}
                     onMouseEnter={(e) => {
@@ -552,8 +564,11 @@ export default function ContasReceber({ usuario }) {
                       <input
                         type='checkbox'
                         checked={sel}
+                        disabled={auto}
                         onChange={() => toggleSel(c.id)}
+                        onClick={(e) => e.stopPropagation()}
                         style={{ width: 14, height: 14 }}
+                        title={auto ? 'Recebimento automático da operadora de cartão' : undefined}
                       />
                     </td>
                     <td

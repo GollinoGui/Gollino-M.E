@@ -83,7 +83,7 @@ export default function Configuracoes() {
   const [restaurandoBackup, setRestaurandoBackup] = useState(false)
 
   async function restaurarBackup() {
-    if (!window.confirm('Isso vai substituir o banco atual pelo arquivo selecionado. O banco atual será salvo como segurança. Continuar?')) return
+    if (!(await window.api.dialog.confirm('Isso vai substituir o banco atual pelo arquivo selecionado. O banco atual será salvo como segurança. Continuar?'))) return
     setRestaurandoBackup(true)
     setBackupMsg('')
     try {

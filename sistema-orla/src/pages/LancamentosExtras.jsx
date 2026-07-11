@@ -131,7 +131,7 @@ export default function LancamentosExtras({ tipo = 'RECEITA', usuario }) {
       setAcessoNegado('Você não tem permissão para cancelar lançamentos. Entre em contato com um administrador.')
       return
     }
-    if (!window.confirm('Cancelar este lançamento?')) return
+    if (!(await window.api.dialog.confirm('Cancelar este lançamento?'))) return
     await window.api.lancamentosExtras.cancelar(id)
     await carregar()
     mostrarSucesso('Lançamento cancelado.')

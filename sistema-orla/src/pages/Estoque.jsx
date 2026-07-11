@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Search, ArrowDownCircle, ArrowUpCircle, Package, RefreshCw, ShoppingCart, ClipboardList, TrendingUp } from 'lucide-react'
 import ModalAcessoNegado from '../components/ModalAcessoNegado'
+import ModalAviso from '../components/ModalAviso'
 
 const fmt = (v) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -97,6 +98,7 @@ function ModalEntrada({ onClose, onSalvar }) {
     fornecedor: '',
     obs: '',
     data: new Date().toISOString().split('T')[0],
+    data_vencimento: new Date().toISOString().split('T')[0],
   })
   const [busca, setBusca] = useState('')
   const [dropdown, setDropdown] = useState(false)
@@ -254,6 +256,12 @@ function ModalEntrada({ onClose, onSalvar }) {
             </label>
             <input value={form.data} onChange={f('data')} type='date' style={{ width: '100%', height: 36, padding: '0 10px' }} />
           </div>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+              Vencimento (conta a pagar)
+            </label>
+            <input value={form.data_vencimento} onChange={f('data_vencimento')} type='date' style={{ width: '100%', height: 36, padding: '0 10px' }} />
+          </div>
           <div style={{ gridColumn: '1 / -1' }}>
             <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
               Observação (NF, etc)
@@ -275,6 +283,11 @@ function ModalEntrada({ onClose, onSalvar }) {
             >
               <span style={{ fontSize: 12, color: 'var(--green-700)' }}>Total da entrada</span>
               <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--green-700)' }}>{fmt(total)}</span>
+            </div>
+          )}
+          {total > 0 && (
+            <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--text-muted)', marginTop: -6 }}>
+              Vai gerar uma conta a pagar em aberto pra "{form.fornecedor || 'fornecedor'}".
             </div>
           )}
         </div>
@@ -434,15 +447,16 @@ function ModalAcerto({ onClose, onSalvar, produtos }) {
   )
 }
 
-function ModalPedidoCompra({ onClose, onSalvar, numero }) {
+function ModalPedidoCompra({ onClose, onSalvar, numero, itensIniciais }) {
   const [fornecedor, setFornecedor] = useState('')
   const [obs, setObs] = useState('')
   const [previsao, setPrevisao] = useState('')
   const [produtos, setProdutos] = useState([])
-  const [itens, setItens] = useState([])
+  const [itens, setItens] = useState(itensIniciais || [])
   const [prodBusca, setProdBusca] = useState(null)
   const [qtde, setQtde] = useState('')
   const [vlUnit, setVlUnit] = useState('')
+  const [buscaKey, setBuscaKey] = useState(0)
 
   useEffect(() => {
     window.api.produtos.listar({ situacao: 'A' }).then(setProdutos).catch(console.error)
@@ -459,6 +473,15 @@ function ModalPedidoCompra({ onClose, onSalvar, numero }) {
     setProdBusca(null)
     setQtde('')
     setVlUnit('')
+    setBuscaKey((k) => k + 1)
+  }
+
+  function removerItem(i) {
+    setItens((prev) => prev.filter((_, j) => j !== i))
+    setProdBusca(null)
+    setQtde('')
+    setVlUnit('')
+    setBuscaKey((k) => k + 1)
   }
 
   const totalPedido = itens.reduce((s, i) => s + i.quantidade * i.valor_unitario, 0)
@@ -492,7 +515,7 @@ function ModalPedidoCompra({ onClose, onSalvar, numero }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px auto', gap: 8, alignItems: 'end' }}>
             <div>
               <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Produto</label>
-              <ProdutoDropdown value='' onChange={setProdBusca} produtos={produtos} placeholder='Buscar...' />
+              <ProdutoDropdown key={buscaKey} value='' onChange={setProdBusca} produtos={produtos} placeholder='Buscar...' />
             </div>
             <div>
               <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Qtde</label>
@@ -528,7 +551,7 @@ function ModalPedidoCompra({ onClose, onSalvar, numero }) {
                     <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{item.valor_unitario > 0 ? fmt(item.valor_unitario) : '-'}</td>
                     <td style={{ padding: '7px 8px', fontSize: 13, fontWeight: 600, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{item.valor_unitario > 0 ? fmt(item.quantidade * item.valor_unitario) : '-'}</td>
                     <td style={{ padding: '7px 8px', borderBottom: '1px solid var(--border)' }}>
-                      <button onClick={() => setItens((prev) => prev.filter((_, j) => j !== i))} style={{ color: 'var(--red-500)', fontSize: 12, padding: '2px 6px' }}>✕</button>
+                      <button onClick={() => removerItem(i)} style={{ color: 'var(--red-500)', fontSize: 12, padding: '2px 6px' }}>✕</button>
                     </td>
                   </tr>
                 ))}
@@ -569,8 +592,14 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   const [modalSaida, setModalSaida] = useState(false)
   const [modalAcerto, setModalAcerto] = useState(false)
   const [modalPedido, setModalPedido] = useState(false)
+  const [itensParaPedido, setItensParaPedido] = useState([])
   const [sucesso, setSucesso] = useState('')
   const [acessoNegado, setAcessoNegado] = useState(null)
+  const [aguardandoAprovacao, setAguardandoAprovacao] = useState(false)
+
+  // Posição de estoque — filtro de situação e seleção para pedido de compra
+  const [filtroSituacaoEstoque, setFiltroSituacaoEstoque] = useState('todos')
+  const [selecionadosEstoque, setSelecionadosEstoque] = useState([])
 
   // Pedidos de compra
   const [pedidos, setPedidos] = useState([])
@@ -606,7 +635,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
           window.api.pedidosCompra.proximoNumero(),
         ])
         setPedidos(peds)
-        setProximoNumPedido(num)
+        setProximoNumPedido(num.numero)
       }
       if (window.api.reajustesPreco) {
         window.api.reajustesPreco.listar({}).then(setReajustes).catch(console.error)
@@ -627,16 +656,21 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
     return matchBusca && matchTipo
   })
 
-  const prodFiltrados = produtos.filter(
-    (p) =>
+  const prodFiltrados = produtos.filter((p) => {
+    const matchBusca =
       (p.descricao || '').toLowerCase().includes(busca.toLowerCase()) ||
-      (p.codigo || '').includes(busca),
-  )
+      (p.codigo || '').includes(busca)
+    if (aba !== 'posicao' || filtroSituacaoEstoque === 'todos') return matchBusca
+    const estoque = p.estoque_atual ?? 0
+    const matchSituacao =
+      filtroSituacaoEstoque === 'sem-estoque' ? estoque === 0 : estoque > 0 && estoque <= 5
+    return matchBusca && matchSituacao
+  })
 
   async function salvarMovimento(form) {
     try {
       if (!window.api.movimentosEstoque) return
-      await window.api.movimentosEstoque.salvar(form)
+      await window.api.movimentosEstoque.salvar({ ...form, usuario: usuario?.nome || usuario?.usuario || 'sistema' })
       await carregarDados()
       setModalEntrada(false)
       setModalSaida(false)
@@ -650,13 +684,37 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   async function salvarPedido(dados) {
     try {
       if (!window.api.pedidosCompra) return
-      await window.api.pedidosCompra.salvar(dados)
+      const resultado = await window.api.pedidosCompra.salvar({ ...dados, usuario: usuario?.nome || usuario?.usuario || 'sistema' })
+      if (!resultado.sucesso) throw new Error(resultado.erro)
       await carregarDados()
       setModalPedido(false)
+      setItensParaPedido([])
+      setSelecionadosEstoque([])
       mostrarSucesso('Pedido de compra criado!')
     } catch (err) {
       console.error('Erro ao salvar pedido:', err)
+      await window.api.dialog.alert(`Não foi possível salvar o pedido: ${err.message}`)
     }
+  }
+
+  function pedirSelecionados() {
+    const itens = produtos
+      .filter((p) => selecionadosEstoque.includes(p.codigo))
+      .map((p) => ({
+        produto_id: p.codigo,
+        produto: p.descricao,
+        quantidade: Math.max((p.estoque_minimo ?? 0) - (p.estoque_atual ?? 0), 1),
+        valor_unitario: 0,
+      }))
+    setItensParaPedido(itens)
+    setAba('pedido-compra')
+    setModalPedido(true)
+  }
+
+  function toggleSelecionadoEstoque(codigo) {
+    setSelecionadosEstoque((prev) =>
+      prev.includes(codigo) ? prev.filter((c) => c !== codigo) : [...prev, codigo],
+    )
   }
 
   async function cancelarPedido(numero) {
@@ -664,7 +722,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
       setAcessoNegado('Você não tem permissão para cancelar pedidos de compra. Entre em contato com um administrador.')
       return
     }
-    if (!window.confirm('Cancelar este pedido de compra?')) return
+    if (!(await window.api.dialog.confirm('Cancelar este pedido de compra?'))) return
     try {
       const resultado = await window.api.pedidosCompra.cancelar(numero)
       if (!resultado.sucesso) throw new Error(resultado.erro)
@@ -672,7 +730,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
       mostrarSucesso('Pedido cancelado.')
     } catch (err) {
       console.error(err)
-      window.alert(`Não foi possível cancelar o pedido: ${err.message}`)
+      await window.api.dialog.alert(`Não foi possível cancelar o pedido: ${err.message}`)
     }
   }
 
@@ -681,36 +739,60 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
       const resultado = await window.api.pedidosCompra.receber(numero, usuario?.nome || 'sistema')
       if (!resultado.sucesso) throw new Error(resultado.erro)
       await carregarDados()
-      mostrarSucesso('Pedido recebido! Estoque atualizado.')
+      mostrarSucesso('Pedido recebido! Estoque atualizado e conta a pagar gerada.')
     } catch (err) {
       console.error(err)
-      window.alert(`Não foi possível receber o pedido: ${err.message}`)
+      await window.api.dialog.alert(`Não foi possível receber o pedido: ${err.message}`)
     }
   }
 
   async function salvarContagem() {
     if (Object.keys(contagem).length === 0) return
+    const itensAlterados = Object.entries(contagem)
+      .map(([produto_id, novaQtde]) => {
+        const prod = produtos.find((p) => p.codigo === produto_id)
+        return prod ? { produto_id, produto: prod.descricao, quantidade_atual: prod.estoque_atual ?? 0, quantidade_nova: parseInt(novaQtde) } : null
+      })
+      .filter((item) => item && item.quantidade_nova !== item.quantidade_atual)
+    if (itensAlterados.length === 0) {
+      setContagem({})
+      return
+    }
+
     setSalvandoContagem(true)
     try {
-      for (const [produto_id, novaQtde] of Object.entries(contagem)) {
-        const prod = produtos.find((p) => p.codigo === produto_id)
-        if (!prod || parseInt(novaQtde) === (prod.estoque_atual ?? 0)) continue
-        await window.api.movimentosEstoque.salvar({
-          produto_id,
-          produto: prod.descricao,
-          quantidade: parseInt(novaQtde),
+      const nomeUsuario = usuario?.nome || usuario?.usuario || 'sistema'
+      if ((usuario?.nivel ?? 0) < 2) {
+        const resultado = await window.api.aprovacoes.solicitar({
+          tipo: 'CONTAGEM_ESTOQUE',
+          itens: itensAlterados,
+          usuario_solicitante: nomeUsuario,
+        })
+        if (!resultado.sucesso) throw new Error(resultado.erro)
+        setContagem({})
+        setAguardandoAprovacao(true)
+        return
+      }
+
+      for (const item of itensAlterados) {
+        const resultado = await window.api.movimentosEstoque.salvar({
+          produto_id: item.produto_id,
+          produto: item.produto,
+          quantidade: item.quantidade_nova,
           tipo: 'ACERTO',
           valor_unitario: 0,
           total: 0,
           obs: 'Contagem de estoque',
           data: new Date().toISOString().split('T')[0],
         })
+        if (!resultado.sucesso) throw new Error(resultado.erro)
       }
       await carregarDados()
       setContagem({})
       mostrarSucesso('Contagem aplicada!')
     } catch (err) {
       console.error(err)
+      await window.api.dialog.alert(`Não foi possível salvar a contagem: ${err.message}`)
     } finally {
       setSalvandoContagem(false)
     }
@@ -721,17 +803,20 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
     if (!perc || (tipoReajuste === 'selecionados' && prodsSelecionados.length === 0)) return
     setSalvandoReajuste(true)
     try {
-      await window.api.reajustesPreco.aplicar({
+      const codigos = tipoReajuste === 'selecionados' ? prodsSelecionados : produtos.map((p) => p.codigo)
+      const resultado = await window.api.reajustesPreco.aplicar({
+        codigos,
         percentual: perc,
-        produto_ids: tipoReajuste === 'selecionados' ? prodsSelecionados : null,
-        obs: `Reajuste de ${perc > 0 ? '+' : ''}${perc}%`,
+        usuario: usuario?.nome || usuario?.usuario || 'sistema',
       })
+      if (!resultado.sucesso) throw new Error(resultado.erro)
       await carregarDados()
       setPercReajuste('')
       setProdsSelecionados([])
       mostrarSucesso('Reajuste aplicado com sucesso!')
     } catch (err) {
       console.error(err)
+      await window.api.dialog.alert(`Não foi possível aplicar o reajuste: ${err.message}`)
     } finally {
       setSalvandoReajuste(false)
     }
@@ -754,11 +839,25 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
       {modalEntrada && <ModalEntrada onClose={() => setModalEntrada(false)} onSalvar={salvarMovimento} />}
       {modalSaida && <ModalSaida onClose={() => setModalSaida(false)} onSalvar={salvarMovimento} produtos={produtos} />}
       {modalAcerto && <ModalAcerto onClose={() => setModalAcerto(false)} onSalvar={salvarMovimento} produtos={produtos} />}
-      {modalPedido && <ModalPedidoCompra onClose={() => setModalPedido(false)} onSalvar={salvarPedido} numero={proximoNumPedido} />}
+      {modalPedido && (
+        <ModalPedidoCompra
+          onClose={() => { setModalPedido(false); setItensParaPedido([]) }}
+          onSalvar={salvarPedido}
+          numero={proximoNumPedido}
+          itensIniciais={itensParaPedido}
+        />
+      )}
       {acessoNegado && (
         <ModalAcessoNegado
           mensagem={acessoNegado}
           onFechar={() => setAcessoNegado(null)}
+        />
+      )}
+      {aguardandoAprovacao && (
+        <ModalAviso
+          titulo='Aguardando aprovação'
+          mensagem='Sua contagem de estoque foi enviada para aprovação do administrador. As quantidades só serão atualizadas depois que ela for aprovada.'
+          onFechar={() => setAguardandoAprovacao(false)}
         />
       )}
 
@@ -805,8 +904,13 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
             </button>
           )}
           {aba === 'pedido-compra' && (
-            <button onClick={() => setModalPedido(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px', background: 'var(--blue-600)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500 }}>
+            <button onClick={() => { setItensParaPedido([]); setModalPedido(true) }} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px', background: 'var(--blue-600)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500 }}>
               <ShoppingCart size={14} /> Novo pedido
+            </button>
+          )}
+          {aba === 'posicao' && selecionadosEstoque.length > 0 && (
+            <button onClick={pedirSelecionados} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px', background: 'var(--blue-600)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500 }}>
+              <ShoppingCart size={14} /> {selecionadosEstoque.length === 1 ? 'Pedir este' : `Pedir esses (${selecionadosEstoque.length})`}
             </button>
           )}
         </div>
@@ -893,23 +997,51 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
         <div style={{ flex: 1, overflowY: 'auto' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, padding: 16, borderBottom: '1px solid var(--border)' }}>
             {[
-              { label: 'Total de produtos', value: produtos.length, color: 'var(--blue-700)' },
-              { label: 'Sem estoque', value: produtos.filter((p) => (p.estoque_atual ?? 0) === 0).length, color: 'var(--red-500)' },
-              { label: 'Estoque baixo (≤5)', value: produtos.filter((p) => (p.estoque_atual ?? 0) > 0 && (p.estoque_atual ?? 0) <= 5).length, color: 'var(--amber-500)' },
+              { key: 'todos', label: 'Total de produtos', value: produtos.length, color: 'var(--blue-700)' },
+              { key: 'sem-estoque', label: 'Sem estoque', value: produtos.filter((p) => (p.estoque_atual ?? 0) === 0).length, color: 'var(--red-500)' },
+              { key: 'baixo', label: 'Estoque baixo (≤5)', value: produtos.filter((p) => (p.estoque_atual ?? 0) > 0 && (p.estoque_atual ?? 0) <= 5).length, color: 'var(--amber-500)' },
             ].map((c) => (
-              <div key={c.label} style={{ background: 'var(--gray-50)', borderRadius: 'var(--radius-md)', padding: '10px 14px', border: '1px solid var(--border)' }}>
+              <button
+                key={c.label}
+                onClick={() => setFiltroSituacaoEstoque((prev) => (prev === c.key ? 'todos' : c.key))}
+                style={{
+                  textAlign: 'left',
+                  background: filtroSituacaoEstoque === c.key ? 'var(--blue-50)' : 'var(--gray-50)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '10px 14px',
+                  border: `1px solid ${filtroSituacaoEstoque === c.key ? 'var(--blue-200)' : 'var(--border)'}`,
+                  cursor: 'pointer',
+                  transition: 'all 0.1s',
+                }}
+              >
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>{c.label}</div>
                 <div style={{ fontSize: 20, fontWeight: 700, color: c.color }}>{c.value}</div>
-              </div>
+              </button>
             ))}
           </div>
+          {filtroSituacaoEstoque !== 'todos' && (
+            <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+              Filtro ativo: <strong>{filtroSituacaoEstoque === 'sem-estoque' ? 'Sem estoque' : 'Estoque baixo'}</strong>
+              <button onClick={() => setFiltroSituacaoEstoque('todos')} style={{ color: 'var(--blue-600)', fontSize: 12 }}>Limpar</button>
+            </div>
+          )}
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
+              <col style={{ width: 34 }} />
               <col style={{ width: 92 }} /><col /><col style={{ width: 46 }} />
               <col style={{ width: 100 }} /><col style={{ width: 100 }} /><col style={{ width: 120 }} />
             </colgroup>
             <thead>
               <tr>
+                <th style={{ padding: '8px 10px', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>
+                  <input
+                    type='checkbox'
+                    checked={prodFiltrados.length > 0 && prodFiltrados.every((p) => selecionadosEstoque.includes(p.codigo))}
+                    onChange={(e) =>
+                      setSelecionadosEstoque(e.target.checked ? prodFiltrados.map((p) => p.codigo) : [])
+                    }
+                  />
+                </th>
                 {['Código', 'Descrição', 'UN', 'Estoque atual', 'Estoque mín.', 'Situação'].map((h) => (
                   <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', textAlign: 'left', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>{h}</th>
                 ))}
@@ -917,10 +1049,17 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
             </thead>
             <tbody>
               {prodFiltrados.map((p) => (
-                <tr key={p.id} style={{ transition: 'background 0.08s' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                <tr key={p.id} style={{ transition: 'background 0.08s', background: selecionadosEstoque.includes(p.codigo) ? 'var(--blue-50)' : 'transparent' }}
+                  onMouseEnter={(e) => { if (!selecionadosEstoque.includes(p.codigo)) e.currentTarget.style.background = 'var(--gray-50)' }}
+                  onMouseLeave={(e) => { if (!selecionadosEstoque.includes(p.codigo)) e.currentTarget.style.background = 'transparent' }}
                 >
+                  <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)' }}>
+                    <input
+                      type='checkbox'
+                      checked={selecionadosEstoque.includes(p.codigo)}
+                      onChange={() => toggleSelecionadoEstoque(p.codigo)}
+                    />
+                  </td>
                   <td style={{ padding: '9px 10px', fontSize: 11, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', fontFamily: 'monospace' }}>{p.codigo}</td>
                   <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1050,8 +1189,8 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                       <div style={{ background: 'var(--gray-50)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 12 }}>
                         {p.itens.map((item, i) => (
                           <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: i < p.itens.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                            <span>{item.produto}</span>
-                            <span style={{ color: 'var(--text-secondary)' }}>{item.quantidade}x {item.valor_unitario > 0 ? fmt(item.valor_unitario) : '-'}</span>
+                            <span>{item.descricao}</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>{item.quantidade}x {item.preco_unitario > 0 ? fmt(item.preco_unitario) : '-'}</span>
                           </div>
                         ))}
                       </div>
@@ -1114,7 +1253,11 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
               </span>
               <button onClick={() => setContagem({})} style={{ padding: '8px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Limpar</button>
               <button onClick={salvarContagem} disabled={salvandoContagem} style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: 'var(--blue-600)', color: '#fff', fontSize: 13, fontWeight: 500 }}>
-                {salvandoContagem ? 'Aplicando...' : 'Aplicar contagem'}
+                {salvandoContagem
+                  ? 'Enviando...'
+                  : (usuario?.nivel ?? 0) < 2
+                    ? 'Enviar para aprovação'
+                    : 'Aplicar contagem'}
               </button>
             </div>
           )}
