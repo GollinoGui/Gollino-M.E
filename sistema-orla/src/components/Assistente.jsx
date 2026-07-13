@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { MessageCircle, X, Send, Bot, ChevronDown } from 'lucide-react'
+import { MessageCircle, X, Send, Bot, ChevronDown, Check, Ban } from 'lucide-react'
+import ModalConfirmacao from './ModalConfirmacao'
 
 const hora = new Date().getHours()
 const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
@@ -50,6 +51,7 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
   const [notificacoes, setNotificacoes] = useState(0)
   const [aprovacoesPendentes, setAprovacoesPendentes] = useState([])
   const [processandoAprovacao, setProcessandoAprovacao] = useState(null)
+  const [confirmacaoAprovacao, setConfirmacaoAprovacao] = useState(null)
   const [resultadosAprovacao, setResultadosAprovacao] = useState([])
   const [dados, setDados] = useState({
     resumo: null,
@@ -122,7 +124,6 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
   }
 
   async function rejeitarSolicitacao(solicitacao) {
-    if (!(await window.api.dialog.confirm('Rejeitar esta contagem de estoque? As quantidades não serão alteradas.'))) return
     setProcessandoAprovacao(solicitacao.id)
     try {
       const resultado = await window.api.aprovacoes.rejeitar(solicitacao.id, usuario?.nome || usuario?.usuario || 'sistema', '')
@@ -580,7 +581,7 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
                       <div style={{ marginBottom: 6 }}>{a.texto}</div>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button
-                          onClick={() => aprovarSolicitacao(a.solicitacao)}
+                          onClick={() => setConfirmacaoAprovacao({ tipo: 'aprovar', solicitacao: a.solicitacao })}
                           disabled={processandoAprovacao === a.solicitacao.id}
                           style={{
                             flex: 1,
@@ -598,7 +599,7 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
                           Aprovar
                         </button>
                         <button
-                          onClick={() => rejeitarSolicitacao(a.solicitacao)}
+                          onClick={() => setConfirmacaoAprovacao({ tipo: 'rejeitar', solicitacao: a.solicitacao })}
                           disabled={processandoAprovacao === a.solicitacao.id}
                           style={{
                             flex: 1,
@@ -916,6 +917,35 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
           </div>
         )}
       </button>
+
+      {confirmacaoAprovacao && confirmacaoAprovacao.tipo === 'aprovar' && (
+        <ModalConfirmacao
+          titulo='Aprovar contagem'
+          mensagem={`Aprovar a contagem de estoque enviada por ${confirmacaoAprovacao.solicitacao.usuario_solicitante || 'este usuário'}? As quantidades serão atualizadas no estoque.`}
+          icone={Check}
+          corIcone='#22863A'
+          corFundoIcone='#E6F6EA'
+          onFechar={() => setConfirmacaoAprovacao(null)}
+          botoes={[
+            { label: 'Aprovar', variante: 'primaria', autoFocus: true, onClick: () => aprovarSolicitacao(confirmacaoAprovacao.solicitacao) },
+            { label: 'Cancelar', variante: 'fantasma' },
+          ]}
+        />
+      )}
+      {confirmacaoAprovacao && confirmacaoAprovacao.tipo === 'rejeitar' && (
+        <ModalConfirmacao
+          titulo='Rejeitar contagem'
+          mensagem='Rejeitar esta contagem de estoque? As quantidades não serão alteradas.'
+          icone={Ban}
+          corIcone='#C53030'
+          corFundoIcone='#FFF0F0'
+          onFechar={() => setConfirmacaoAprovacao(null)}
+          botoes={[
+            { label: 'Rejeitar', variante: 'perigo', autoFocus: true, onClick: () => rejeitarSolicitacao(confirmacaoAprovacao.solicitacao) },
+            { label: 'Voltar', variante: 'fantasma' },
+          ]}
+        />
+      )}
     </>
   )
 }

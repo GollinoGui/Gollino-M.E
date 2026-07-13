@@ -1,8 +1,37 @@
 import { useState, useEffect } from 'react'
-import { Search, FileText, CheckCircle, Clock } from 'lucide-react'
+import { Search, FileText, CheckCircle, Clock, ExternalLink, Copy, Check } from 'lucide-react'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+function enderecoCompleto(c) {
+  if (!c) return ''
+  const linha1 = [c.endereco, c.numero].filter(Boolean).join(', ')
+  const linha2 = [c.bairro, c.cidade, c.uf].filter(Boolean).join(' - ')
+  return [linha1, c.complemento, linha2, c.cep].filter(Boolean).join(' — ')
+}
+
+function montarResumoTexto(v, detalhes) {
+  const c = detalhes?.cliente
+  const linhas = [
+    `Venda #${v.orcamento} — ${fmtDate(v.data)}`,
+    '',
+    'CLIENTE',
+    `Nome/Razão social: ${c?.nome || v.nome_cliente || 'Consumidor'}`,
+  ]
+  if (c?.cpf) linhas.push(`CPF: ${c.cpf}`)
+  if (c?.cgc) linhas.push(`CNPJ: ${c.cgc}`)
+  if (c?.ie) linhas.push(`IE: ${c.ie}`)
+  if (enderecoCompleto(c)) linhas.push(`Endereço: ${enderecoCompleto(c)}`)
+  if (c?.telefone || c?.celular) linhas.push(`Telefone: ${c.telefone || c.celular}`)
+  if (c?.email) linhas.push(`E-mail: ${c.email}`)
+  linhas.push('', 'ITENS')
+  for (const it of detalhes?.itens || []) {
+    linhas.push(`${it.quantidade}x ${it.descricao} — ${fmt(it.preco_unitario)} = ${fmt(it.valor_total)}`)
+  }
+  linhas.push('', `Valor total: ${fmt(v.valor_total)}`)
+  return linhas.join('\n')
+}
 
 function fmtDate(d) {
   if (!d) return ''
@@ -31,6 +60,10 @@ export default function NotaFiscal() {
   const [nfeInput, setNfeInput] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [sucesso, setSucesso] = useState('')
+  const [portalUrl, setPortalUrl] = useState('')
+  const [detalhes, setDetalhes] = useState(null)
+  const [carregandoDetalhes, setCarregandoDetalhes] = useState(false)
+  const [copiado, setCopiado] = useState('')
 
   async function carregar() {
     setCarregando(true)
@@ -42,11 +75,34 @@ export default function NotaFiscal() {
     }
   }
 
-  useEffect(() => { carregar() }, [])
+  useEffect(() => {
+    carregar()
+    window.api.config.get('empresa').then((empresa) => setPortalUrl(empresa?.portal_nfe_url || ''))
+  }, [])
 
-  function abrirModal(v) {
+  async function abrirModal(v) {
     setModal(v)
     setNfeInput(v.numero_nfe || '')
+    setDetalhes(null)
+    setCarregandoDetalhes(true)
+    try {
+      const d = await window.api.nfe.detalhes(v.orcamento)
+      setDetalhes(d)
+    } finally {
+      setCarregandoDetalhes(false)
+    }
+  }
+
+  function copiar(texto, campo) {
+    if (!texto) return
+    navigator.clipboard.writeText(texto)
+    setCopiado(campo)
+    setTimeout(() => setCopiado(''), 1500)
+  }
+
+  function abrirPortal() {
+    if (!portalUrl) return
+    window.api.nfe.abrirPortal(portalUrl)
   }
 
   async function salvarNfe() {
@@ -87,14 +143,89 @@ export default function NotaFiscal() {
         }}>
           <div style={{
             background: 'var(--surface)', borderRadius: 12, padding: 28,
-            width: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+            width: 480, maxHeight: '86vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
           }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
               Registrar NF-e
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 20 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
               Venda #{modal.orcamento} — {modal.nome_cliente} — {fmt(modal.valor_total)}
             </div>
+
+            <button
+              onClick={abrirPortal}
+              disabled={!portalUrl}
+              title={portalUrl ? '' : 'Configure o link em Configurações → Dados fiscais'}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%',
+                height: 36, borderRadius: 7, border: '1px solid var(--blue-700)',
+                background: portalUrl ? 'var(--blue-700)' : 'var(--gray-200)',
+                color: portalUrl ? '#fff' : 'var(--text-muted)',
+                fontSize: 13, fontWeight: 600, cursor: portalUrl ? 'pointer' : 'not-allowed', marginBottom: 16,
+              }}
+            >
+              <ExternalLink size={14} /> Abrir portal da prefeitura
+            </button>
+
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 14, marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                  Dados para a nota
+                </span>
+                <button
+                  onClick={() => copiar(montarResumoTexto(modal, detalhes), 'tudo')}
+                  disabled={carregandoDetalhes}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6,
+                    border: '1px solid var(--border)', background: 'transparent', fontSize: 11, fontWeight: 500,
+                    color: 'var(--text-secondary)', cursor: 'pointer',
+                  }}
+                >
+                  {copiado === 'tudo' ? <Check size={12} color='#15803D' /> : <Copy size={12} />} Copiar tudo
+                </button>
+              </div>
+
+              {carregandoDetalhes ? (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Carregando…</div>
+              ) : (
+                <>
+                  {[
+                    { campo: 'nome', label: 'Nome / Razão social', valor: detalhes?.cliente?.nome || modal.nome_cliente },
+                    { campo: 'cpf', label: 'CPF', valor: detalhes?.cliente?.cpf },
+                    { campo: 'cnpj', label: 'CNPJ', valor: detalhes?.cliente?.cgc },
+                    { campo: 'ie', label: 'IE', valor: detalhes?.cliente?.ie },
+                    { campo: 'endereco', label: 'Endereço', valor: enderecoCompleto(detalhes?.cliente) },
+                    { campo: 'contato', label: 'Contato', valor: detalhes?.cliente?.email || detalhes?.cliente?.telefone || detalhes?.cliente?.celular },
+                  ].filter(l => l.valor).map(l => (
+                    <div key={l.campo} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{l.label}</div>
+                        <div style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.valor}</div>
+                      </div>
+                      <button
+                        onClick={() => copiar(l.valor, l.campo)}
+                        style={{ flexShrink: 0, padding: 5, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
+                      >
+                        {copiado === l.campo ? <Check size={13} color='#15803D' /> : <Copy size={13} />}
+                      </button>
+                    </div>
+                  ))}
+
+                  {detalhes?.itens?.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>Itens</div>
+                      {detalhes.itens.map(it => (
+                        <div key={it.id} style={{ fontSize: 12, padding: '3px 0', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.quantidade}x {it.descricao}</span>
+                          <span style={{ flexShrink: 0, fontWeight: 500 }}>{fmt(it.valor_total)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
             <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
               Número da NF-e
             </label>

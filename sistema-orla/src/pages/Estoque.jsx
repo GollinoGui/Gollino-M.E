@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { Search, ArrowDownCircle, ArrowUpCircle, Package, RefreshCw, ShoppingCart, ClipboardList, TrendingUp } from 'lucide-react'
 import ModalAcessoNegado from '../components/ModalAcessoNegado'
 import ModalAviso from '../components/ModalAviso'
+import ModalConfirmacao from '../components/ModalConfirmacao'
+import { Ban } from 'lucide-react'
 
 const fmt = (v) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -451,6 +453,8 @@ function ModalPedidoCompra({ onClose, onSalvar, numero, itensIniciais }) {
   const [fornecedor, setFornecedor] = useState('')
   const [obs, setObs] = useState('')
   const [previsao, setPrevisao] = useState('')
+  const [frete, setFrete] = useState('')
+  const [outrasDespesas, setOutrasDespesas] = useState('')
   const [produtos, setProdutos] = useState([])
   const [itens, setItens] = useState(itensIniciais || [])
   const [prodBusca, setProdBusca] = useState(null)
@@ -485,6 +489,7 @@ function ModalPedidoCompra({ onClose, onSalvar, numero, itensIniciais }) {
   }
 
   const totalPedido = itens.reduce((s, i) => s + i.quantidade * i.valor_unitario, 0)
+  const custoTotal = totalPedido + (parseFloat(frete) || 0) + (parseFloat(outrasDespesas) || 0)
   const valido = fornecedor && itens.length > 0
 
   return (
@@ -503,6 +508,14 @@ function ModalPedidoCompra({ onClose, onSalvar, numero, itensIniciais }) {
           <div>
             <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Previsão de entrega</label>
             <input value={previsao} onChange={(e) => setPrevisao(e.target.value)} type='date' style={{ width: '100%', height: 36, padding: '0 10px' }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Frete (R$)</label>
+            <input value={frete} onChange={(e) => setFrete(e.target.value)} type='number' min='0' style={{ width: '100%', height: 36, padding: '0 10px' }} placeholder='0,00' />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Outras despesas (R$)</label>
+            <input value={outrasDespesas} onChange={(e) => setOutrasDespesas(e.target.value)} type='number' min='0' style={{ width: '100%', height: 36, padding: '0 10px' }} placeholder='0,00' />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
             <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Observação</label>
@@ -561,9 +574,17 @@ function ModalPedidoCompra({ onClose, onSalvar, numero, itensIniciais }) {
         </div>
 
         {totalPedido > 0 && (
-          <div style={{ background: 'var(--blue-50)', border: '1px solid var(--blue-100)', borderRadius: 'var(--radius-md)', padding: '8px 14px', display: 'flex', justifyContent: 'space-between', marginBottom: 12, fontSize: 13 }}>
-            <span style={{ color: 'var(--blue-700)' }}>Total do pedido</span>
-            <strong style={{ color: 'var(--blue-700)' }}>{fmt(totalPedido)}</strong>
+          <div style={{ background: 'var(--blue-50)', border: '1px solid var(--blue-100)', borderRadius: 'var(--radius-md)', padding: '8px 14px', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12, fontSize: 13 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: 'var(--blue-700)' }}>Total do pedido (produtos)</span>
+              <strong style={{ color: 'var(--blue-700)' }}>{fmt(totalPedido)}</strong>
+            </div>
+            {(parseFloat(frete) > 0 || parseFloat(outrasDespesas) > 0) && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--blue-700)' }}>
+                <span>Custo total (com frete/outras despesas)</span>
+                <strong>{fmt(custoTotal)}</strong>
+              </div>
+            )}
           </div>
         )}
 
@@ -571,7 +592,11 @@ function ModalPedidoCompra({ onClose, onSalvar, numero, itensIniciais }) {
           <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
           <button
             disabled={!valido}
-            onClick={() => onSalvar({ numero, fornecedor, obs, previsao_entrega: previsao, itens })}
+            onClick={() => onSalvar({
+              numero, fornecedor, obs, previsao_entrega: previsao, itens,
+              valor_frete: parseFloat(frete) || 0,
+              valor_outras_despesas: parseFloat(outrasDespesas) || 0,
+            })}
             style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: valido ? 'var(--blue-600)' : 'var(--gray-200)', color: valido ? '#fff' : 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: valido ? 'pointer' : 'not-allowed' }}
           >
             Salvar pedido
@@ -596,6 +621,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   const [sucesso, setSucesso] = useState('')
   const [acessoNegado, setAcessoNegado] = useState(null)
   const [aguardandoAprovacao, setAguardandoAprovacao] = useState(false)
+  const [pedidoParaCancelar, setPedidoParaCancelar] = useState(null)
 
   // Posição de estoque — filtro de situação e seleção para pedido de compra
   const [filtroSituacaoEstoque, setFiltroSituacaoEstoque] = useState('todos')
@@ -717,14 +743,17 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
     )
   }
 
-  async function cancelarPedido(numero) {
+  function cancelarPedido(numero) {
     if ((usuario?.nivel ?? 0) < 2) {
       setAcessoNegado('Você não tem permissão para cancelar pedidos de compra. Entre em contato com um administrador.')
       return
     }
-    if (!(await window.api.dialog.confirm('Cancelar este pedido de compra?'))) return
+    setPedidoParaCancelar(numero)
+  }
+
+  async function executarCancelamentoPedido(numero) {
     try {
-      const resultado = await window.api.pedidosCompra.cancelar(numero)
+      const resultado = await window.api.pedidosCompra.cancelar(numero, usuario?.nome || usuario?.usuario || 'sistema')
       if (!resultado.sucesso) throw new Error(resultado.erro)
       await carregarDados()
       mostrarSucesso('Pedido cancelado.')
@@ -829,6 +858,14 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
     return { label: s, bg: 'var(--gray-50)', color: 'var(--text-secondary)', border: 'var(--border)' }
   }
 
+  const pedidoCancelando = pedidos.find((p) => p.numero === pedidoParaCancelar)
+  const itensQueFicariamNegativos = pedidoCancelando?.situacao === 'RECEBIDO'
+    ? (pedidoCancelando.itens || []).filter((item) => {
+        const prod = produtos.find((p) => p.codigo === item.codigo_produto)
+        return prod && (prod.estoque_atual ?? 0) - (item.quantidade ?? 0) < 0
+      })
+    : []
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', position: 'relative' }}>
       {sucesso && (
@@ -858,6 +895,33 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
           titulo='Aguardando aprovação'
           mensagem='Sua contagem de estoque foi enviada para aprovação do administrador. As quantidades só serão atualizadas depois que ela for aprovada.'
           onFechar={() => setAguardandoAprovacao(false)}
+        />
+      )}
+      {pedidoParaCancelar && (
+        <ModalConfirmacao
+          titulo='Cancelar compra'
+          mensagem={
+            pedidoCancelando?.situacao === 'RECEBIDO' ? (
+              <>
+                Cancelar o pedido de compra #{pedidoParaCancelar}? O estoque recebido será revertido e a conta a pagar gerada será cancelada.
+                {itensQueFicariamNegativos.length > 0 && (
+                  <div style={{ marginTop: 10, padding: '8px 10px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, color: '#92400E', fontSize: 12 }}>
+                    Atenção: {itensQueFicariamNegativos.map((i) => i.descricao).join(', ')} já {itensQueFicariamNegativos.length > 1 ? 'foram movimentados' : 'foi movimentado'} desde o recebimento — o estoque ficará negativo após reverter.
+                  </div>
+                )}
+              </>
+            ) : (
+              `Cancelar o pedido de compra #${pedidoParaCancelar}?`
+            )
+          }
+          icone={Ban}
+          corIcone='#C53030'
+          corFundoIcone='#FFF0F0'
+          onFechar={() => setPedidoParaCancelar(null)}
+          botoes={[
+            { label: 'Cancelar pedido', variante: 'perigo', autoFocus: true, onClick: () => executarCancelamentoPedido(pedidoParaCancelar) },
+            { label: 'Voltar', variante: 'fantasma' },
+          ]}
         />
       )}
 
@@ -1177,10 +1241,10 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(p.data)}</span>
                         {p.situacao === 'ABERTO' && (
-                          <>
-                            <button onClick={() => receberPedido(p.numero)} style={{ padding: '4px 12px', background: 'var(--green-500)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 12, fontWeight: 500 }}>Receber</button>
-                            <button onClick={() => cancelarPedido(p.numero)} style={{ padding: '4px 10px', background: 'var(--red-50)', color: 'var(--red-500)', border: '1px solid var(--red-100)', borderRadius: 'var(--radius-md)', fontSize: 12 }}>Cancelar</button>
-                          </>
+                          <button onClick={() => receberPedido(p.numero)} style={{ padding: '4px 12px', background: 'var(--green-500)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 12, fontWeight: 500 }}>Receber</button>
+                        )}
+                        {(p.situacao === 'ABERTO' || p.situacao === 'RECEBIDO') && (
+                          <button onClick={() => cancelarPedido(p.numero)} style={{ padding: '4px 10px', background: 'var(--red-50)', color: 'var(--red-500)', border: '1px solid var(--red-100)', borderRadius: 'var(--radius-md)', fontSize: 12 }}>Cancelar</button>
                         )}
                       </div>
                     </div>

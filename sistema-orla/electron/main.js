@@ -18,6 +18,8 @@ function getBancoDir() {
   return dir
 }
 
+let mainWindow = null
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -51,6 +53,8 @@ function createWindow() {
   }
 
   win.setMenuBarVisibility(false)
+
+  mainWindow = win
 }
 
 app.whenReady().then(async () => {
@@ -79,31 +83,23 @@ function setupAutoUpdater() {
   autoUpdater.checkForUpdates()
 
   autoUpdater.on('update-available', () => {
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'Atualização disponível',
-      message: 'Uma nova versão do Gollino M.E está sendo baixada em segundo plano.',
-      buttons: ['OK'],
-    })
+    mainWindow?.webContents.send('update:disponivel')
   })
 
   autoUpdater.on('update-downloaded', () => {
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'Atualização pronta',
-      message: 'A nova versão foi baixada. Reinicie o app para instalar.',
-      buttons: ['Reiniciar agora', 'Depois'],
-    }).then(({ response }) => {
-      if (response === 0) {
-        autoUpdater.quitAndInstall(true, true)
-      }
-    })
+    mainWindow?.webContents.send('update:baixado')
   })
 
   autoUpdater.on('error', (err) => {
     console.error('Erro no auto-update:', err.message)
   })
 }
+
+// Popups de atualização são renderizados no React (ver ModalConfirmacao) em
+// vez de dialog.showMessageBox — o clique em "Reiniciar agora" chega aqui.
+ipcMain.handle('update:reiniciarAgora', () => {
+  autoUpdater.quitAndInstall(true, true)
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
@@ -217,11 +213,17 @@ handle('log:listar', (_, filtros) => db.log.listar(filtros))
 // --- NF-e ---
 handle('nfe:listar', (_, filtros) => db.nfe.listar(filtros))
 handle('nfe:registrar', (_, { orcamento, numero_nfe }) => db.nfe.registrar(orcamento, numero_nfe))
+handle('nfe:detalhes', (_, orcamento) => db.nfe.detalhes(orcamento))
+handle('nfe:abrirPortal', (_, url) => {
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return { sucesso: false, erro: 'Link inválido' }
+  shell.openExternal(url)
+  return { sucesso: true }
+})
 
 // --- PEDIDOS DE COMPRA ---
 handle('pedidosCompra:listar', (_, filtros) => db.pedidosCompra.listar(filtros))
 handle('pedidosCompra:salvar', (_, dados) => db.pedidosCompra.salvar(dados))
-handle('pedidosCompra:cancelar', (_, numero) => db.pedidosCompra.cancelar(numero))
+handle('pedidosCompra:cancelar', (_, { numero, usuario }) => db.pedidosCompra.cancelar(numero, usuario))
 handle('pedidosCompra:receber', (_, { numero, usuario }) => db.pedidosCompra.receber(numero, usuario))
 handle('pedidosCompra:proximoNumero', () => db.pedidosCompra.proximoNumero())
 
@@ -252,9 +254,17 @@ handle('aprovacoes:marcarVisualizado', (_, id) => db.aprovacoes.marcarVisualizad
 // --- DASHBOARD ---
 handle('dashboard:resumo', (_, periodo) => db.dashboard.resumo(periodo))
 
+// --- FINANCEIRO (lucro real) ---
+handle('financeiro:resumoPeriodo', (_, { dataInicio, dataFim }) => db.financeiro.resumoPeriodo(dataInicio, dataFim))
+handle('financeiro:historicoMensal', (_, meses) => db.financeiro.historicoMensal(meses))
+
 // --- CONFIGURACOES ---
 handle('config:get', (_, chave) => db.config.get(chave))
 handle('config:set', (_, { chave, valor }) => db.config.set(chave, valor))
+
+// --- USUÁRIOS (aba "Usuários" em Configurações — esconder itens de menu) ---
+handle('usuarios:listar', () => db.usuarios.listar())
+handle('usuarios:salvarMenusOcultos', (_, { usuario, menusOcultos }) => db.usuarios.salvarMenusOcultos(usuario, menusOcultos))
 
 // --- PRÉ-VENDAS ---
 handle('preVendas:listar', (_, filtros) => db.preVendas.listar(filtros))

@@ -6,9 +6,12 @@ import {
   ChevronRight,
   FileText,
   RotateCcw,
+  Lock,
+  FolderOpen,
 } from 'lucide-react'
 import ModalAcessoNegado from '../components/ModalAcessoNegado'
 import ModalAviso from '../components/ModalAviso'
+import ModalCancelarVenda from '../components/ModalCancelarVenda'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -298,6 +301,7 @@ function ModalPagamento({ total, clienteAnonimo, onClose, onFinalizar }) {
     setAtivas((prev) => {
       if (prev.includes(f)) {
         if (f === 'Cartão Crédito') setParcelasCartao(1)
+        setValores((v) => ({ ...v, [f]: '' }))
         return prev.filter((x) => x !== f)
       }
       setValores((v) => ({ ...v, [f]: v[f] || sugestaoParaForma(f).toFixed(2) }))
@@ -313,11 +317,14 @@ function ModalPagamento({ total, clienteAnonimo, onClose, onFinalizar }) {
   const pagoBruto = ativas.reduce((s, f) => s + (parseFloat(valores[f]) || 0), 0)
   const troco = Math.max(0, Math.round((pagoBruto - total) * 100) / 100)
   const restante = Math.max(0, Math.round((total - pagoBruto) * 100) / 100)
-  const temRestante = restante > 0.001
+  // Sem nenhuma forma ativa (nem convênio), a venda ainda não tem pagamento
+  // definido — não pode ser tratada como se o valor todo fosse para "A Receber".
+  const temRestante = ativas.length > 0 && restante > 0.001
   const precisaContato = temRestante && clienteAnonimo
   const parcelas = temRestante ? gerarParcelas(restante, numParcelas, primeiroPgto) : []
   const podeFinalizar =
-    convenio || !precisaContato || (nomeFiado.trim() && telefoneFiado.trim())
+    convenio ||
+    (ativas.length > 0 && (!precisaContato || (nomeFiado.trim() && telefoneFiado.trim())))
 
   async function confirmar() {
     if (convenio) {
@@ -333,7 +340,7 @@ function ModalPagamento({ total, clienteAnonimo, onClose, onFinalizar }) {
     }
     onFinalizar({
       tipo: 'misto',
-      valores: FORMAS_DIRETAS.reduce((acc, f) => ({ ...acc, [f]: parseFloat(valores[f]) || 0 }), {}),
+      valores: FORMAS_DIRETAS.reduce((acc, f) => ({ ...acc, [f]: ativas.includes(f) ? (parseFloat(valores[f]) || 0) : 0 }), {}),
       parcelasCartao: ativas.includes('Cartão Crédito') ? parcelasCartao : 1,
       troco,
       restante,
@@ -517,7 +524,7 @@ function ModalPagamento({ total, clienteAnonimo, onClose, onFinalizar }) {
   )
 }
 
-export default function Vendas({ onNavigate, usuario }) {
+export default function Vendas({ onNavigate, usuario, caixaAberto }) {
   const [busca, setBusca] = useState('')
   const [itens, setItens] = useState([])
   const [itemModal, setItemModal] = useState(null)
@@ -532,6 +539,7 @@ export default function Vendas({ onNavigate, usuario }) {
   const [observacao, setObservacao] = useState('')
   const [ultimasVendas, setUltimasVendas] = useState([])
   const [cancelando, setCancelando] = useState(null)
+  const [vendaParaCancelar, setVendaParaCancelar] = useState(null)
   const [acessoNegado, setAcessoNegado] = useState(null)
   const [avisoEstoque, setAvisoEstoque] = useState(null)
 
@@ -580,18 +588,22 @@ export default function Vendas({ onNavigate, usuario }) {
     } catch (_) {}
   }
 
-  async function cancelarVenda(orcamento) {
+  function cancelarVenda(orcamento) {
     if ((usuario?.nivel ?? 0) < 2) {
       setAcessoNegado('Você não tem permissão para cancelar vendas. Entre em contato com um administrador.')
       return
     }
-    if (!(await window.api.dialog.confirm(`Cancelar venda #${orcamento}? O estoque será revertido.`))) return
+    setVendaParaCancelar(orcamento)
+  }
+
+  async function executarCancelamentoVenda(motivo) {
+    const orcamento = vendaParaCancelar
     setCancelando(orcamento)
     try {
-      await window.api.vendas.cancelar({ orcamento, motivo: 'Cancelado pelo operador', usuario: usuario?.usuario || 'sistema' })
+      const resultado = await window.api.vendas.cancelar({ orcamento, motivo, usuario: usuario?.usuario || 'sistema' })
+      if (!resultado.sucesso) throw new Error(resultado.erro)
+      setVendaParaCancelar(null)
       await carregarUltimas()
-    } catch (e) {
-      alert('Erro ao cancelar: ' + e.message)
     } finally {
       setCancelando(null)
     }
@@ -737,6 +749,7 @@ export default function Vendas({ onNavigate, usuario }) {
           valor_troco: troco,
           valor_entrada: total - restante,
           valor_restante: restante,
+          qtde_parcelas1: (valores['Cartão Crédito'] || 0) > 0 ? parcelasCartao : 0,
         }
         parcelas = pagamentoInfo.parcelas
       }
@@ -830,6 +843,37 @@ export default function Vendas({ onNavigate, usuario }) {
     }
   }
 
+  if (!caixaAberto) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16, padding: 32 }}>
+        <div style={{
+          width: 64, height: 64, borderRadius: '50%', background: 'var(--amber-50)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Lock size={28} style={{ color: 'var(--amber-500)' }} />
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+            Caixa fechado
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 340 }}>
+            Não é possível registrar vendas com o caixa fechado. Abra o caixa para começar a vender.
+          </div>
+        </div>
+        <button
+          onClick={() => onNavigate('abrir-caixa')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '10px 22px', background: 'var(--amber-500)', color: 'var(--surface)',
+            borderRadius: 10, fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer',
+          }}
+        >
+          <FolderOpen size={16} /> Abrir caixa agora
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div style={{ display: 'flex', height: '100%', position: 'relative' }}>
       {(vendaFinalizada || gerandoPdf || erroVenda) && (
@@ -876,6 +920,13 @@ export default function Vendas({ onNavigate, usuario }) {
         <ModalAcessoNegado
           mensagem={acessoNegado}
           onFechar={() => setAcessoNegado(null)}
+        />
+      )}
+      {vendaParaCancelar && (
+        <ModalCancelarVenda
+          orcamento={vendaParaCancelar}
+          onFechar={() => setVendaParaCancelar(null)}
+          onConfirmar={executarCancelamentoVenda}
         />
       )}
       {avisoEstoque && (

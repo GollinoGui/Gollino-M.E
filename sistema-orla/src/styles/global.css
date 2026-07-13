@@ -51,6 +51,11 @@ body {
   --red-500: #c53030;
   --red-700: #822727;
 
+  --chart-custo: #c53030;
+  --chart-taxa: #b7791f;
+  --chart-frete: #6b21a8;
+  --chart-despesas: #0891b2;
+
   --bg: #f0f2f7;
   --surface: #ffffff;
   --surface-2: #f7f8fa;
@@ -99,6 +104,11 @@ body.dark {
   --red-100: #2a0f0f;
   --red-500: #e05252;
   --red-700: #c03838;
+
+  --chart-custo: #e05252;
+  --chart-taxa: #c07d2e;
+  --chart-frete: #a855f7;
+  --chart-despesas: #1a95a8;
 
   --bg: #0f1117;
   --surface: #1a1d27;

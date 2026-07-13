@@ -1,179 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import logoGollino from '../../assets/gollino-logo.png'
-import {
-  ShoppingCart,
-  FileText,
-  Undo2,
-  Wallet,
-  Users,
-  Package,
-  BarChart2,
-  Settings,
-  Wrench,
-  ChevronDown,
-  X,
-  FolderOpen,
-  TrendingUp,
-  FileBarChart,
-  Cog,
-  Database,
-  DollarSign,
-  BookOpen,
-  ClipboardList,
-  RotateCcw,
-  Banknote,
-  Receipt,
-  CreditCard,
-  ArrowUpCircle,
-  ArrowDownCircle,
-  Search,
-  AlertCircle,
-  ScrollText,
-  LogOut,
-} from 'lucide-react'
+import { ChevronDown, LogOut, Search } from 'lucide-react'
 import { Sun, Moon } from 'lucide-react'
-const menus = [
-  {
-    id: 'operacional',
-    label: 'Operacional',
-    items: [
-      { id: 'vendas', label: 'Vendas', icon: ShoppingCart },
-      { id: 'pre-vendas', label: 'Pré-Vendas', icon: FileText },
-      { id: 'devolucao', label: 'Devolução', icon: Undo2 },
-      { id: 'contas-receber', label: 'Contas a receber', icon: Wallet },
-      { id: 'contas-pagar', label: 'Contas a pagar', icon: DollarSign },
-      { id: 'boletos', label: 'Boletos', icon: Receipt },
-      { id: 'despesas', label: 'Despesas', icon: ArrowDownCircle },
-      { id: 'sangrias', label: 'Sangrias', icon: ArrowDownCircle },
-      { id: 'reforcos-caixa', label: 'Reforços caixa', icon: ArrowUpCircle },
-      { id: 'vales', label: 'Vales', icon: Banknote },
-      { id: 'abrir-caixa', label: 'Abrir caixa', icon: FolderOpen },
-      { id: 'fechar-caixa', label: 'Fechar caixa', icon: X },
-      {
-        id: 'contador-dinheiro',
-        label: 'Contador de dinheiro',
-        icon: DollarSign,
-      },
-      { id: 'clientes', label: 'Clientes', icon: Users },
-      { id: 'produtos', label: 'Produtos', icon: Package },
-    ],
-  },
-  {
-    id: 'estoque',
-    label: 'Estoque',
-    items: [
-      {
-        id: 'entrada-mercadoria',
-        label: 'Entrada de mercadoria',
-        icon: ArrowDownCircle,
-      },
-      { id: 'pedido-compra', label: 'Pedido de compra', icon: ClipboardList },
-      {
-        id: 'saida-mercadoria',
-        label: 'Saída de mercadoria',
-        icon: ArrowUpCircle,
-      },
-      { id: 'acerto-estoque', label: 'Acerto de estoque', icon: Settings },
-      {
-        id: 'contagem-estoque',
-        label: 'Contagem de estoque',
-        icon: ClipboardList,
-      },
-      {
-        id: 'movimento-produto',
-        label: 'Movimento de produto',
-        icon: TrendingUp,
-      },
-      {
-        id: 'consulta-reajustes',
-        label: 'Consulta de reajustes',
-        icon: Search,
-      },
-    ],
-  },
-  {
-    id: 'financeiro',
-    label: 'Financeiro',
-    items: [
-      { id: 'caixas-fechados', label: 'Caixas fechados', icon: FolderOpen },
-      { id: 'haver', label: 'Haver', icon: Wallet },
-      { id: 'cheques-receber', label: 'Cheques a receber', icon: CreditCard },
-      { id: 'cheques-pagar', label: 'Cheques a pagar', icon: CreditCard },
-      { id: 'outras-receitas', label: 'Outras receitas', icon: ArrowUpCircle },
-      {
-        id: 'consulta-recebimentos',
-        label: 'Consulta de recebimentos',
-        icon: Search,
-      },
-      {
-        id: 'consulta-pagamentos',
-        label: 'Consulta de pagamentos',
-        icon: Search,
-      },
-    ],
-  },
-  {
-    id: 'fiscal',
-    label: 'Fiscal',
-    items: [
-      { id: 'nfe', label: 'NF-e', icon: FileText },
-      { id: 'arquivo-contador', label: 'Arquivo contador', icon: Database },
-      { id: 'documentos-fiscais', label: 'Documentos fiscais', icon: FileText },
-      {
-        id: 'manifestacao',
-        label: 'Manifestação destinatário',
-        icon: AlertCircle,
-      },
-      { id: 'acerto-fiscal', label: 'Acerto fiscal', icon: Settings },
-      { id: 'movimento-fiscal', label: 'Movimento fiscal', icon: TrendingUp },
-    ],
-  },
-  {
-    id: 'relatorios',
-    label: 'Relatórios',
-    items: [
-      { id: 'rel-vendas', label: 'Relatórios de vendas', icon: BarChart2 },
-      { id: 'rel-pre-venda', label: 'Itens pré-venda', icon: FileBarChart },
-      {
-        id: 'rel-entradas',
-        label: 'Relatórios entradas',
-        icon: ArrowDownCircle,
-      },
-      { id: 'rel-produtos', label: 'Relatórios produtos', icon: Package },
-      {
-        id: 'rel-contas-pagar',
-        label: 'Relatórios contas a pagar',
-        icon: DollarSign,
-      },
-      {
-        id: 'rel-contas-receber',
-        label: 'Relatórios contas a receber',
-        icon: Wallet,
-      },
-      { id: 'rel-financeiro', label: 'Relatórios financeiros', icon: BookOpen },
-    ],
-  },
-  {
-    id: 'cadastros',
-    label: 'Cadastros',
-    items: [
-      { id: 'cad-clientes', label: 'Clientes', icon: Users },
-      { id: 'cad-produtos', label: 'Produtos', icon: Package },
-      { id: 'cad-fornecedores', label: 'Fornecedores', icon: Users },
-    ],
-  },
-  {
-    id: 'configuracoes',
-    label: 'Configurações',
-    items: [
-      { id: 'config-empresa', label: 'Dados da empresa', icon: Database },
-      { id: 'config-sistema', label: 'Configurações', icon: Cog },
-      { id: 'importacao', label: 'Importar CSV', icon: ArrowDownCircle },
-      { id: 'manutencao', label: 'Manutenção', icon: Wrench },
-      { id: 'log-sistema', label: 'Log do sistema', icon: ScrollText },
-    ],
-  },
-]
+import ModalConfirmacao from '../ModalConfirmacao'
+import { menus as todosMenus } from './menus'
 
 export default function TopBar({
   activePage,
@@ -186,7 +16,17 @@ export default function TopBar({
 }) {
   const [openMenu, setOpenMenu] = useState(null)
   const [dropdownLeft, setDropdownLeft] = useState(0)
+  const [modalSairAberto, setModalSairAberto] = useState(false)
   const menuRef = useRef(null)
+
+  // Esconde itens marcados como ocultos para este usuário (ver aba "Usuários"
+  // em Configurações) e o grupo inteiro caso fique sem nenhum item visível.
+  const ocultos = usuario?.menus_ocultos || []
+  const menus = ocultos.length
+    ? todosMenus
+        .map((menu) => ({ ...menu, items: menu.items.filter((i) => !ocultos.includes(i.id)) }))
+        .filter((menu) => menu.items.length > 0)
+    : todosMenus
 
   function toggleTema() {
     document.body.classList.toggle('dark')
@@ -499,9 +339,7 @@ export default function TopBar({
           {usuario?.nome || usuario?.usuario || ''}
         </span>
         <button
-          onClick={async () => {
-            if (await window.api.dialog.confirm('Sair do sistema?')) onLogout?.()
-          }}
+          onClick={() => setModalSairAberto(true)}
           title='Sair'
           style={{
             width: 30,
@@ -529,6 +367,20 @@ export default function TopBar({
           <LogOut size={14} />
         </button>
       </div>
+
+      {modalSairAberto && (
+        <ModalConfirmacao
+          titulo='Sair'
+          mensagem='Deseja trocar de conta ou sair do sistema?'
+          icone={LogOut}
+          onFechar={() => setModalSairAberto(false)}
+          botoes={[
+            { label: 'Trocar de conta', variante: 'secundaria', onClick: () => onLogout?.() },
+            { label: 'Sair do sistema', variante: 'perigo', onClick: () => onLogout?.() },
+            { label: 'Cancelar', variante: 'fantasma' },
+          ]}
+        />
+      )}
     </div>
   )
 }

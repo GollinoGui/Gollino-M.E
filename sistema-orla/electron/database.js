@@ -78,7 +78,7 @@ async function login(usuario, senha) {
 
   const { data: perfil, error: perfilErro } = await supabase
     .from('usuarios')
-    .select('usuario, nome, nivel, super_usuario, codigo_vendedor, ativo')
+    .select('usuario, nome, nivel, super_usuario, codigo_vendedor, ativo, menus_ocultos')
     .eq('auth_id', data.user.id)
     .single()
 
@@ -459,6 +459,26 @@ const dashboard = {
 }
 
 // ============================================================
+// FINANCEIRO — lucro real (restrito a nível 250, gate aplicado
+// server-side nas RPCs abaixo via nivel_atual())
+// ============================================================
+const financeiro = {
+  async resumoPeriodo(dataInicio, dataFim) {
+    const { data, error } = await supabase.rpc('financeiro_lucro_periodo', {
+      p_data_inicio: dataInicio,
+      p_data_fim: dataFim,
+    })
+    if (error) throw new Error(error.message)
+    return data
+  },
+  async historicoMensal(meses = 12) {
+    const { data, error } = await supabase.rpc('financeiro_historico_mensal', { p_meses: meses })
+    if (error) throw new Error(error.message)
+    return data
+  },
+}
+
+// ============================================================
 // CONFIGURAÇÕES
 // ============================================================
 const config = {
@@ -476,6 +496,32 @@ const config = {
   async set(chave, valor) {
     const valorStr = typeof valor === 'object' ? JSON.stringify(valor) : String(valor)
     const { error } = await supabase.from('configuracoes').upsert({ chave, valor: valorStr }, { onConflict: 'chave' })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+}
+
+// ============================================================
+// USUÁRIOS (só o necessário pra tela de "esconder itens do menu"
+// em Configurações — cadastro/edição de usuário continua sendo feito
+// direto no Supabase)
+// ============================================================
+const usuarios = {
+  // A tabela usuarios só permite SELECT do próprio perfil via RLS (e nenhum
+  // UPDATE) — listar todos e editar o de outra pessoa passa pelas funções
+  // usuarios_listar/usuarios_salvar_menus_ocultos (SECURITY DEFINER, gated a
+  // nível 250 no próprio banco).
+  async listar() {
+    const { data, error } = await supabase.rpc('usuarios_listar')
+    if (error) throw new Error(error.message)
+    return data
+  },
+
+  async salvarMenusOcultos(usuario, menusOcultos) {
+    const { error } = await supabase.rpc('usuarios_salvar_menus_ocultos', {
+      p_usuario: usuario,
+      p_menus_ocultos: menusOcultos,
+    })
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
@@ -765,8 +811,11 @@ const pedidosCompra = {
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true, numero: pc.numero }
   },
-  async cancelar(numero) {
-    const { error } = await supabase.from('pedidos_compra').update({ situacao: 'CANCELADO', data_atualizacao: hoje(), hora_atualizacao: agora() }).eq('numero', numero)
+  // Cancela o pedido. Se já estava RECEBIDO, reverte o estoque somado e
+  // cancela a conta a pagar gerada (se ainda não tiver sido paga), tudo
+  // atomicamente via RPC.
+  async cancelar(numero, usuario) {
+    const { error } = await supabase.rpc('pedidos_compra_cancelar', { p_numero: numero, p_usuario: usuario })
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
@@ -850,6 +899,7 @@ const lancamentosExtras = {
     const payload = {
       tipo: dados.tipo, descricao: dados.descricao, valor: dados.valor || 0,
       nome_pessoa: dados.nome_pessoa || '', forma_pagamento: dados.forma_pagamento || '',
+      categoria: dados.categoria || null,
       observacao: dados.observacao || '', usuario: dados.usuario || '', data_atualizacao: hoje(), hora_atualizacao: agora(),
     }
     const { error } = dados.id
@@ -1018,6 +1068,18 @@ const nfe = {
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
+
+  // Dados completos da venda para preencher a nota fiscal no portal da prefeitura
+  async detalhes(orcamento) {
+    const { data: venda, error } = await supabase.from('vendas').select('*').eq('orcamento', orcamento).maybeSingle()
+    if (error) throw new Error(error.message)
+    if (!venda) return null
+    const [{ data: cliente }, { data: itens }] = await Promise.all([
+      supabase.from('clientes').select('*').eq('codigo', venda.codigo_cliente).maybeSingle(),
+      supabase.from('vendas_itens').select('*').eq('orcamento', orcamento).order('id'),
+    ])
+    return { venda, cliente: cliente || null, itens: itens || [] }
+  },
 }
 
 // ============================================================
@@ -1088,7 +1150,9 @@ module.exports = {
   contasPagar,
   caixa,
   dashboard,
+  financeiro,
   config,
+  usuarios,
   preVendas,
   movimentosEstoque,
   haver,

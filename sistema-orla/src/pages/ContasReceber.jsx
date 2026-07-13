@@ -287,7 +287,9 @@ export default function ContasReceber({ usuario }) {
     .filter((c) => c.situacao_docto === 'P')
     .reduce((s, c) => s + (c.valor_pagamento || 0), 0)
 
-  const totalDocto = filtrados.reduce((s, c) => s + (c.valor_docto || 0), 0)
+  const totalDocto = filtrados
+    .filter((c) => c.situacao_docto !== 'C')
+    .reduce((s, c) => s + (c.valor_docto || 0), 0)
 
   function toggleSel(id) {
     const conta = dados.find((c) => c.id === id)
@@ -629,7 +631,7 @@ export default function ContasReceber({ usuario }) {
                         color: emAberto > 0 ? '#185FA5' : 'var(--text-muted)',
                       }}
                     >
-                      {fmt(emAberto)}
+                      {c.situacao_docto === 'C' ? '-' : fmt(emAberto)}
                     </td>
                     <td style={tdStyle}>
                       <StatusBadge status={sit} />

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Building2, Save, Upload } from 'lucide-react'
+import { Building2, Save, Upload, Check } from 'lucide-react'
+import { menus as todosMenus } from '../components/layout/menus'
 
 function fmtPhone(v) {
   const d = (v || '').replace(/\D/g, '').slice(0, 11)
@@ -31,6 +32,7 @@ const dadosIniciais = {
   data_abertura: '04/03/1997',
   porte: 'ME',
   natureza_juridica: 'Empresário Individual (213-5)',
+  portal_nfe_url: '',
 }
 
 const secoes = [
@@ -69,6 +71,7 @@ const secoes = [
     campos: [
       { key: 'cnae', label: 'CNAE', col: 1 },
       { key: 'crt', label: 'CRT', col: 1 },
+      { key: 'portal_nfe_url', label: 'Link do portal de emissão de notas (prefeitura)', col: 2 },
     ],
   },
 ]
@@ -81,6 +84,12 @@ export default function Configuracoes() {
   const [backupMsg, setBackupMsg] = useState('')
   const [backupLoading, setBackupLoading] = useState(false)
   const [restaurandoBackup, setRestaurandoBackup] = useState(false)
+
+  const [usuariosList, setUsuariosList] = useState(null)
+  const [usuarioSelecionado, setUsuarioSelecionado] = useState(null)
+  const [menusOcultosEdicao, setMenusOcultosEdicao] = useState([])
+  const [salvandoUsuario, setSalvandoUsuario] = useState(false)
+  const [usuarioSalvo, setUsuarioSalvo] = useState(false)
 
   async function restaurarBackup() {
     if (!(await window.api.dialog.confirm('Isso vai substituir o banco atual pelo arquivo selecionado. O banco atual será salvo como segurança. Continuar?'))) return
@@ -155,8 +164,43 @@ export default function Configuracoes() {
   const abas = [
     { id: 'empresa', label: 'Dados da empresa' },
     { id: 'sistema', label: 'Sistema' },
+    { id: 'usuarios', label: 'Usuários' },
     { id: 'backup', label: 'Backup' },
   ]
+
+  useEffect(() => {
+    if (abaAtiva !== 'usuarios' || usuariosList !== null) return
+    window.api.usuarios.listar().then(setUsuariosList).catch(() => setUsuariosList([]))
+  }, [abaAtiva, usuariosList])
+
+  function selecionarUsuario(u) {
+    setUsuarioSelecionado(u.usuario)
+    setMenusOcultosEdicao(u.menus_ocultos || [])
+  }
+
+  function alternarItemOculto(itemId) {
+    setMenusOcultosEdicao((prev) =>
+      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId],
+    )
+  }
+
+  async function salvarMenusOcultos() {
+    if (!usuarioSelecionado) return
+    setSalvandoUsuario(true)
+    try {
+      const res = await window.api.usuarios.salvarMenusOcultos(usuarioSelecionado, menusOcultosEdicao)
+      if (!res?.sucesso) throw new Error(res?.erro)
+      setUsuariosList((prev) =>
+        prev.map((u) => (u.usuario === usuarioSelecionado ? { ...u, menus_ocultos: menusOcultosEdicao } : u)),
+      )
+      setUsuarioSalvo(true)
+      setTimeout(() => setUsuarioSalvo(false), 2500)
+    } catch (err) {
+      console.error('Erro ao salvar menus ocultos:', err)
+    } finally {
+      setSalvandoUsuario(false)
+    }
+  }
 
   return (
     <div
@@ -456,6 +500,132 @@ export default function Configuracoes() {
           </div>
         )}
 
+        {abaAtiva === 'usuarios' && (
+          <div style={{ maxWidth: 860, margin: '0 auto', display: 'flex', gap: 20 }}>
+            <div
+              style={{
+                width: 220,
+                flexShrink: 0,
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-lg)',
+                overflow: 'hidden',
+                alignSelf: 'flex-start',
+              }}
+            >
+              <div style={{ padding: '12px 16px', fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>
+                USUÁRIOS
+              </div>
+              {usuariosList === null ? (
+                <div style={{ padding: 16, fontSize: 13, color: 'var(--text-muted)' }}>Carregando...</div>
+              ) : usuariosList.length === 0 ? (
+                <div style={{ padding: 16, fontSize: 13, color: 'var(--text-muted)' }}>Nenhum usuário encontrado.</div>
+              ) : (
+                usuariosList.map((u) => (
+                  <button
+                    key={u.usuario}
+                    onClick={() => selecionarUsuario(u)}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '10px 16px',
+                      fontSize: 13,
+                      background: usuarioSelecionado === u.usuario ? 'var(--blue-50)' : 'transparent',
+                      color: usuarioSelecionado === u.usuario ? 'var(--blue-700)' : 'var(--text-primary)',
+                      fontWeight: usuarioSelecionado === u.usuario ? 500 : 400,
+                      borderBottom: '1px solid var(--border)',
+                    }}
+                  >
+                    {u.nome || u.usuario}
+                    {(u.menus_ocultos || []).length > 0 && (
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>
+                        ({u.menus_ocultos.length} ocultos)
+                      </span>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {!usuarioSelecionado ? (
+                <div
+                  style={{
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: 24,
+                    fontSize: 13,
+                    color: 'var(--text-muted)',
+                    fontStyle: 'italic',
+                  }}
+                >
+                  Selecione um usuário para escolher quais itens do menu ficam ocultos para ele.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {todosMenus.map((grupo) => (
+                    <div
+                      key={grupo.id}
+                      style={{
+                        background: 'var(--surface)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-lg)',
+                        padding: 20,
+                      }}
+                    >
+                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                        {grupo.label.toUpperCase()}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        {grupo.items.map((item) => (
+                          <label
+                            key={item.id}
+                            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}
+                          >
+                            <input
+                              type='checkbox'
+                              checked={menusOcultosEdicao.includes(item.id)}
+                              onChange={() => alternarItemOculto(item.id)}
+                              style={{ width: 15, height: 15 }}
+                            />
+                            {item.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <button
+                      onClick={salvarMenusOcultos}
+                      disabled={salvandoUsuario}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '9px 18px',
+                        background: 'var(--blue-700)',
+                        color: 'var(--surface)',
+                        borderRadius: 'var(--radius-md)',
+                        fontSize: 13,
+                        fontWeight: 500,
+                        opacity: salvandoUsuario ? 0.6 : 1,
+                        alignSelf: 'flex-start',
+                      }}
+                    >
+                      {salvandoUsuario ? 'Salvando...' : <><Check size={14} /> Salvar itens ocultos</>}
+                    </button>
+                    {usuarioSalvo && (
+                      <span style={{ fontSize: 12, color: '#22543D' }}>Salvo!</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {abaAtiva === 'backup' && (
           <div
             style={{
@@ -657,6 +827,7 @@ export default function Configuracoes() {
         )}
       </div>
 
+      {abaAtiva !== 'usuarios' && (
       <div
         style={{
           background: 'var(--surface)',
@@ -689,6 +860,7 @@ export default function Configuracoes() {
           <Save size={16} /> Salvar configurações
         </button>
       </div>
+      )}
     </div>
   )
 }

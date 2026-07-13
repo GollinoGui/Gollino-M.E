@@ -12,6 +12,7 @@ import {
   Archive,
   FileText,
   Wallet,
+  Printer,
 } from 'lucide-react'
 
 const fmt = (v) =>
@@ -183,6 +184,8 @@ function RelVendas() {
   const [filtroForma, setFiltroForma] = useState('todas')
   const [vendas, setVendas] = useState([])
   const [loading, setLoading] = useState(false)
+  const [imprimindo, setImprimindo] = useState(null)
+  const [erroImpressao, setErroImpressao] = useState('')
 
   async function carregar() {
     setLoading(true)
@@ -203,6 +206,20 @@ function RelVendas() {
   useEffect(() => {
     carregar()
   }, [])
+
+  async function imprimirVenda(orcamento) {
+    setImprimindo(orcamento)
+    try {
+      const res = await window.api.pdf.gerarVenda(orcamento)
+      if (!res?.sucesso) throw new Error(res?.erro || 'Erro ao gerar recibo')
+    } catch (err) {
+      console.error('Erro ao imprimir venda:', err)
+      setErroImpressao(`Erro ao imprimir venda #${orcamento}`)
+      setTimeout(() => setErroImpressao(''), 4000)
+    } finally {
+      setImprimindo(null)
+    }
+  }
 
   const filtradas =
     filtroForma === 'todas'
@@ -229,7 +246,16 @@ function RelVendas() {
   const formas = [...new Set(vendas.map((v) => v.codigo_forma_pagamento1).filter(Boolean))]
 
   return (
-    <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
+    <div style={{ padding: 20, overflowY: 'auto', height: '100%', position: 'relative' }}>
+      {erroImpressao && (
+        <div style={{
+          position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)',
+          background: '#C53030', color: '#fff', padding: '9px 22px', borderRadius: 8,
+          fontSize: 13, fontWeight: 500, zIndex: 999,
+        }}>
+          {erroImpressao}
+        </div>
+      )}
       <div
         style={{
           display: 'flex',
@@ -453,7 +479,7 @@ function RelVendas() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Nº Venda', 'Data', 'Cliente', 'Forma', 'Total'].map((h) => (
+                  {['Nº Venda', 'Data', 'Cliente', 'Forma', 'Total', 'Ação'].map((h) => (
                     <th
                       key={h}
                       style={{
@@ -541,6 +567,34 @@ function RelVendas() {
                     >
                       {fmt(v.valor_total)}
                     </td>
+                    <td
+                      style={{
+                        padding: '9px 14px',
+                        borderBottom: '1px solid var(--border)',
+                      }}
+                    >
+                      <button
+                        onClick={() => imprimirVenda(v.orcamento)}
+                        disabled={imprimindo === v.orcamento}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          padding: '4px 12px',
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: 500,
+                          cursor: imprimindo === v.orcamento ? 'default' : 'pointer',
+                          border: '1px solid var(--border)',
+                          color: 'var(--text-secondary)',
+                          background: 'transparent',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <Printer size={12} /> {imprimindo === v.orcamento ? 'Gerando…' : 'Imprimir'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -571,6 +625,12 @@ function RelVendas() {
                   >
                     {fmt(totalVendas)}
                   </td>
+                  <td
+                    style={{
+                      background: 'var(--gray-50)',
+                      borderTop: '1px solid var(--border)',
+                    }}
+                  />
                 </tr>
               </tfoot>
             </table>

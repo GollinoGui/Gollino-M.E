@@ -15,6 +15,21 @@ contextBridge.exposeInMainWorld('api', {
     alert: (mensagem) => ipcRenderer.invoke('dialog:alert', mensagem),
   },
 
+  // ATUALIZAÇÕES (autoUpdater no main.js envia os eventos; UI é o ModalConfirmacao no React)
+  updates: {
+    aoDisponivel: (callback) => {
+      const listener = () => callback()
+      ipcRenderer.on('update:disponivel', listener)
+      return () => ipcRenderer.removeListener('update:disponivel', listener)
+    },
+    aoBaixado: (callback) => {
+      const listener = () => callback()
+      ipcRenderer.on('update:baixado', listener)
+      return () => ipcRenderer.removeListener('update:baixado', listener)
+    },
+    reiniciarAgora: () => ipcRenderer.invoke('update:reiniciarAgora'),
+  },
+
   // CLIENTES
   clientes: {
     listar: (filtros) => ipcRenderer.invoke('clientes:listar', filtros),
@@ -77,10 +92,22 @@ contextBridge.exposeInMainWorld('api', {
     resumo: (periodo) => ipcRenderer.invoke('dashboard:resumo', periodo),
   },
 
+  // FINANCEIRO (lucro real — restrito a nível 250)
+  financeiro: {
+    resumoPeriodo: (dataInicio, dataFim) => ipcRenderer.invoke('financeiro:resumoPeriodo', { dataInicio, dataFim }),
+    historicoMensal: (meses) => ipcRenderer.invoke('financeiro:historicoMensal', meses),
+  },
+
   // CONFIGURAÇÕES
   config: {
     get: (chave) => ipcRenderer.invoke('config:get', chave),
     set: (dados) => ipcRenderer.invoke('config:set', dados),
+  },
+
+  // USUÁRIOS (aba "Usuários" em Configurações — esconder itens de menu)
+  usuarios: {
+    listar: () => ipcRenderer.invoke('usuarios:listar'),
+    salvarMenusOcultos: (usuario, menusOcultos) => ipcRenderer.invoke('usuarios:salvarMenusOcultos', { usuario, menusOcultos }),
   },
 
   // BACKUP
@@ -134,13 +161,15 @@ contextBridge.exposeInMainWorld('api', {
   nfe: {
     listar: (filtros) => ipcRenderer.invoke('nfe:listar', filtros),
     registrar: (dados) => ipcRenderer.invoke('nfe:registrar', dados),
+    detalhes: (orcamento) => ipcRenderer.invoke('nfe:detalhes', orcamento),
+    abrirPortal: (url) => ipcRenderer.invoke('nfe:abrirPortal', url),
   },
 
   // PEDIDOS DE COMPRA
   pedidosCompra: {
     listar: (filtros) => ipcRenderer.invoke('pedidosCompra:listar', filtros),
     salvar: (dados) => ipcRenderer.invoke('pedidosCompra:salvar', dados),
-    cancelar: (numero) => ipcRenderer.invoke('pedidosCompra:cancelar', numero),
+    cancelar: (numero, usuario) => ipcRenderer.invoke('pedidosCompra:cancelar', { numero, usuario }),
     receber: (numero, usuario) => ipcRenderer.invoke('pedidosCompra:receber', { numero, usuario }),
     proximoNumero: () => ipcRenderer.invoke('pedidosCompra:proximoNumero'),
   },

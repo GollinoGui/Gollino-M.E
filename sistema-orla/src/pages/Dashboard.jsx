@@ -12,11 +12,15 @@ import {
   DollarSign,
   Clock,
   CheckCircle,
+  Search,
+  History,
 } from 'lucide-react'
 import ModalAcessoNegado from '../components/ModalAcessoNegado'
+import ModalCancelarVenda from '../components/ModalCancelarVenda'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const fmtDataBr = (d) => (d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '--')
 
 function AnimatedNumber({ value, prefix = '', suffix = '', integer = false }) {
   const [display, setDisplay] = useState(0)
@@ -232,7 +236,15 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
   const [totalClientes, setTotalClientes] = useState(0)
   const [totalProdutos, setTotalProdutos] = useState(0)
   const [cancelandoId, setCancelandoId] = useState(null)
+  const [vendaParaCancelar, setVendaParaCancelar] = useState(null)
   const [acessoNegado, setAcessoNegado] = useState(null)
+
+  // Busca de vendas antigas (fora do período "hoje") — pra achar e cancelar vendas de teste
+  const [buscaAntigaAberta, setBuscaAntigaAberta] = useState(false)
+  const [dataInicioAntiga, setDataInicioAntiga] = useState('')
+  const [dataFimAntiga, setDataFimAntiga] = useState('')
+  const [vendasAntigas, setVendasAntigas] = useState(null)
+  const [carregandoVendasAntigas, setCarregandoVendasAntigas] = useState(false)
 
   const META_DIARIA = 2000
 
@@ -300,24 +312,42 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
     carregarDados(p)
   }
 
-  async function cancelarVenda(orcamento) {
+  function cancelarVenda(orcamento) {
     if ((usuario?.nivel ?? 0) < 2) {
       setAcessoNegado('Você não tem permissão para cancelar vendas. Entre em contato com um administrador.')
       return
     }
-    if (!(await window.api.dialog.confirm(`Cancelar a venda #${orcamento}?`))) return
+    setVendaParaCancelar(orcamento)
+  }
+
+  async function executarCancelamentoVenda(motivo) {
+    const orcamento = vendaParaCancelar
     setCancelandoId(orcamento)
     try {
-      await window.api.vendas.cancelar({
-        orcamento,
-        motivo: 'Cancelado pelo usuário',
-        usuario: usuario?.usuario || 'sistema',
-      })
+      const resultado = await window.api.vendas.cancelar({ orcamento, motivo, usuario: usuario?.usuario || 'sistema' })
+      if (!resultado.sucesso) throw new Error(resultado.erro)
+      setVendaParaCancelar(null)
       await carregarDados(periodo)
-    } catch (err) {
-      console.error('Erro ao cancelar venda:', err)
+      if (vendasAntigas !== null) await buscarVendasAntigas()
     } finally {
       setCancelandoId(null)
+    }
+  }
+
+  async function buscarVendasAntigas() {
+    if (!dataInicioAntiga || !dataFimAntiga) return
+    setCarregandoVendasAntigas(true)
+    try {
+      const vendas = await window.api.vendas.listar({
+        dataInicio: dataInicioAntiga,
+        dataFim: dataFimAntiga,
+        situacao: 'N',
+      })
+      setVendasAntigas(vendas)
+    } catch (err) {
+      console.error('Erro ao buscar vendas antigas:', err)
+    } finally {
+      setCarregandoVendasAntigas(false)
     }
   }
 
@@ -442,6 +472,13 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
         <ModalAcessoNegado
           mensagem={acessoNegado}
           onFechar={() => setAcessoNegado(null)}
+        />
+      )}
+      {vendaParaCancelar && (
+        <ModalCancelarVenda
+          orcamento={vendaParaCancelar}
+          onFechar={() => setVendaParaCancelar(null)}
+          onConfirmar={executarCancelamentoVenda}
         />
       )}
 
@@ -1027,39 +1064,116 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                 <div
                   style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}
                 >
-                  Vendas de hoje
+                  {vendasAntigas !== null ? 'Vendas no período' : 'Vendas de hoje'}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                  Últimas transações
+                  {vendasAntigas !== null ? `${dataInicioAntiga} a ${dataFimAntiga}` : 'Últimas transações'}
                 </div>
               </div>
-              <button
-                onClick={() => onNavigate('rel-vendas')}
-                style={{
-                  fontSize: 12,
-                  color: '#185FA5',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '6px 12px',
-                  border: '1px solid #C5DEFA',
-                  borderRadius: 99,
-                  fontWeight: 500,
-                  transition: 'all 0.15s',
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = 'var(--blue-50)')
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.background = 'transparent')
-                }
-              >
-                Ver mais <ArrowRight size={11} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  onClick={() => {
+                    setBuscaAntigaAberta((v) => !v)
+                    if (buscaAntigaAberta) setVendasAntigas(null)
+                  }}
+                  title='Buscar vendas antigas'
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: buscaAntigaAberta ? '#185FA5' : 'var(--text-muted)',
+                    background: buscaAntigaAberta ? 'var(--blue-50)' : 'transparent',
+                    flexShrink: 0,
+                  }}
+                >
+                  <History size={14} />
+                </button>
+                <button
+                  onClick={() => onNavigate('rel-vendas')}
+                  style={{
+                    fontSize: 12,
+                    color: '#185FA5',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '6px 12px',
+                    border: '1px solid #C5DEFA',
+                    borderRadius: 99,
+                    fontWeight: 500,
+                    transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = 'var(--blue-50)')
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = 'transparent')
+                  }
+                >
+                  Ver mais <ArrowRight size={11} />
+                </button>
+              </div>
             </div>
 
+            {buscaAntigaAberta && (
+              <div
+                style={{
+                  padding: '10px 20px',
+                  borderBottom: '1px solid var(--gray-100)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  background: 'var(--gray-50)',
+                }}
+              >
+                <input
+                  type='date'
+                  value={dataInicioAntiga}
+                  onChange={(e) => setDataInicioAntiga(e.target.value)}
+                  style={{
+                    fontSize: 12,
+                    padding: '5px 8px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-md)',
+                  }}
+                />
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>até</span>
+                <input
+                  type='date'
+                  value={dataFimAntiga}
+                  onChange={(e) => setDataFimAntiga(e.target.value)}
+                  style={{
+                    fontSize: 12,
+                    padding: '5px 8px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-md)',
+                  }}
+                />
+                <button
+                  onClick={buscarVendasAntigas}
+                  disabled={!dataInicioAntiga || !dataFimAntiga || carregandoVendasAntigas}
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#fff',
+                    background: '#185FA5',
+                    padding: '5px 12px',
+                    borderRadius: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    opacity: !dataInicioAntiga || !dataFimAntiga || carregandoVendasAntigas ? 0.6 : 1,
+                  }}
+                >
+                  <Search size={11} /> Buscar
+                </button>
+              </div>
+            )}
+
             <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-              {loading ? (
+              {loading || carregandoVendasAntigas ? (
                 <div
                   style={{
                     padding: '24px 20px',
@@ -1070,7 +1184,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                 >
                   Carregando...
                 </div>
-              ) : vendasHoje.length === 0 ? (
+              ) : (vendasAntigas !== null ? vendasAntigas : vendasHoje).length === 0 ? (
                 <div
                   style={{
                     padding: '24px 20px',
@@ -1079,17 +1193,17 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                     fontSize: 13,
                   }}
                 >
-                  Nenhuma venda hoje ainda.
+                  {vendasAntigas !== null ? 'Nenhuma venda no período.' : 'Nenhuma venda hoje ainda.'}
                 </div>
               ) : (
-                vendasHoje.map((v, i) => (
+                (vendasAntigas !== null ? vendasAntigas : vendasHoje).map((v, i, arr) => (
                   <div
                     key={i}
                     className='row-hover'
                     style={{
                       padding: '12px 20px',
                       borderBottom:
-                        i < vendasHoje.length - 1 ? '1px solid var(--border)' : 'none',
+                        i < arr.length - 1 ? '1px solid var(--border)' : 'none',
                       display: 'flex',
                       alignItems: 'center',
                       gap: 14,
@@ -1133,7 +1247,8 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                           marginTop: 2,
                         }}
                       >
-                        <Clock size={10} /> {v.hora_cadastro || '--:--'}
+                        <Clock size={10} />
+                        {vendasAntigas !== null ? fmtDataBr(v.data) : (v.hora_cadastro || '--:--')}
                         <span
                           style={{
                             background: 'var(--gray-100)',
@@ -1208,10 +1323,10 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
               }}
             >
               <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 }}>
-                Total do dia
+                {vendasAntigas !== null ? `Total do período (${vendasAntigas.length})` : 'Total do dia'}
               </span>
               <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--blue-800)' }}>
-                {fmt(totalHoje)}
+                {fmt(vendasAntigas !== null ? vendasAntigas.reduce((s, v) => s + (v.valor_total || 0), 0) : totalHoje)}
               </span>
             </div>
           </div>

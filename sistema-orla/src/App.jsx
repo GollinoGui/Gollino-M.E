@@ -12,6 +12,9 @@ import Estoque from './pages/Estoque'
 import Relatorios from './pages/Relatorios'
 import Devolucao from './pages/Devolucao'
 import Haver from './pages/Haver'
+import CaixasFechados from './pages/CaixasFechados'
+import ConsultaRecebimentos from './pages/ConsultaRecebimentos'
+import ConsultaPagamentos from './pages/ConsultaPagamentos'
 import Importacao from './pages/Importacao'
 import EmBreve from './pages/EmBreve'
 import Configuracoes from './pages/Configuracoes'
@@ -21,11 +24,14 @@ import NotaFiscal from './pages/NotaFiscal'
 import Cheques from './pages/Cheques'
 import LancamentosExtras from './pages/LancamentosExtras'
 import ContadorDinheiro from './pages/ContadorDinheiro'
+import FinanceiroLucro from './pages/FinanceiroLucro'
 import Assistente from './components/Assistente'
 import BuscaGlobal from './components/BuscaGlobal'
 import Login from './pages/Login'
 import AtalhosTecla from './components/AtalhosTecla'
 import AvisoCaixaAtrasado from './components/AvisoCaixaAtrasado'
+import ModalConfirmacao from './components/ModalConfirmacao'
+import { DownloadCloud, RefreshCw } from 'lucide-react'
 
 const CHAVE_SESSAO = 'gollino_sessao'
 
@@ -67,6 +73,7 @@ const titulos = {
   'outras-receitas': 'Financeiro — Outras receitas',
   'consulta-recebimentos': 'Financeiro — Consulta de recebimentos',
   'consulta-pagamentos': 'Financeiro — Consulta de pagamentos',
+  'lucro-real': 'Financeiro — Lucro Real',
   nfe: 'Fiscal — NF-e',
   'arquivo-contador': 'Fiscal — Arquivo contador',
   'documentos-fiscais': 'Fiscal — Documentos fiscais',
@@ -103,6 +110,18 @@ export default function App() {
     }
   })
   const [temaEscuro, setTemaEscuro] = useState(false)
+  const [updateDisponivel, setUpdateDisponivel] = useState(false)
+  const [updateBaixado, setUpdateBaixado] = useState(false)
+
+  useEffect(() => {
+    if (!window.api?.updates) return
+    const offDisponivel = window.api.updates.aoDisponivel(() => setUpdateDisponivel(true))
+    const offBaixado = window.api.updates.aoBaixado(() => setUpdateBaixado(true))
+    return () => {
+      offDisponivel?.()
+      offBaixado?.()
+    }
+  }, [])
 
   function handleLogout() {
     window.api.auth.logout().catch(() => {})
@@ -187,6 +206,7 @@ export default function App() {
     'config-sistema':     250,
     'manutencao':         250,
     'importacao':         250,
+    'lucro-real':         250,
     // Gerente apenas
     'caixas-fechados':      2,
     'contas-pagar':         2,
@@ -231,7 +251,7 @@ export default function App() {
 
       // Operacional
       case 'vendas':
-        return <Vendas onNavigate={setPagina} usuario={usuario} />
+        return <Vendas onNavigate={setPagina} usuario={usuario} caixaAberto={caixaAberto} />
       case 'pre-vendas':
         return <PreVendas usuario={usuario} />
       case 'devolucao':
@@ -298,6 +318,8 @@ export default function App() {
         return <NotaFiscal />
 
       // Financeiro
+      case 'caixas-fechados':
+        return <CaixasFechados />
       case 'cheques-receber':
         return <Cheques tipo='R' />
       case 'cheques-pagar':
@@ -310,6 +332,12 @@ export default function App() {
         return <LancamentosExtras tipo='DESPESA' usuario={usuario} />
       case 'contador-dinheiro':
         return <ContadorDinheiro />
+      case 'consulta-recebimentos':
+        return <ConsultaRecebimentos />
+      case 'consulta-pagamentos':
+        return <ConsultaPagamentos />
+      case 'lucro-real':
+        return <FinanceiroLucro usuario={usuario} />
 
       // Telas ainda não construídas
       default:
@@ -317,8 +345,39 @@ export default function App() {
     }
   }
 
+  const modaisAtualizacao = (
+    <>
+      {updateDisponivel && (
+        <ModalConfirmacao
+          titulo='Atualização disponível'
+          mensagem='Uma nova versão do Gollino M.E está sendo baixada em segundo plano.'
+          icone={DownloadCloud}
+          onFechar={() => setUpdateDisponivel(false)}
+          botoes={[{ label: 'OK', variante: 'primaria', autoFocus: true }]}
+        />
+      )}
+      {updateBaixado && (
+        <ModalConfirmacao
+          titulo='Atualização pronta'
+          mensagem='A nova versão foi baixada. Reinicie o app para instalar.'
+          icone={RefreshCw}
+          onFechar={() => setUpdateBaixado(false)}
+          botoes={[
+            { label: 'Reiniciar agora', variante: 'primaria', autoFocus: true, onClick: () => window.api.updates.reiniciarAgora() },
+            { label: 'Depois', variante: 'fantasma' },
+          ]}
+        />
+      )}
+    </>
+  )
+
   const titulo = titulos[pagina] || pagina.replace(/-/g, ' ')
-  if (!usuario) return <Login onLogin={setUsuario} />
+  if (!usuario) return (
+    <>
+      <Login onLogin={setUsuario} />
+      {modaisAtualizacao}
+    </>
+  )
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {caixaAtrasado && (
@@ -382,6 +441,7 @@ export default function App() {
       )}
       <Assistente caixaAberto={caixaAberto} onNavigate={setPagina} usuario={usuario} />
       <AtalhosTecla />
+      {modaisAtualizacao}
     </div>
   )
 }

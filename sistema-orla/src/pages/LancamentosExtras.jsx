@@ -12,6 +12,13 @@ const tipoConfig = {
   DESPESA: { label: 'Despesas',        cor: '#B91C1C', corBg: '#FEF2F2', corBorder: '#FCA5A5' },
 }
 
+const categoriasDespesa = [
+  { value: 'SALARIO', label: 'Salário' },
+  { value: 'FRETE_AVULSO', label: 'Frete avulso' },
+  { value: 'ALUGUEL', label: 'Aluguel' },
+  { value: 'OUTRAS', label: 'Outras' },
+]
+
 const situacaoStyle = {
   A: { label: 'Em aberto',  bg: '#FEF9C3', color: '#854D0E', border: '#FDE047' },
   P: { label: 'Pago/Recebido', bg: '#F0FDF4', color: '#166534', border: '#86EFAC' },
@@ -26,6 +33,7 @@ function ModalLancamento({ onClose, onSalvar, tipo }) {
     data: new Date().toISOString().split('T')[0],
     nome_pessoa: '',
     forma_pagamento: 'Dinheiro',
+    categoria: 'OUTRAS',
     observacao: '',
   })
   const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }))
@@ -71,6 +79,14 @@ function ModalLancamento({ onClose, onSalvar, tipo }) {
               <option>Outros</option>
             </select>
           </div>
+          {tipo === 'DESPESA' && (
+            <div>
+              <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Categoria</label>
+              <select value={form.categoria} onChange={f('categoria')} style={{ width: '100%', height: 36, padding: '0 10px', borderRadius: 'var(--radius-md)' }}>
+                {categoriasDespesa.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+          )}
           <div style={{ gridColumn: '1 / -1' }}>
             <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Observação</label>
             <input value={form.observacao} onChange={f('observacao')} style={{ width: '100%', height: 36, padding: '0 10px' }} placeholder='Opcional' />
