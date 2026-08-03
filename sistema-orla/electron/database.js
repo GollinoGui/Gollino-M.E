@@ -98,6 +98,32 @@ async function logout() {
   return { sucesso: true }
 }
 
+// Verifica a senha de um usuário (usado nas telas de "confirmar exclusão")
+// sem trocar a identidade da sessão em uso — signInWithPassword troca a
+// sessão real do cliente Supabase quando bem-sucedido, então a sessão atual
+// é salva antes e restaurada depois, independentemente do resultado.
+async function verificarSenha(usuario, senha) {
+  const { data: atual } = await supabase.auth.getSession()
+  const sessaoOriginal = atual?.session
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: emailDoUsuario(usuario),
+    password: senha,
+  })
+  const ok = !error && !!data.user
+
+  if (sessaoOriginal) {
+    await supabase.auth.setSession({
+      access_token: sessaoOriginal.access_token,
+      refresh_token: sessaoOriginal.refresh_token,
+    })
+  } else if (ok) {
+    await supabase.auth.signOut()
+  }
+
+  return { sucesso: ok }
+}
+
 // ============================================================
 // CLIENTES
 // ============================================================
@@ -352,18 +378,14 @@ const contasPagar = {
   },
 
   async pagar(dados) {
-    const { error } = await supabase
-      .from('contas_pagar')
-      .update({
-        situacao_docto: 'P',
-        data_pagamento: dados.data_pagamento || hoje(),
-        valor_pagamento: dados.valor_pagamento,
-        valor_desconto: dados.valor_desconto || 0,
-        usuario: dados.usuario,
-        data_atualizacao: hoje(),
-        hora_atualizacao: agora(),
-      })
-      .eq('id', dados.id)
+    const { error } = await supabase.rpc('contas_pagar_pagar', {
+      p_id: dados.id,
+      p_valor_pagamento: dados.valor_pagamento,
+      p_valor_desconto: dados.valor_desconto || 0,
+      p_forma: dados.forma || null,
+      p_data_pagamento: dados.data_pagamento || hoje(),
+      p_usuario: dados.usuario,
+    })
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
@@ -1143,6 +1165,7 @@ module.exports = {
   init,
   login,
   logout,
+  verificarSenha,
   clientes,
   produtos,
   vendas,

@@ -58,7 +58,11 @@ function parseMoney(v) {
   return parseFloat(String(v).replace(/\./g, '').replace(',', '.')) || 0
 }
 
-export default function Clientes() {
+export default function Clientes({ usuario }) {
+  // Haver (crédito) e limite de crédito são valores financeiros sensíveis —
+  // só gerente/admin (nível ≥ 2) pode alterá-los por aqui. Ajuste de haver
+  // por operador nível 1 deve passar pela tela dedicada de Haver (auditada).
+  const podeEditarFinanceiro = (usuario?.nivel ?? 0) >= 2
   const [clientes, setClientes] = useState([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState(null)
@@ -183,7 +187,7 @@ export default function Clientes() {
       // própria senha do operador logado (nível 1), só admin/elter (nível 2+).
       let ok = false
       for (const usr of ['ELTER', 'admin']) {
-        const res = await window.api.auth.login({
+        const res = await window.api.auth.verificarSenha({
           usuario: usr,
           senha: senhaExcluir,
         })
@@ -1176,18 +1180,22 @@ function FormularioCliente({
             <input
               value={form.haver || ''}
               placeholder='0,00'
+              disabled={!podeEditarFinanceiro}
+              title={podeEditarFinanceiro ? undefined : 'Use a tela de Haver para ajustar o crédito do cliente (requer nível gerente)'}
               onChange={(e) => campo('haver', maskMoney(e.target.value))}
-              style={{ width: '100%', height: 34, padding: '0 10px' }}
+              style={{ width: '100%', height: 34, padding: '0 10px', background: podeEditarFinanceiro ? undefined : 'var(--gray-100)', cursor: podeEditarFinanceiro ? 'text' : 'not-allowed' }}
             />
           </Campo>
           <Campo label='Limite de Crédito (R$)' col={1}>
             <input
               value={form.limite_credito || ''}
               placeholder='0,00'
+              disabled={!podeEditarFinanceiro}
+              title={podeEditarFinanceiro ? undefined : 'Requer nível gerente para alterar'}
               onChange={(e) =>
                 campo('limite_credito', maskMoney(e.target.value))
               }
-              style={{ width: '100%', height: 34, padding: '0 10px' }}
+              style={{ width: '100%', height: 34, padding: '0 10px', background: podeEditarFinanceiro ? undefined : 'var(--gray-100)', cursor: podeEditarFinanceiro ? 'text' : 'not-allowed' }}
             />
           </Campo>
           <Campo label='Observação' col={2}>

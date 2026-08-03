@@ -127,6 +127,14 @@ ipcMain.handle('auth:logout', async () => {
   }
 })
 
+ipcMain.handle('auth:verificarSenha', async (_, { usuario, senha }) => {
+  try {
+    return await db.verificarSenha(usuario, senha)
+  } catch (e) {
+    return { sucesso: false, erro: e.message }
+  }
+})
+
 // --- DIÁLOGOS ---
 // window.confirm/window.alert (JS dialog do próprio renderer) têm um bug
 // conhecido no Windows/Electron: depois de fechados, o foco às vezes não

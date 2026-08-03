@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('api', {
   auth: {
     login: (dados) => ipcRenderer.invoke('auth:login', dados),
     logout: () => ipcRenderer.invoke('auth:logout'),
+    verificarSenha: (dados) => ipcRenderer.invoke('auth:verificarSenha', dados),
   },
 
   // DIÁLOGOS (confirm/alert nativos via processo principal — ver main.js)

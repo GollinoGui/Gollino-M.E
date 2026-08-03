@@ -173,7 +173,10 @@ export default function App() {
             break
           case 'F5':
             e.preventDefault()
-            setPagina('produtos')
+            // Na tela de Vendas, F5 finaliza a venda em andamento (tratado
+            // localmente em Vendas.jsx) — navegar para Produtos aqui apagaria
+            // o carrinho sem aviso. Nas demais telas, mantém o atalho normal.
+            if (pagina !== 'vendas') setPagina('produtos')
             break
           case 'F6':
             e.preventDefault()
@@ -272,7 +275,7 @@ export default function App() {
         )
       case 'clientes':
       case 'cad-clientes':
-        return <Clientes />
+        return <Clientes usuario={usuario} />
       case 'produtos':
       case 'cad-produtos':
         return <Produtos usuario={usuario} />

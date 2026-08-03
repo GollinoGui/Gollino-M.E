@@ -275,7 +275,7 @@ function gerarParcelas(total, qtde, primeiroPgto) {
 
 const FORMAS_DIRETAS = ['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'Cheque', 'Haver']
 
-function ModalPagamento({ total, clienteAnonimo, onClose, onFinalizar }) {
+function ModalPagamento({ total, clienteAnonimo, onClose, onFinalizar, salvando }) {
   const [ativas, setAtivas] = useState([]) // formas diretas selecionadas (pagamento misto)
   const [valores, setValores] = useState({}) // forma -> string do input
   const [convenio, setConvenio] = useState(false)
@@ -326,7 +326,21 @@ function ModalPagamento({ total, clienteAnonimo, onClose, onFinalizar }) {
     convenio ||
     (ativas.length > 0 && (!precisaContato || (nomeFiado.trim() && telefoneFiado.trim())))
 
+  // F5 finaliza a venda direto do modal de pagamento (o atalho global de F5
+  // não navega para fora desta tela — ver App.jsx).
+  useEffect(() => {
+    function onKeyDown(e) {
+      if (e.key === 'F5') {
+        e.preventDefault()
+        if (podeFinalizar && !salvando) confirmar()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  })
+
   async function confirmar() {
+    if (salvando) return
     if (convenio) {
       onFinalizar({ tipo: 'convenio' })
       return
@@ -511,11 +525,11 @@ function ModalPagamento({ total, clienteAnonimo, onClose, onFinalizar }) {
             <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer' }}>
               Voltar (Esc)
             </button>
-            <button disabled={!podeFinalizar} onClick={confirmar}
-              style={{ padding: '9px 22px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: 'none', cursor: podeFinalizar ? 'pointer' : 'not-allowed',
-                background: podeFinalizar ? '#185FA5' : 'var(--border-md)',
-                color: podeFinalizar ? 'var(--surface)' : 'var(--text-muted)' }}>
-              Finalizar venda (F5)
+            <button disabled={!podeFinalizar || salvando} onClick={confirmar}
+              style={{ padding: '9px 22px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: 'none', cursor: (podeFinalizar && !salvando) ? 'pointer' : 'not-allowed',
+                background: (podeFinalizar && !salvando) ? '#185FA5' : 'var(--border-md)',
+                color: (podeFinalizar && !salvando) ? 'var(--surface)' : 'var(--text-muted)' }}>
+              {salvando ? 'Salvando...' : 'Finalizar venda (F5)'}
             </button>
           </div>
         </div>
@@ -578,6 +592,19 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
     carregar()
     carregarUltimas()
   }, [])
+
+  // F5 abre o pagamento (equivalente a clicar em "Total (F5)"). Quando o
+  // modal de pagamento já está aberto, ele mesmo trata o F5 para finalizar.
+  useEffect(() => {
+    function onKeyDown(e) {
+      if (e.key === 'F5' && !pagModal) {
+        e.preventDefault()
+        if (itens.length > 0 && !salvando) setPagModal(true)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [pagModal, itens.length, salvando])
 
   async function carregarUltimas() {
     try {
@@ -691,7 +718,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
   }
 
   async function finalizarVenda(pagamentoInfo) {
-    if (!clienteSel) return
+    if (!clienteSel || salvando) return
     setSalvando(true)
     try {
       let codigoCliente = clienteSel.codigo
@@ -914,6 +941,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
           clienteAnonimo={!clienteSel || clienteSel.codigo === '000001'}
           onClose={() => setPagModal(false)}
           onFinalizar={finalizarVenda}
+          salvando={salvando}
         />
       )}
       {acessoNegado && (

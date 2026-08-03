@@ -45,8 +45,11 @@ function ModalPagar({ conta, onClose, onConfirm }) {
   const [data, setData] = useState(new Date().toISOString().slice(0, 10))
   const [salvando, setSalvando] = useState(false)
 
+  const valorValido = parseFloat(valor) > 0
+  const podeConfirmar = !!forma && valorValido
+
   async function handleConfirm() {
-    if (!forma) return
+    if (!podeConfirmar) return
     setSalvando(true)
     await onConfirm(conta.id, forma, parseFloat(valor), data)
     setSalvando(false)
@@ -202,16 +205,16 @@ function ModalPagar({ conta, onClose, onConfirm }) {
               Cancelar
             </button>
             <button
-              disabled={!forma || salvando}
+              disabled={!podeConfirmar || salvando}
               onClick={handleConfirm}
               style={{
                 padding: '8px 20px',
                 borderRadius: 8,
-                background: forma ? '#185FA5' : 'var(--border-md)',
-                color: forma ? 'var(--surface)' : 'var(--text-muted)',
+                background: podeConfirmar ? '#185FA5' : 'var(--border-md)',
+                color: podeConfirmar ? 'var(--surface)' : 'var(--text-muted)',
                 fontSize: 13,
                 fontWeight: 600,
-                cursor: forma ? 'pointer' : 'not-allowed',
+                cursor: podeConfirmar ? 'pointer' : 'not-allowed',
               }}
             >
               {salvando ? 'Salvando...' : 'Confirmar pagamento'}
@@ -536,12 +539,17 @@ export default function ContasPagar({ usuario }) {
 
   async function confirmarPagamento(id, forma, valor, data) {
     try {
-      await window.api.contasPagar.pagar({
+      const resultado = await window.api.contasPagar.pagar({
         id,
+        forma,
         valor_pagamento: valor,
         data_pagamento: data,
         usuario: usuario?.usuario || 'sistema',
       })
+      if (!resultado?.sucesso) {
+        await window.api.dialog.alert(resultado?.erro || 'Erro ao registrar pagamento.')
+        return
+      }
       setContaPagando(null)
       setSelecionadas([])
       setSucesso('✅ Pagamento registrado!')
@@ -549,6 +557,7 @@ export default function ContasPagar({ usuario }) {
       await carregar()
     } catch (err) {
       console.error('Erro ao registrar pagamento:', err)
+      await window.api.dialog.alert('Erro ao registrar pagamento: ' + err.message)
     }
   }
 

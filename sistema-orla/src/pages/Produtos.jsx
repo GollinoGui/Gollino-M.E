@@ -214,7 +214,7 @@ export default function Produtos({ usuario }) {
       // própria senha do operador logado (nível 1), só admin/elter (nível 2+).
       let ok = false
       for (const usr of ['admin', 'elter']) {
-        const res = await window.api.auth.login({
+        const res = await window.api.auth.verificarSenha({
           usuario: usr,
           senha: senhaExcluir,
         })
