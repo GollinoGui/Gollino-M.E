@@ -113,6 +113,25 @@ export default function App() {
   const [updateDisponivel, setUpdateDisponivel] = useState(false)
   const [updateBaixado, setUpdateBaixado] = useState(false)
 
+  // O login "lembrado" acima só pula a TELA de login — não garante que a
+  // sessão real do Supabase (processo principal) ainda seja aceita. Se ela
+  // expirou/foi revogada, o RLS devolve tudo vazio silenciosamente e o app
+  // parece "logado" só que zerado. Confirma aqui e derruba pro login de
+  // verdade se a sessão não for mais válida.
+  useEffect(() => {
+    const salvo = localStorage.getItem(CHAVE_SESSAO)
+    if (!salvo) return
+    window.api.auth.sessaoValida().then((res) => {
+      if (res?.valido) {
+        localStorage.setItem(CHAVE_SESSAO, JSON.stringify(res.usuario))
+        setUsuario(res.usuario)
+      } else {
+        localStorage.removeItem(CHAVE_SESSAO)
+        setUsuario(null)
+      }
+    }).catch(() => {})
+  }, [])
+
   useEffect(() => {
     if (!window.api?.updates) return
     const offDisponivel = window.api.updates.aoDisponivel(() => setUpdateDisponivel(true))

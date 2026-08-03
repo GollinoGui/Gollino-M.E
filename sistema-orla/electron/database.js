@@ -98,6 +98,26 @@ async function logout() {
   return { sucesso: true }
 }
 
+// Confirma que a sessão persistida (arquivo local) ainda é aceita pelo
+// Supabase antes da UI confiar no login "lembrado" — sem isto, uma sessão
+// expirada/revogada faz o app parecer logado enquanto o RLS devolve tudo
+// vazio silenciosamente (ver comentário em supabaseClient.js).
+async function sessaoValida() {
+  const { data: atual } = await supabase.auth.getSession()
+  if (!atual?.session?.user) return { valido: false }
+
+  const { data: perfil, error: perfilErro } = await supabase
+    .from('usuarios')
+    .select('usuario, nome, nivel, super_usuario, codigo_vendedor, ativo, menus_ocultos')
+    .eq('auth_id', atual.session.user.id)
+    .single()
+
+  if (perfilErro || !perfil || perfil.ativo !== 'S') return { valido: false }
+
+  const { ativo: _a, ...usuarioSemAtivo } = perfil
+  return { valido: true, usuario: usuarioSemAtivo }
+}
+
 // Verifica a senha de um usuário (usado nas telas de "confirmar exclusão")
 // sem trocar a identidade da sessão em uso — signInWithPassword troca a
 // sessão real do cliente Supabase quando bem-sucedido, então a sessão atual
@@ -1166,6 +1186,7 @@ module.exports = {
   login,
   logout,
   verificarSenha,
+  sessaoValida,
   clientes,
   produtos,
   vendas,
