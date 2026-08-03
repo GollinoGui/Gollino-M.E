@@ -1,5 +1,16 @@
 import { useState, useEffect } from 'react'
 import { Search, Plus, DollarSign, RefreshCw } from 'lucide-react'
+import ThOrdenavel from '../components/ThOrdenavel'
+import { BotoesRelatorio } from '../components/BotoesRelatorio'
+import { useOrdenacao } from '../utils/ordenacao'
+import {
+  exportarCSV,
+  agruparPorPessoa,
+  buscarEmpresa,
+  gerarHtmlAgrupadoPorPessoa,
+  gerarPdfRelatorio,
+  fmtMoedaBR,
+} from '../utils/relatorios'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -14,14 +25,15 @@ function getSituacao(c) {
   return 'ABERTO'
 }
 
+const STATUS_CFG = {
+  ABERTO: { bg: '#EBF3FC', color: '#185FA5', label: 'Aberto' },
+  VENCIDO: { bg: '#FFF0F0', color: '#C53030', label: 'Vencido' },
+  PAGO: { bg: '#EAF6EE', color: '#22863A', label: 'Pago' },
+  CANCELADO: { bg: '#F7F7F7', color: 'var(--text-muted)', label: 'Cancelado' },
+}
+
 function StatusBadge({ status }) {
-  const cfg = {
-    ABERTO: { bg: '#EBF3FC', color: '#185FA5', label: 'Aberto' },
-    VENCIDO: { bg: '#FFF0F0', color: '#C53030', label: 'Vencido' },
-    PAGO: { bg: '#EAF6EE', color: '#22863A', label: 'Pago' },
-    CANCELADO: { bg: '#F7F7F7', color: 'var(--text-muted)', label: 'Cancelado' },
-  }
-  const s = cfg[status] || cfg.ABERTO
+  const s = STATUS_CFG[status] || STATUS_CFG.ABERTO
   return (
     <span
       style={{
@@ -474,6 +486,7 @@ function ModalNova({ onClose, onSalvar }) {
 }
 
 export default function ContasPagar({ usuario }) {
+  const podeGerenciar = (usuario?.nivel ?? 0) >= 2
   const [dados, setDados] = useState([])
   const [loading, setLoading] = useState(true)
   const [busca, setBusca] = useState('')
@@ -531,6 +544,74 @@ export default function ContasPagar({ usuario }) {
     .filter((c) => getSituacao(c) === 'VENCIDO')
     .reduce((s, c) => s + (c.valor_docto || 0), 0)
 
+  const { ordenados, coluna, direcao, alternar } = useOrdenacao(filtrados, {
+    acessores: {
+      nome_fornecedor: (c) => c.nome_fornecedor || c.codigo_fornecedor || '',
+      situacao: (c) => getSituacao(c),
+    },
+  })
+
+  // ── Relatório (Excel/PDF), agrupado por fornecedor e em ordem alfabética ──
+  function exportarExcel() {
+    const grupos = agruparPorPessoa(filtrados, { codigoKey: 'codigo_fornecedor', nomeKey: 'nome_fornecedor' })
+    const linhas = []
+    for (const g of grupos) {
+      for (const c of g.itens) {
+        linhas.push({
+          Documento: c.nro_docto || '—',
+          Fornecedor: g.nome,
+          Vencimento: fmtDate(c.data_vencimento),
+          'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
+          Situação: STATUS_CFG[getSituacao(c)].label,
+        })
+      }
+      const subtotal = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+      linhas.push({
+        Documento: '',
+        Fornecedor: `SUBTOTAL — ${g.nome}`,
+        Vencimento: '',
+        'Valor (R$)': subtotal.toFixed(2).replace('.', ','),
+        Situação: '',
+      })
+    }
+    const totalGeral = filtrados.reduce((s, c) => s + (c.valor_docto || 0), 0)
+    linhas.push({
+      Documento: '',
+      Fornecedor: 'TOTAL GERAL',
+      Vencimento: '',
+      'Valor (R$)': totalGeral.toFixed(2).replace('.', ','),
+      Situação: '',
+    })
+    exportarCSV(linhas, `contas_pagar_${new Date().toISOString().slice(0, 10)}`)
+  }
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const grupos = agruparPorPessoa(filtrados, { codigoKey: 'codigo_fornecedor', nomeKey: 'nome_fornecedor' })
+    const colunas = [
+      { label: 'Documento' },
+      { label: 'Vencimento' },
+      { label: 'Valor', num: true },
+      { label: 'Situação' },
+    ]
+    const totalGeral = filtrados.reduce((s, c) => s + (c.valor_docto || 0), 0)
+    const html = gerarHtmlAgrupadoPorPessoa({
+      empresa,
+      titulo: 'Contas a Pagar',
+      subtitulo: `${filtrados.length} conta(s) — gerado em ${fmtDate(new Date().toISOString().slice(0, 10))}`,
+      colunas,
+      grupos,
+      montarLinha: (c) =>
+        `<tr><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td>${STATUS_CFG[getSituacao(c)].label}</td></tr>`,
+      montarSubtotal: (g) => {
+        const subtotal = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+        return `<td colspan="2">Subtotal</td><td class="num">${fmtMoedaBR(subtotal)}</td><td></td>`
+      },
+      montarTotalGeral: () => `<td colspan="2">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalGeral)}</td><td></td>`,
+    })
+    await gerarPdfRelatorio(html, `contas_pagar_${new Date().toISOString().slice(0, 10)}`)
+  }
+
   function toggleSel(id) {
     setSelecionadas((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
@@ -587,7 +668,7 @@ export default function ContasPagar({ usuario }) {
     selecionadas.length === 1
       ? dados.find((c) => c.id === selecionadas[0])
       : null
-  const podePagar = contaSel && getSituacao(contaSel) !== 'PAGO'
+  const podePagar = podeGerenciar && contaSel && getSituacao(contaSel) !== 'PAGO'
 
   return (
     <div
@@ -693,24 +774,26 @@ export default function ContasPagar({ usuario }) {
           >
             <RefreshCw size={13} />
           </button>
-          <button
-            onClick={() => setModalNova(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              height: 34,
-              padding: '0 14px',
-              background: '#185FA5',
-              color: 'var(--surface)',
-              borderRadius: 8,
-              fontSize: 13,
-              fontWeight: 600,
-              border: 'none',
-            }}
-          >
-            <Plus size={14} /> Nova conta
-          </button>
+          {podeGerenciar && (
+            <button
+              onClick={() => setModalNova(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                height: 34,
+                padding: '0 14px',
+                background: '#185FA5',
+                color: 'var(--surface)',
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 600,
+                border: 'none',
+              }}
+            >
+              <Plus size={14} /> Nova conta
+            </button>
+          )}
         </div>
 
         <div
@@ -791,22 +874,28 @@ export default function ContasPagar({ usuario }) {
               <tr>
                 <th style={thStyle}></th>
                 {[
-                  'Fornecedor',
-                  'Documento',
-                  'Vencimento',
-                  'Valor',
-                  'Dt. Pagamento',
-                  'Forma',
-                  'Situação',
+                  { label: 'Fornecedor', chave: 'nome_fornecedor' },
+                  { label: 'Documento', chave: 'nro_docto' },
+                  { label: 'Vencimento', chave: 'data_vencimento' },
+                  { label: 'Valor', chave: 'valor_docto' },
+                  { label: 'Dt. Pagamento', chave: 'data_pagamento' },
+                  { label: 'Forma', chave: 'codigo_forma_pagamento' },
+                  { label: 'Situação', chave: 'situacao' },
                 ].map((h) => (
-                  <th key={h} style={thStyle}>
-                    {h}
-                  </th>
+                  <ThOrdenavel
+                    key={h.chave}
+                    label={h.label}
+                    chave={h.chave}
+                    colunaAtual={coluna}
+                    direcao={direcao}
+                    onOrdenar={alternar}
+                    style={thStyle}
+                  />
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtrados.map((c) => {
+              {ordenados.map((c) => {
                 const sel = selecionadas.includes(c.id)
                 const sit = getSituacao(c)
                 const vencido = sit === 'VENCIDO'
@@ -926,27 +1015,30 @@ export default function ContasPagar({ usuario }) {
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
           {filtrados.length} registro(s) · Selecionadas: {selecionadas.length}
         </span>
+        <BotoesRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />
         <div style={{ flex: 1 }} />
-        <button
-          disabled={!podePagar}
-          onClick={() => contaSel && setContaPagando(contaSel)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            height: 34,
-            padding: '0 16px',
-            borderRadius: 8,
-            fontSize: 13,
-            fontWeight: 600,
-            background: podePagar ? '#185FA5' : 'var(--border-md)',
-            color: podePagar ? 'var(--surface)' : 'var(--text-muted)',
-            cursor: podePagar ? 'pointer' : 'not-allowed',
-            border: 'none',
-          }}
-        >
-          <DollarSign size={14} /> Registrar pagamento
-        </button>
+        {podeGerenciar && (
+          <button
+            disabled={!podePagar}
+            onClick={() => contaSel && setContaPagando(contaSel)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              height: 34,
+              padding: '0 16px',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 600,
+              background: podePagar ? '#185FA5' : 'var(--border-md)',
+              color: podePagar ? 'var(--surface)' : 'var(--text-muted)',
+              cursor: podePagar ? 'pointer' : 'not-allowed',
+              border: 'none',
+            }}
+          >
+            <DollarSign size={14} /> Registrar pagamento
+          </button>
+        )}
       </div>
     </div>
   )

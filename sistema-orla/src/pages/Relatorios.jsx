@@ -6,7 +6,6 @@ import {
   DollarSign,
   Package,
   RefreshCw,
-  Download,
   ShoppingCart,
   Truck,
   Archive,
@@ -14,56 +13,26 @@ import {
   Wallet,
   Printer,
 } from 'lucide-react'
+import ThOrdenavel from '../components/ThOrdenavel'
+import { BotaoExportarExcel, BotaoGerarRelatorioPDF } from '../components/BotoesRelatorio'
+import { useOrdenacao } from '../utils/ordenacao'
+import {
+  exportarCSV,
+  agruparPorPessoa,
+  buscarEmpresa,
+  gerarHtmlAgrupadoPorPessoa,
+  gerarHtmlListaSimples,
+  gerarPdfRelatorio,
+  fmtMoedaBR,
+} from '../utils/relatorios'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = (d) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-'
 
-// ── Exportar CSV (abre no Excel) ──────────────────────────────────────────────
-function exportarCSV(linhas, nomeArquivo) {
-  if (!linhas || linhas.length === 0) return
-  const cabecalho = Object.keys(linhas[0])
-  const escapar = (v) => {
-    const s = String(v ?? '')
-    return s.includes(',') || s.includes('"') || s.includes('\n')
-      ? `"${s.replace(/"/g, '""')}"`
-      : s
-  }
-  const csv =
-    '\uFEFF' + // BOM para Excel reconhecer UTF-8
-    [cabecalho.join(';'), ...linhas.map((l) => cabecalho.map((c) => escapar(l[c])).join(';'))].join('\r\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${nomeArquivo}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
 function BtnExportar({ onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        height: 30,
-        padding: '0 12px',
-        border: '1px solid var(--border-md)',
-        borderRadius: 'var(--radius-md)',
-        fontSize: 12,
-        color: 'var(--text-secondary)',
-        background: 'var(--surface)',
-      }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
-      onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface)')}
-    >
-      <Download size={12} /> Exportar Excel
-    </button>
-  )
+  return <BotaoExportarExcel onClick={onClick} />
 }
 
 function mesAtual() {
@@ -667,6 +636,51 @@ function RelProdutos() {
     1,
   )
 
+  const { ordenados, coluna, direcao, alternar } = useOrdenacao(produtos, {
+    colunaInicial: 'descricao',
+    acessores: {
+      valor_total: (p) => (p.estoque_atual || 0) * (p.preco_venda_vista || 0),
+    },
+  })
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const emOrdem = [...produtos].sort((a, b) =>
+      String(a.descricao || '').localeCompare(String(b.descricao || ''), 'pt-BR', { sensitivity: 'base' }),
+    )
+    const valorTotalEstoque = produtos.reduce(
+      (s, p) => s + (p.estoque_atual || 0) * (p.preco_venda_vista || 0),
+      0,
+    )
+    const colunas = [
+      { label: 'Código' },
+      { label: 'Descrição' },
+      { label: 'UN' },
+      { label: 'Preço vista', num: true },
+      { label: 'Preço prazo', num: true },
+      { label: 'Estoque', num: true },
+      { label: 'Valor total', num: true },
+    ]
+    const html = gerarHtmlListaSimples({
+      empresa,
+      titulo: 'Produtos',
+      subtitulo: `${produtos.length} produto(s), em ordem alfabética`,
+      colunas,
+      linhas: emOrdem,
+      montarLinha: (p) => `<tr>
+        <td>${p.codigo}</td>
+        <td>${p.descricao}</td>
+        <td>${p.unidade || ''}</td>
+        <td class="num">${fmtMoedaBR(p.preco_venda_vista)}</td>
+        <td class="num">${fmtMoedaBR(p.preco_venda_prazo)}</td>
+        <td class="num">${p.estoque_atual || 0}</td>
+        <td class="num">${fmtMoedaBR((p.estoque_atual || 0) * (p.preco_venda_vista || 0))}</td>
+      </tr>`,
+      montarTotalGeral: () => `<td colspan="6">VALOR TOTAL DO ESTOQUE</td><td class="num">${fmtMoedaBR(valorTotalEstoque)}</td>`,
+    })
+    await gerarPdfRelatorio(html, 'produtos_estoque')
+  }
+
   return (
     <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
       {loading ? (
@@ -788,22 +802,29 @@ function RelProdutos() {
               <div style={{ fontSize: 13, fontWeight: 500 }}>
                 Listagem de produtos ({produtos.length})
               </div>
-              <BtnExportar
-                onClick={() =>
-                  exportarCSV(
-                    produtos.map((p) => ({
-                      Código: p.codigo,
-                      Descrição: p.descricao,
-                      UN: p.unidade,
-                      'Preço Vista (R$)': (p.preco_venda_vista || 0).toFixed(2).replace('.', ','),
-                      'Preço Prazo (R$)': (p.preco_venda_prazo || 0).toFixed(2).replace('.', ','),
-                      Estoque: p.estoque_atual || 0,
-                      'Valor Total (R$)': ((p.estoque_atual || 0) * (p.preco_venda_vista || 0)).toFixed(2).replace('.', ','),
-                    })),
-                    'produtos_estoque',
-                  )
-                }
-              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <BtnExportar
+                  onClick={() =>
+                    exportarCSV(
+                      [...produtos]
+                        .sort((a, b) =>
+                          String(a.descricao || '').localeCompare(String(b.descricao || ''), 'pt-BR', { sensitivity: 'base' }),
+                        )
+                        .map((p) => ({
+                          Código: p.codigo,
+                          Descrição: p.descricao,
+                          UN: p.unidade,
+                          'Preço Vista (R$)': (p.preco_venda_vista || 0).toFixed(2).replace('.', ','),
+                          'Preço Prazo (R$)': (p.preco_venda_prazo || 0).toFixed(2).replace('.', ','),
+                          Estoque: p.estoque_atual || 0,
+                          'Valor Total (R$)': ((p.estoque_atual || 0) * (p.preco_venda_vista || 0)).toFixed(2).replace('.', ','),
+                        })),
+                      'produtos_estoque',
+                    )
+                  }
+                />
+                <BotaoGerarRelatorioPDF onGerar={gerarRelatorioPDF} />
+              </div>
             </div>
             <table
               style={{
@@ -824,16 +845,21 @@ function RelProdutos() {
               <thead>
                 <tr>
                   {[
-                    'Código',
-                    'Descrição',
-                    'UN',
-                    'Preço vista',
-                    'Preço prazo',
-                    'Estoque',
-                    'Valor total',
+                    { label: 'Código', chave: 'codigo' },
+                    { label: 'Descrição', chave: 'descricao' },
+                    { label: 'UN', chave: 'unidade' },
+                    { label: 'Preço vista', chave: 'preco_venda_vista' },
+                    { label: 'Preço prazo', chave: 'preco_venda_prazo' },
+                    { label: 'Estoque', chave: 'estoque_atual' },
+                    { label: 'Valor total', chave: 'valor_total' },
                   ].map((h) => (
-                    <th
-                      key={h}
+                    <ThOrdenavel
+                      key={h.chave}
+                      label={h.label}
+                      chave={h.chave}
+                      colunaAtual={coluna}
+                      direcao={direcao}
+                      onOrdenar={alternar}
                       style={{
                         padding: '8px 10px',
                         fontSize: 11,
@@ -843,14 +869,12 @@ function RelProdutos() {
                         background: 'var(--gray-50)',
                         borderBottom: '1px solid var(--border)',
                       }}
-                    >
-                      {h}
-                    </th>
+                    />
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {produtos.map((p) => {
+                {ordenados.map((p) => {
                   const est = p.estoque_atual || 0
                   const minimo = p.estoque_minimo || 5
                   return (
@@ -1044,6 +1068,88 @@ function RelContasReceber() {
   }, {})
   const maxCliente = Math.max(...Object.values(porCliente), 1)
 
+  function situacaoDe(c) {
+    if (c.situacao_docto === 'P') return 'Baixado'
+    if (c.situacao_docto === 'X') return 'Prejuízo'
+    if (c.situacao_docto === 'C') return 'Cancelado'
+    if (c.situacao_docto === 'A' && c.data_vencimento < hoje) return 'Vencido'
+    return 'Aberto'
+  }
+
+  const { ordenados, coluna, direcao, alternar } = useOrdenacao(contas, {
+    acessores: {
+      nome_cliente: (c) => c.nome_cliente || c.codigo_cliente || '',
+      em_aberto: (c) => (c.valor_docto || 0) - (c.valor_pagamento || 0),
+      situacao: (c) => situacaoDe(c),
+    },
+  })
+
+  function exportarExcel() {
+    const grupos = agruparPorPessoa(contas, { codigoKey: 'codigo_cliente', nomeKey: 'nome_cliente' })
+    const linhas = []
+    for (const g of grupos) {
+      for (const c of g.itens) {
+        linhas.push({
+          Documento: c.nro_docto || '—',
+          Seq: c.seq_docto || '—',
+          Cliente: g.nome,
+          Vencimento: fmtDate(c.data_vencimento),
+          'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
+          'Em Aberto (R$)': ((c.valor_docto || 0) - (c.valor_pagamento || 0)).toFixed(2).replace('.', ','),
+          Situação: situacaoDe(c),
+        })
+      }
+      const subDocto = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+      const subAberto = g.itens.reduce((s, c) => s + ((c.valor_docto || 0) - (c.valor_pagamento || 0)), 0)
+      linhas.push({
+        Documento: '', Seq: '', Cliente: `SUBTOTAL — ${g.nome}`, Vencimento: '',
+        'Valor (R$)': subDocto.toFixed(2).replace('.', ','),
+        'Em Aberto (R$)': subAberto.toFixed(2).replace('.', ','),
+        Situação: '',
+      })
+    }
+    const totalDocto = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
+    linhas.push({
+      Documento: '', Seq: '', Cliente: 'TOTAL GERAL', Vencimento: '',
+      'Valor (R$)': totalDocto.toFixed(2).replace('.', ','),
+      'Em Aberto (R$)': totalAberto.toFixed(2).replace('.', ','),
+      Situação: '',
+    })
+    exportarCSV(linhas, 'contas_receber')
+  }
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const grupos = agruparPorPessoa(contas, { codigoKey: 'codigo_cliente', nomeKey: 'nome_cliente' })
+    const totalDocto = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
+    const colunas = [
+      { label: 'Documento' },
+      { label: 'Vencimento' },
+      { label: 'Valor', num: true },
+      { label: 'Em Aberto', num: true },
+      { label: 'Situação' },
+    ]
+    const html = gerarHtmlAgrupadoPorPessoa({
+      empresa,
+      titulo: 'Contas a Receber',
+      subtitulo: `${contas.length} parcela(s)`,
+      colunas,
+      grupos,
+      montarLinha: (c) => {
+        const emAberto = (c.valor_docto || 0) - (c.valor_pagamento || 0)
+        return `<tr><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${situacaoDe(c)}</td></tr>`
+      },
+      montarSubtotal: (g) => {
+        const subDocto = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+        const subAberto = g.itens.reduce((s, c) => s + ((c.valor_docto || 0) - (c.valor_pagamento || 0)), 0)
+        return `<td colspan="2">Subtotal</td><td class="num">${fmtMoedaBR(subDocto)}</td><td class="num">${fmtMoedaBR(subAberto)}</td><td></td>`
+      },
+      montarTotalGeral: () =>
+        `<td colspan="2">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDocto)}</td><td class="num">${fmtMoedaBR(totalAberto)}</td><td></td>`,
+    })
+    await gerarPdfRelatorio(html, 'contas_receber')
+  }
+
   return (
     <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', gap: 10, marginBottom: 20, alignItems: 'flex-end' }}>
@@ -1191,37 +1297,30 @@ function RelContasReceber() {
               <div style={{ fontSize: 13, fontWeight: 500 }}>
                 Listagem de parcelas ({contas.length})
               </div>
-              <BtnExportar
-                onClick={() =>
-                  exportarCSV(
-                    contas.map((c) => ({
-                      Documento: c.nro_docto || '—',
-                      Seq: c.seq_docto || '—',
-                      Cliente: c.nome_cliente || c.codigo_cliente || '—',
-                      Vencimento: fmtDate(c.data_vencimento),
-                      'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
-                      'Em Aberto (R$)': ((c.valor_docto || 0) - (c.valor_pagamento || 0)).toFixed(2).replace('.', ','),
-                      Situação: c.situacao_docto === 'P' ? 'Baixado' : c.data_vencimento < new Date().toISOString().slice(0, 10) ? 'Vencido' : 'Aberto',
-                    })),
-                    'contas_receber',
-                  )
-                }
-              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <BtnExportar onClick={exportarExcel} />
+                <BotaoGerarRelatorioPDF onGerar={gerarRelatorioPDF} />
+              </div>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
                   {[
-                    'Documento',
-                    'Seq',
-                    'Cliente',
-                    'Vencimento',
-                    'Valor',
-                    'Em aberto',
-                    'Situação',
+                    { label: 'Documento', chave: 'nro_docto' },
+                    { label: 'Seq', chave: 'seq_docto' },
+                    { label: 'Cliente', chave: 'nome_cliente' },
+                    { label: 'Vencimento', chave: 'data_vencimento' },
+                    { label: 'Valor', chave: 'valor_docto' },
+                    { label: 'Em aberto', chave: 'em_aberto' },
+                    { label: 'Situação', chave: 'situacao' },
                   ].map((h) => (
-                    <th
-                      key={h}
+                    <ThOrdenavel
+                      key={h.chave}
+                      label={h.label}
+                      chave={h.chave}
+                      colunaAtual={coluna}
+                      direcao={direcao}
+                      onOrdenar={alternar}
                       style={{
                         padding: '8px 14px',
                         fontSize: 11,
@@ -1231,14 +1330,12 @@ function RelContasReceber() {
                         background: 'var(--gray-50)',
                         borderBottom: '1px solid var(--border)',
                       }}
-                    >
-                      {h}
-                    </th>
+                    />
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {contas.map((c) => {
+                {ordenados.map((c) => {
                   const vencido =
                     c.situacao_docto === 'A' && c.data_vencimento < hoje
                   const pago = c.situacao_docto === 'P'
@@ -1334,23 +1431,31 @@ function RelContasReceber() {
                       >
                         <span
                           style={{
-                            background: pago
-                              ? 'var(--green-50)'
-                              : vencido
-                                ? 'var(--red-50)'
-                                : 'var(--blue-50)',
-                            color: pago
-                              ? 'var(--green-700)'
-                              : vencido
-                                ? 'var(--red-500)'
-                                : 'var(--blue-800)',
+                            background: c.situacao_docto === 'X'
+                              ? '#3A3A3A'
+                              : pago
+                                ? 'var(--green-50)'
+                                : c.situacao_docto === 'C'
+                                  ? 'var(--gray-100)'
+                                  : vencido
+                                    ? 'var(--red-50)'
+                                    : 'var(--blue-50)',
+                            color: c.situacao_docto === 'X'
+                              ? '#fff'
+                              : pago
+                                ? 'var(--green-700)'
+                                : c.situacao_docto === 'C'
+                                  ? 'var(--text-muted)'
+                                  : vencido
+                                    ? 'var(--red-500)'
+                                    : 'var(--blue-800)',
                             padding: '2px 9px',
                             borderRadius: 10,
                             fontSize: 11,
                             fontWeight: 500,
                           }}
                         >
-                          {pago ? 'Baixado' : vencido ? 'Vencido' : 'Aberto'}
+                          {situacaoDe(c)}
                         </span>
                       </td>
                     </tr>
@@ -1398,6 +1503,73 @@ function RelContasPagar() {
     (s, c) => s + ((c.valor_docto || 0) - (c.valor_pagamento || 0)),
     0,
   )
+
+  function situacaoDe(c) {
+    if (c.situacao_docto === 'P') return 'Pago'
+    if (c.situacao_docto === 'A' && c.data_vencimento < hoje) return 'Vencido'
+    return 'Aberto'
+  }
+
+  const { ordenados, coluna, direcao, alternar } = useOrdenacao(contas, {
+    acessores: {
+      nome_fornecedor: (c) => c.nome_fornecedor || '',
+      situacao: (c) => situacaoDe(c),
+    },
+  })
+
+  function exportarExcel() {
+    const grupos = agruparPorPessoa(contas, { codigoKey: 'codigo_fornecedor', nomeKey: 'nome_fornecedor' })
+    const linhas = []
+    for (const g of grupos) {
+      for (const c of g.itens) {
+        linhas.push({
+          Documento: c.nro_docto || '—',
+          Fornecedor: g.nome,
+          Vencimento: fmtDate(c.data_vencimento),
+          'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
+          Situação: situacaoDe(c),
+        })
+      }
+      const subtotal = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+      linhas.push({
+        Documento: '', Fornecedor: `SUBTOTAL — ${g.nome}`, Vencimento: '',
+        'Valor (R$)': subtotal.toFixed(2).replace('.', ','), Situação: '',
+      })
+    }
+    const totalGeral = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
+    linhas.push({
+      Documento: '', Fornecedor: 'TOTAL GERAL', Vencimento: '',
+      'Valor (R$)': totalGeral.toFixed(2).replace('.', ','), Situação: '',
+    })
+    exportarCSV(linhas, 'contas_pagar')
+  }
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const grupos = agruparPorPessoa(contas, { codigoKey: 'codigo_fornecedor', nomeKey: 'nome_fornecedor' })
+    const totalGeral = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
+    const colunas = [
+      { label: 'Documento' },
+      { label: 'Vencimento' },
+      { label: 'Valor', num: true },
+      { label: 'Situação' },
+    ]
+    const html = gerarHtmlAgrupadoPorPessoa({
+      empresa,
+      titulo: 'Contas a Pagar',
+      subtitulo: `${contas.length} conta(s)`,
+      colunas,
+      grupos,
+      montarLinha: (c) =>
+        `<tr><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td>${situacaoDe(c)}</td></tr>`,
+      montarSubtotal: (g) => {
+        const subtotal = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+        return `<td colspan="2">Subtotal</td><td class="num">${fmtMoedaBR(subtotal)}</td><td></td>`
+      },
+      montarTotalGeral: () => `<td colspan="2">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalGeral)}</td><td></td>`,
+    })
+    await gerarPdfRelatorio(html, 'contas_pagar')
+  }
 
   return (
     <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
@@ -1563,50 +1735,43 @@ function RelContasPagar() {
               <div style={{ fontSize: 13, fontWeight: 500 }}>
                 Listagem de contas a pagar ({contas.length})
               </div>
-              <BtnExportar
-                onClick={() =>
-                  exportarCSV(
-                    contas.map((c) => {
-                      const hoje = new Date().toISOString().slice(0, 10)
-                      const vencido = c.situacao_docto === 'A' && c.data_vencimento < hoje
-                      return {
-                        Documento: c.nro_docto || '—',
-                        Fornecedor: c.nome_fornecedor || '—',
-                        Vencimento: fmtDate(c.data_vencimento),
-                        'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
-                        Situação: c.situacao_docto === 'P' ? 'Pago' : vencido ? 'Vencido' : 'Aberto',
-                      }
-                    }),
-                    'contas_pagar',
-                  )
-                }
-              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <BtnExportar onClick={exportarExcel} />
+                <BotaoGerarRelatorioPDF onGerar={gerarRelatorioPDF} />
+              </div>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Documento', 'Fornecedor', 'Vencimento', 'Valor', 'Situação'].map(
-                    (h) => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: '8px 14px',
-                          fontSize: 11,
-                          fontWeight: 500,
-                          color: 'var(--text-secondary)',
-                          textAlign: 'left',
-                          background: 'var(--gray-50)',
-                          borderBottom: '1px solid var(--border)',
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ),
-                  )}
+                  {[
+                    { label: 'Documento', chave: 'nro_docto' },
+                    { label: 'Fornecedor', chave: 'nome_fornecedor' },
+                    { label: 'Vencimento', chave: 'data_vencimento' },
+                    { label: 'Valor', chave: 'valor_docto' },
+                    { label: 'Situação', chave: 'situacao' },
+                  ].map((h) => (
+                    <ThOrdenavel
+                      key={h.chave}
+                      label={h.label}
+                      chave={h.chave}
+                      colunaAtual={coluna}
+                      direcao={direcao}
+                      onOrdenar={alternar}
+                      style={{
+                        padding: '8px 14px',
+                        fontSize: 11,
+                        fontWeight: 500,
+                        color: 'var(--text-secondary)',
+                        textAlign: 'left',
+                        background: 'var(--gray-50)',
+                        borderBottom: '1px solid var(--border)',
+                      }}
+                    />
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {contas.map((c) => {
+                {ordenados.map((c) => {
                   const vencido =
                     c.situacao_docto === 'A' && c.data_vencimento < hoje
                   const pago = c.situacao_docto === 'P'
@@ -1812,6 +1977,37 @@ function RelFinanceiro() {
     0,
   )
 
+  const resumoLinhas = [
+    { item: 'Total de vendas (período)', valor: totalVendas },
+    { item: 'Total recebido', valor: totalRecebido },
+    { item: 'Contas a pagar (abertas)', valor: totalPagar },
+    { item: 'Saldo do período', valor: saldo },
+    { item: 'Dinheiro', valor: totalDinheiro },
+    { item: 'Cartão Crédito', valor: totalCartaoC },
+    { item: 'Cartão Débito', valor: totalCartaoD },
+    { item: 'Cheque', valor: totalCheque },
+  ]
+
+  function exportarExcel() {
+    exportarCSV(
+      resumoLinhas.map((l) => ({ Item: l.item, 'Valor (R$)': l.valor.toFixed(2).replace('.', ',') })),
+      `financeiro_${dataInicio}_${dataFim}`,
+    )
+  }
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const html = gerarHtmlListaSimples({
+      empresa,
+      titulo: 'Resumo Financeiro',
+      subtitulo: `Período de ${fmtDate(dataInicio)} a ${fmtDate(dataFim)}`,
+      colunas: [{ label: 'Item' }, { label: 'Valor', num: true }],
+      linhas: resumoLinhas,
+      montarLinha: (l) => `<tr><td>${l.item}</td><td class="num">${fmtMoedaBR(l.valor)}</td></tr>`,
+    })
+    await gerarPdfRelatorio(html, `financeiro_${dataInicio}_${dataFim}`)
+  }
+
   return (
     <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', gap: 10, marginBottom: 20, alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -1827,6 +2023,9 @@ function RelFinanceiro() {
           style={{ height: 34, padding: '0 14px', border: '1px solid var(--border-md)', borderRadius: 'var(--radius-md)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)', cursor: 'pointer' }}>
           <RefreshCw size={12} /> Buscar
         </button>
+        <div style={{ flex: 1 }} />
+        {!loading && <BtnExportar onClick={exportarExcel} />}
+        {!loading && <BotaoGerarRelatorioPDF onGerar={gerarRelatorioPDF} />}
       </div>
       {loading ? (
         <Carregando />
@@ -2162,6 +2361,58 @@ function RelFechamentoCaixa() {
   const totalCartaoD = fechadas.reduce((s, c) => s + (c.valor_cartao_debito || 0), 0)
   const totalCheque = fechadas.reduce((s, c) => s + (c.valor_cheque || 0), 0)
 
+  const { ordenados, coluna, direcao, alternar } = useOrdenacao(sessoes, {
+    colunaInicial: 'data_abertura',
+    acessores: {
+      data_abertura: (s) => `${s.data_abertura || ''} ${s.hora_abertura || ''}`,
+      data_fechamento: (s) => `${s.data_fechamento || ''} ${s.hora_fechamento || ''}`,
+      situacao: (s) => (s.situacao === 'F' ? 'Fechado' : 'Aberto'),
+    },
+  })
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const colunas = [
+      { label: 'Abertura' },
+      { label: 'Fechamento' },
+      { label: 'Situação' },
+      { label: 'Vendas', num: true },
+      { label: 'Dinheiro', num: true },
+      { label: 'Cartão Créd.', num: true },
+      { label: 'Cartão Déb.', num: true },
+      { label: 'Cheque', num: true },
+      { label: 'Total', num: true },
+    ]
+    const html = gerarHtmlListaSimples({
+      empresa,
+      titulo: 'Fechamento de Caixa',
+      subtitulo: `Período de ${fmtDate(dataInicio)} a ${fmtDate(dataFim)} — ${fechadas.length} fechamento(s)`,
+      colunas,
+      linhas: sessoes,
+      montarLinha: (s) => `<tr>
+        <td>${fmtDate(s.data_abertura)} ${fmtHora(s.hora_abertura)}</td>
+        <td>${s.situacao === 'F' ? `${fmtDate(s.data_fechamento)} ${fmtHora(s.hora_fechamento)}` : '—'}</td>
+        <td>${s.situacao === 'F' ? 'Fechado' : 'Aberto'}</td>
+        <td class="num">${s.qtde_vendas || 0}</td>
+        <td class="num">${fmtMoedaBR(s.valor_dinheiro)}</td>
+        <td class="num">${fmtMoedaBR(s.valor_cartao_credito)}</td>
+        <td class="num">${fmtMoedaBR(s.valor_cartao_debito)}</td>
+        <td class="num">${fmtMoedaBR(s.valor_cheque)}</td>
+        <td class="num">${fmtMoedaBR(s.valor_total)}</td>
+      </tr>`,
+      montarTotalGeral: () => `
+        <td colspan="3">TOTAL — ${fechadas.length} fechamento(s)</td>
+        <td class="num">${totalVendas}</td>
+        <td class="num">${fmtMoedaBR(totalDinheiro)}</td>
+        <td class="num">${fmtMoedaBR(totalCartaoC)}</td>
+        <td class="num">${fmtMoedaBR(totalCartaoD)}</td>
+        <td class="num">${fmtMoedaBR(totalCheque)}</td>
+        <td class="num">${fmtMoedaBR(totalGeral)}</td>
+      `,
+    })
+    await gerarPdfRelatorio(html, `fechamento_caixa_${dataInicio}_${dataFim}`)
+  }
+
   return (
     <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -2189,6 +2440,7 @@ function RelFechamentoCaixa() {
           'Cheque (R$)': (s.valor_cheque || 0).toFixed(2).replace('.', ','),
           'Total (R$)': (s.valor_total || 0).toFixed(2).replace('.', ','),
         })), `fechamento_caixa_${dataInicio}_${dataFim}`)} />
+        <BotaoGerarRelatorioPDF onGerar={gerarRelatorioPDF} />
       </div>
 
       {!loading && (
@@ -2204,13 +2456,33 @@ function RelFechamentoCaixa() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ background: 'var(--gray-50)', borderBottom: '2px solid var(--border)' }}>
-                {['ABERTURA', 'POR', 'FECHAMENTO', 'POR', 'SITUAÇÃO', 'VENDAS', 'DINHEIRO', 'CARTÃO CRÉD.', 'CARTÃO DÉB.', 'CHEQUE', 'TOTAL'].map((h) => (
-                  <th key={h} style={{ padding: '8px 10px', textAlign: ['ABERTURA', 'POR', 'FECHAMENTO', 'SITUAÇÃO'].includes(h) ? 'left' : 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
+                {[
+                  { label: 'ABERTURA', chave: 'data_abertura', align: 'left' },
+                  { label: 'POR', chave: 'usuario_abertura', align: 'left' },
+                  { label: 'FECHAMENTO', chave: 'data_fechamento', align: 'left' },
+                  { label: 'POR', chave: 'usuario_fechamento', align: 'left' },
+                  { label: 'SITUAÇÃO', chave: 'situacao', align: 'left' },
+                  { label: 'VENDAS', chave: 'qtde_vendas', align: 'right' },
+                  { label: 'DINHEIRO', chave: 'valor_dinheiro', align: 'right' },
+                  { label: 'CARTÃO CRÉD.', chave: 'valor_cartao_credito', align: 'right' },
+                  { label: 'CARTÃO DÉB.', chave: 'valor_cartao_debito', align: 'right' },
+                  { label: 'CHEQUE', chave: 'valor_cheque', align: 'right' },
+                  { label: 'TOTAL', chave: 'valor_total', align: 'right' },
+                ].map((h) => (
+                  <ThOrdenavel
+                    key={h.chave}
+                    label={h.label}
+                    chave={h.chave}
+                    colunaAtual={coluna}
+                    direcao={direcao}
+                    onOrdenar={alternar}
+                    style={{ padding: '8px 10px', textAlign: h.align, fontWeight: 600, color: 'var(--text-muted)', fontSize: 11, whiteSpace: 'nowrap' }}
+                  />
                 ))}
               </tr>
             </thead>
             <tbody>
-              {sessoes.map((s) => (
+              {ordenados.map((s) => (
                 <tr key={s.id} style={{ borderBottom: '1px solid var(--border)' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>

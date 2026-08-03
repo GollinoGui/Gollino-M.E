@@ -60,11 +60,14 @@ function clampDesconto(v) {
 }
 
 function ModalItem({ produto, onConfirm, onClose }) {
-  const preco = produto.preco_venda_vista || produto.preco_vista || 0
+  const precoOriginal = produto.preco_venda_vista || produto.preco_vista || 0
   const fracionavel = UNIDADES_FRACIONAVEIS.has(produto.unidade)
   const [qty, setQty] = useState('1')
+  const [precoStr, setPrecoStr] = useState(precoOriginal.toFixed(2).replace('.', ','))
   const [desc, setDesc] = useState('0')
   const descAplicado = clampDesconto(desc)
+  const preco = parseQtd(precoStr)
+  const precoAlterado = Math.abs(preco - precoOriginal) > 0.001
   const total = parseQtd(qty) * preco * (1 - descAplicado / 100)
   const podeConfirmar = parseQtd(qty) > 0 && preco > 0
 
@@ -144,17 +147,23 @@ function ModalItem({ produto, onConfirm, onClose }) {
               Preço unitário
             </label>
             <input
-              value={preco.toFixed(2)}
-              readOnly
+              value={precoStr}
+              onChange={(e) => setPrecoStr(maskQtd(e.target.value))}
+              inputMode='decimal'
+              placeholder='0,00'
               style={{
                 width: '100%',
                 height: 36,
                 padding: '0 10px',
                 borderRadius: 8,
                 border: '1px solid var(--border-md)',
-                background: 'var(--gray-50)',
               }}
             />
+            {precoAlterado && (
+              <div style={{ fontSize: 11, color: '#B7791F', marginTop: 3 }}>
+                Preço de tabela: {fmt(precoOriginal)}
+              </div>
+            )}
           </div>
           <div>
             <label
@@ -237,6 +246,8 @@ function ModalItem({ produto, onConfirm, onClose }) {
                 ...produto,
                 qty: parseQtd(qty),
                 desconto: descAplicado,
+                preco_vista: preco,
+                preco_venda_vista: preco,
                 total,
               })
             }
@@ -669,10 +680,13 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
   function addItem(item) {
     const preco = item.preco_venda_vista || item.preco_vista || 0
 
-    // Verifica se há estoque suficiente
+    // Verifica se há estoque suficiente (soma todas as linhas já no carrinho
+    // para esse produto, já que o mesmo código pode aparecer em mais de uma
+    // linha quando vendido com preços/descontos diferentes)
     if (item.controla_estoque === 'S') {
-      const qtdNoCarrinho =
-        itens.find((i) => i.codigo === item.codigo)?.qty || 0
+      const qtdNoCarrinho = itens
+        .filter((i) => i.codigo === item.codigo)
+        .reduce((s, i) => s + i.qty, 0)
       const qtdTotal = qtdNoCarrinho + item.qty
       const estoque = item.estoque_atual || 0
       if (qtdTotal > estoque) {
@@ -689,7 +703,15 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
     }
 
     setItens((prev) => {
-      const idx = prev.findIndex((i) => i.codigo === item.codigo)
+      // Só combina com uma linha existente se preço e desconto forem iguais
+      // (preço unitário agora é editável na venda, então o mesmo produto
+      // pode ter linhas distintas com preços especiais diferentes)
+      const idx = prev.findIndex(
+        (i) =>
+          i.codigo === item.codigo &&
+          i.preco_vista === preco &&
+          i.desconto === item.desconto,
+      )
       if (idx >= 0) {
         const copy = [...prev]
         copy[idx] = {
@@ -699,13 +721,14 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
         }
         return copy
       }
-      return [...prev, { ...item, preco_vista: preco }]
+      const id = `${item.codigo}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+      return [...prev, { ...item, preco_vista: preco, id }]
     })
     setItemModal(null)
   }
 
-  function removeItem(codigo) {
-    setItens((prev) => prev.filter((i) => i.codigo !== codigo))
+  function removeItem(id) {
+    setItens((prev) => prev.filter((i) => i.id !== id))
   }
 
   async function proximoCodigoCliente() {
@@ -834,9 +857,11 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
       // produto não continuar aparecendo como disponível se acabou de zerar.
       setTodosProds((prev) =>
         prev.map((p) => {
-          const vendido = itens.find((i) => i.codigo === p.codigo)
-          return vendido
-            ? { ...p, estoque_atual: Math.max(0, (p.estoque_atual || 0) - vendido.qty) }
+          const qtdVendida = itens
+            .filter((i) => i.codigo === p.codigo)
+            .reduce((s, i) => s + i.qty, 0)
+          return qtdVendida > 0
+            ? { ...p, estoque_atual: Math.max(0, (p.estoque_atual || 0) - qtdVendida) }
             : p
         }),
       )
@@ -1129,7 +1154,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
           )}
           {itens.map((item) => (
             <div
-              key={item.codigo}
+              key={item.id}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1180,7 +1205,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
                 {fmt(item.total)}
               </div>
               <button
-                onClick={() => removeItem(item.codigo)}
+                onClick={() => removeItem(item.id)}
                 style={{
                   width: 22,
                   height: 22,

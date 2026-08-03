@@ -27,6 +27,34 @@ const sugestoes = [
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
+function resumoItensPrejuizo(itens) {
+  const lista = itens || []
+  return { qtde: lista.length, total: lista.reduce((s, i) => s + (i.valor || 0), 0) }
+}
+
+// Textos das solicitações de aprovação — hoje existem dois tipos:
+// CONTAGEM_ESTOQUE (ajuste de estoque) e BAIXA_PREJUIZO_CR (exclusão de
+// contas a receber por dívida incobrável).
+function textoSolicitacaoPendente(s) {
+  if (s.tipo === 'BAIXA_PREJUIZO_CR') {
+    const { qtde, total } = resumoItensPrejuizo(s.itens)
+    return `${s.usuario_solicitante || 'Alguém'} pediu para excluir ${qtde} conta${qtde !== 1 ? 's' : ''} a receber por prejuízo (${fmt(total)})`
+  }
+  return `${s.usuario_solicitante || 'Alguém'} solicitou aprovação de contagem de estoque (${(s.itens || []).length} produto${(s.itens || []).length !== 1 ? 's' : ''})`
+}
+
+function textoSolicitacaoResolvida(s) {
+  if (s.tipo === 'BAIXA_PREJUIZO_CR') {
+    const { qtde, total } = resumoItensPrejuizo(s.itens)
+    return s.situacao === 'APROVADO'
+      ? `✅ Seu pedido de exclusão por prejuízo (${qtde} conta${qtde !== 1 ? 's' : ''}, ${fmt(total)}) foi aprovado por ${s.usuario_aprovador || 'um administrador'}.`
+      : `❌ Seu pedido de exclusão por prejuízo foi rejeitado por ${s.usuario_aprovador || 'um administrador'}.${s.motivo_rejeicao ? ` Motivo: ${s.motivo_rejeicao}` : ''}`
+  }
+  return s.situacao === 'APROVADO'
+    ? `✅ Sua contagem de estoque foi aprovada por ${s.usuario_aprovador || 'um administrador'}. Estoque atualizado.`
+    : `❌ Sua contagem de estoque foi rejeitada por ${s.usuario_aprovador || 'um administrador'}.`
+}
+
 function formatarTexto(texto) {
   const partes = texto.split('\n')
   return partes.map((linha, i) => {
@@ -77,15 +105,12 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
     !caixaAberto && { tipo: 'danger', texto: 'Caixa não foi aberto hoje ainda!' },
     ...resultadosAprovacao.map((s) => ({
       tipo: 'resultado_aprovacao',
-      texto:
-        s.situacao === 'APROVADO'
-          ? `✅ Sua contagem de estoque foi aprovada por ${s.usuario_aprovador || 'um administrador'}. Estoque atualizado.`
-          : `❌ Sua contagem de estoque foi rejeitada por ${s.usuario_aprovador || 'um administrador'}.`,
+      texto: textoSolicitacaoResolvida(s),
       solicitacao: s,
     })),
     ...aprovacoesPendentes.map((s) => ({
       tipo: 'aprovacao',
-      texto: `${s.usuario_solicitante || 'Alguém'} solicitou aprovação de contagem de estoque (${(s.itens || []).length} produto${(s.itens || []).length !== 1 ? 's' : ''})`,
+      texto: textoSolicitacaoPendente(s),
       solicitacao: s,
     })),
     ...crVencidos.slice(0, 2).map((r) => ({
@@ -153,7 +178,7 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
         window.api.contasReceber.listar({ situacao: 'A' }),
         window.api.contasPagar.listar({ situacao: 'A' }),
         window.api.produtos.listar({ estoqueBaixo: true }),
-        podeAprovar ? window.api.aprovacoes.listarPendentes({ tipo: 'CONTAGEM_ESTOQUE' }) : Promise.resolve([]),
+        podeAprovar ? window.api.aprovacoes.listarPendentes({}) : Promise.resolve([]),
         nomeUsuarioAtual ? window.api.aprovacoes.listarResolvidasNaoVistas(nomeUsuarioAtual) : Promise.resolve([]),
       ])
       const novosDados = {
@@ -920,8 +945,15 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
 
       {confirmacaoAprovacao && confirmacaoAprovacao.tipo === 'aprovar' && (
         <ModalConfirmacao
-          titulo='Aprovar contagem'
-          mensagem={`Aprovar a contagem de estoque enviada por ${confirmacaoAprovacao.solicitacao.usuario_solicitante || 'este usuário'}? As quantidades serão atualizadas no estoque.`}
+          titulo={confirmacaoAprovacao.solicitacao.tipo === 'BAIXA_PREJUIZO_CR' ? 'Aprovar exclusão por prejuízo' : 'Aprovar contagem'}
+          mensagem={
+            confirmacaoAprovacao.solicitacao.tipo === 'BAIXA_PREJUIZO_CR'
+              ? (() => {
+                  const { qtde, total } = resumoItensPrejuizo(confirmacaoAprovacao.solicitacao.itens)
+                  return `Aprovar a exclusão de ${qtde} conta${qtde !== 1 ? 's' : ''} a receber por prejuízo (${fmt(total)}), pedida por ${confirmacaoAprovacao.solicitacao.usuario_solicitante || 'este usuário'}? O valor entra como perda no relatório diário e no lucro, e não pode ser desfeito.`
+                })()
+              : `Aprovar a contagem de estoque enviada por ${confirmacaoAprovacao.solicitacao.usuario_solicitante || 'este usuário'}? As quantidades serão atualizadas no estoque.`
+          }
           icone={Check}
           corIcone='#22863A'
           corFundoIcone='#E6F6EA'
@@ -934,8 +966,12 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
       )}
       {confirmacaoAprovacao && confirmacaoAprovacao.tipo === 'rejeitar' && (
         <ModalConfirmacao
-          titulo='Rejeitar contagem'
-          mensagem='Rejeitar esta contagem de estoque? As quantidades não serão alteradas.'
+          titulo={confirmacaoAprovacao.solicitacao.tipo === 'BAIXA_PREJUIZO_CR' ? 'Rejeitar exclusão por prejuízo' : 'Rejeitar contagem'}
+          mensagem={
+            confirmacaoAprovacao.solicitacao.tipo === 'BAIXA_PREJUIZO_CR'
+              ? 'Rejeitar este pedido de exclusão por prejuízo? As contas continuam em aberto normalmente.'
+              : 'Rejeitar esta contagem de estoque? As quantidades não serão alteradas.'
+          }
           icone={Ban}
           corIcone='#C53030'
           corFundoIcone='#FFF0F0'

@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard'
 import Vendas from './pages/Vendas'
 import ContasReceber from './pages/ContasReceber'
 import Clientes from './pages/Clientes'
+import Fornecedores from './pages/Fornecedores'
 import Produtos from './pages/Produtos'
 import Caixa from './pages/Caixa'
 import PreVendas from './pages/PreVendas'
@@ -231,13 +232,14 @@ export default function App() {
     'lucro-real':         250,
     // Gerente apenas
     'caixas-fechados':      2,
-    'contas-pagar':         2,
     'devolucao':            2,
     'haver':                2,
     'cheques-pagar':        2,
     'rel-financeiro':       2,
-    'rel-contas-pagar':     2,
-    // Operador e acima
+    // Operador e acima (Contas a pagar: nível 1 só visualiza — inserir/pagar
+    // continua exigindo nível 2, bloqueado no banco via RLS + na tela)
+    'contas-pagar':         1,
+    'rel-contas-pagar':     1,
     'contas-receber':       1,
     'fin-receber':          1,
     'cheques-receber':      1,
@@ -298,6 +300,9 @@ export default function App() {
       case 'produtos':
       case 'cad-produtos':
         return <Produtos usuario={usuario} />
+      case 'fornecedores':
+      case 'cad-fornecedores':
+        return <Fornecedores usuario={usuario} />
 
       // Estoque
       case 'entrada-mercadoria':

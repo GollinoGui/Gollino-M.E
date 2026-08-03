@@ -25,6 +25,7 @@ import {
   X,
   BarChart2,
   Wrench,
+  Truck,
 } from 'lucide-react'
 
 // Estrutura de menus da TopBar, compartilhada com a aba "Usuários" em
@@ -157,7 +158,7 @@ export const menus = [
     items: [
       { id: 'cad-clientes', label: 'Clientes', icon: Users },
       { id: 'cad-produtos', label: 'Produtos', icon: Package },
-      { id: 'cad-fornecedores', label: 'Fornecedores', icon: Users },
+      { id: 'cad-fornecedores', label: 'Fornecedores', icon: Truck },
     ],
   },
   {

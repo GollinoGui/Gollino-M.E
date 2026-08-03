@@ -11,9 +11,28 @@ import {
   Receipt,
   Wallet,
 } from 'lucide-react'
+import { BotoesRelatorio } from '../components/BotoesRelatorio'
+import {
+  exportarCSV,
+  buscarEmpresa,
+  gerarHtmlListaSimples,
+  gerarPdfRelatorio,
+  fmtMoedaBR,
+} from '../utils/relatorios'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+const TIPO_LABEL = {
+  venda: 'Venda',
+  abertura: 'Abertura',
+  sangria: 'Sangria',
+  reforco: 'Reforço',
+  despesa: 'Despesa',
+  vale: 'Vale',
+  receita: 'Receita',
+  recebimento_cr: 'Recebimento (CR)',
+}
 
 function ModalMovimento({ tipo, onClose, onConfirm, salvando, erro }) {
   const [valor, setValor] = useState('')
@@ -235,6 +254,45 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario, onNavigate
     vale: { icon: Wallet, bg: '#EFF6FF', color: '#1E40AF' },
     receita: { icon: ArrowUpCircle, bg: '#F0FDF4', color: '#15803D' },
     recebimento_cr: { icon: Receipt, bg: '#F0FDF4', color: '#15803D' },
+  }
+
+  // ── Relatório da movimentação da sessão atual (Excel/PDF) ──────────────
+  function exportarExcelSessao() {
+    const linhas = historico.map((h) => ({
+      Hora: h.hora,
+      Tipo: TIPO_LABEL[h.tipo] || h.tipo,
+      Descrição: h.descricao,
+      'Valor (R$)': (h.valor || 0).toFixed(2).replace('.', ','),
+    }))
+    linhas.push({
+      Hora: '',
+      Tipo: '',
+      Descrição: 'TOTAL DE VENDAS DA SESSÃO',
+      'Valor (R$)': totalVendas.toFixed(2).replace('.', ','),
+    })
+    exportarCSV(linhas, `caixa_sessao_${dataAbertura || new Date().toISOString().slice(0, 10)}`)
+  }
+
+  async function gerarRelatorioPDFSessao() {
+    const empresa = await buscarEmpresa()
+    const colunas = [
+      { label: 'Hora' },
+      { label: 'Tipo' },
+      { label: 'Descrição' },
+      { label: 'Valor', num: true },
+    ]
+    const html = gerarHtmlListaSimples({
+      empresa,
+      titulo: 'Movimentação de Caixa — Sessão Atual',
+      subtitulo: `Abertura ${dataAbertura ? new Date(dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR') : '—'} às ${horaAbertura} · ${qtdeVendas} venda(s)`,
+      colunas,
+      linhas: historico,
+      montarLinha: (h) =>
+        `<tr><td>${h.hora}</td><td>${TIPO_LABEL[h.tipo] || h.tipo}</td><td>${h.descricao}</td><td class="num">${h.valor > 0 ? fmtMoedaBR(h.valor) : ''}</td></tr>`,
+      montarTotalGeral: () =>
+        `<td colspan="3">TOTAL DE VENDAS DA SESSÃO</td><td class="num">${fmtMoedaBR(totalVendas)}</td>`,
+    })
+    await gerarPdfRelatorio(html, `caixa_sessao_${dataAbertura || new Date().toISOString().slice(0, 10)}`)
   }
 
   return (
@@ -543,14 +601,25 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario, onNavigate
       <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
         <div
           style={{
-            fontSize: 12,
-            fontWeight: 500,
-            color: 'var(--text-muted)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
             marginBottom: 12,
-            letterSpacing: '0.03em',
           }}
         >
-          MOVIMENTAÇÃO DA SESSÃO ATUAL
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 500,
+              color: 'var(--text-muted)',
+              letterSpacing: '0.03em',
+            }}
+          >
+            MOVIMENTAÇÃO DA SESSÃO ATUAL
+          </div>
+          {historico.length > 0 && (
+            <BotoesRelatorio onExportarExcel={exportarExcelSessao} onGerarPDF={gerarRelatorioPDFSessao} />
+          )}
         </div>
 
         {loading ? (

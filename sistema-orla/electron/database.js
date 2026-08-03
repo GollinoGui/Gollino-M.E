@@ -182,6 +182,43 @@ const clientes = {
 }
 
 // ============================================================
+// FORNECEDORES
+// ============================================================
+const fornecedores = {
+  async listar(filtros = {}) {
+    let q = supabase.from('fornecedores').select('*')
+    if (filtros.busca) {
+      const b = orValue(`%${filtros.busca}%`)
+      q = q.or(`nome.like.${b},nome_fantasia.like.${b},cnpj.like.${b},cpf.like.${b},codigo.like.${b}`)
+    }
+    if (filtros.situacao) q = q.eq('situacao', filtros.situacao)
+    const { data, error } = await q.order('nome').limit(500)
+    if (error) throw new Error(error.message)
+    return data
+  },
+
+  async buscar(codigo) {
+    const { data, error } = await supabase.from('fornecedores').select('*').eq('codigo', codigo).maybeSingle()
+    if (error) throw new Error(error.message)
+    return data
+  },
+
+  async salvar(dados) {
+    const { error } = await supabase
+      .from('fornecedores')
+      .upsert({ ...dados, data_atualizacao: hoje() }, { onConflict: 'codigo' })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+
+  async excluir(codigo) {
+    const { error } = await supabase.from('fornecedores').update({ situacao: 'I' }).eq('codigo', codigo)
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+}
+
+// ============================================================
 // PRODUTOS
 // ============================================================
 const produtos = {
@@ -374,6 +411,18 @@ const contasReceber = {
     })
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
+  },
+
+  // Baixa por prejuízo (dívida incobrável): nível >= 2 pode chamar direto; nível
+  // 1 passa por solicitacoes_aprovacao (tipo BAIXA_PREJUIZO_CR) — ver `aprovacoes.aprovar`.
+  async baixarPrejuizo(dados) {
+    const { data, error } = await supabase.rpc('contas_receber_baixar_prejuizo', {
+      p_ids: dados.ids,
+      p_usuario: dados.usuario,
+      p_motivo: dados.motivo || null,
+    })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true, resultado: data }
   },
 }
 
@@ -1034,6 +1083,17 @@ const aprovacoes = {
         })
         if (error) return { sucesso: false, erro: error.message }
       }
+    } else if (solicitacao.tipo === 'BAIXA_PREJUIZO_CR') {
+      const ids = (solicitacao.itens || []).map((item) => item.id)
+      const motivo = solicitacao.itens?.[0]?.motivo || ''
+      const { error } = await supabase.rpc('contas_receber_baixar_prejuizo', {
+        p_ids: ids,
+        p_usuario: usuario,
+        p_motivo: motivo
+          ? `${motivo} (solicitado por ${solicitacao.usuario_solicitante}, aprovado por ${usuario})`
+          : `solicitado por ${solicitacao.usuario_solicitante}, aprovado por ${usuario}`,
+      })
+      if (error) return { sucesso: false, erro: error.message }
     }
 
     const { error: errUpdate } = await supabase
@@ -1188,6 +1248,7 @@ module.exports = {
   verificarSenha,
   sessaoValida,
   clientes,
+  fornecedores,
   produtos,
   vendas,
   contasReceber,

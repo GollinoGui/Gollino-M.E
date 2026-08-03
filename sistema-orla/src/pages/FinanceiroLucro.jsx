@@ -128,7 +128,7 @@ function HeroLucro({ lucro, margem, lucroAnterior }) {
 function CompositionBar({ resumo }) {
   const [hover, setHover] = useState(null)
   const receitaTotal = (resumo.receita_bruta || 0) + (resumo.outras_receitas || 0)
-  const custosSum = (resumo.custo_produtos || 0) + (resumo.taxa_cartao || 0) + (resumo.frete_compras || 0) + (resumo.despesas || 0)
+  const custosSum = (resumo.custo_produtos || 0) + (resumo.taxa_cartao || 0) + (resumo.frete_compras || 0) + (resumo.despesas || 0) + (resumo.perdas_inadimplencia || 0)
   const lucro = resumo.lucro_real || 0
   const positivo = lucro >= 0
   const basis = Math.max(positivo ? receitaTotal : custosSum, 1)
@@ -138,6 +138,7 @@ function CompositionBar({ resumo }) {
     { key: 'taxa', label: 'Taxa de cartão', valor: resumo.taxa_cartao || 0, cor: 'var(--chart-taxa)' },
     { key: 'frete', label: 'Frete de compras', valor: resumo.frete_compras || 0, cor: 'var(--chart-frete)' },
     { key: 'despesas', label: 'Despesas / Salários', valor: resumo.despesas || 0, cor: 'var(--chart-despesas)' },
+    { key: 'perdas', label: 'Perdas (inadimplência)', valor: resumo.perdas_inadimplencia || 0, cor: '#8B2E2E' },
   ]
   const segmentos = categorias
     .filter((c) => c.valor > 0)
@@ -306,6 +307,7 @@ function TrendChart({ dados }) {
           <div>Receita: <b>{fmt(hp.d.receita)}</b></div>
           <div>Custo produtos: <b>{fmt(hp.d.custo)}</b></div>
           <div>Taxas + frete + despesas: <b>{fmt(hp.d.despesas)}</b></div>
+          {hp.d.perdas > 0 && <div>Perdas (inadimplência): <b>{fmt(hp.d.perdas)}</b></div>}
           <div style={{ color: (hp.d.lucro || 0) >= 0 ? '#7CE29B' : '#FF9B9B', marginTop: 2 }}>
             Lucro real: <b>{fmt(hp.d.lucro)}</b>
           </div>
@@ -332,7 +334,7 @@ function GroupedBars({ dados }) {
   const barW = Math.min(22, (groupW - 16) / 2)
   const gap = 3
 
-  const maxV = Math.max(...dados.map((d) => d.receita || 0), ...dados.map((d) => (d.custo || 0) + (d.despesas || 0)), 1)
+  const maxV = Math.max(...dados.map((d) => d.receita || 0), ...dados.map((d) => (d.custo || 0) + (d.despesas || 0) + (d.perdas || 0)), 1)
   const barH = (v) => (v / maxV) * innerH
   const tickVals = [maxV, maxV / 2, 0]
 
@@ -377,7 +379,7 @@ function GroupedBars({ dados }) {
 
           {dados.map((d, i) => {
             const gx = padL + i * groupW
-            const custoTotal = (d.custo || 0) + (d.despesas || 0)
+            const custoTotal = (d.custo || 0) + (d.despesas || 0) + (d.perdas || 0)
             const hReceita = barH(d.receita || 0)
             const hCusto = barH(custoTotal)
             const cx1 = gx + groupW / 2 - gap / 2 - barW
@@ -402,7 +404,7 @@ function GroupedBars({ dados }) {
           }}>
             <div style={{ fontWeight: 700, marginBottom: 4, fontSize: 12 }}>{mesLabel(hd.mes)}</div>
             <div>Receita: <b>{fmt(hd.receita)}</b></div>
-            <div>Custos totais: <b>{fmt((hd.custo || 0) + (hd.despesas || 0))}</b></div>
+            <div>Custos totais: <b>{fmt((hd.custo || 0) + (hd.despesas || 0) + (hd.perdas || 0))}</b></div>
             <div style={{ color: (hd.lucro || 0) >= 0 ? '#7CE29B' : '#FF9B9B', marginTop: 2 }}>
               Lucro real: <b>{fmt(hd.lucro)}</b>
             </div>
@@ -494,7 +496,7 @@ export default function FinanceiroLucro() {
 
   const lucro = resumo?.lucro_real || 0
   const corLucro = lucro >= 0 ? '#22863A' : '#C53030'
-  const custosTotais = (resumo?.custo_produtos || 0) + (resumo?.taxa_cartao || 0) + (resumo?.frete_compras || 0) + (resumo?.despesas || 0)
+  const custosTotais = (resumo?.custo_produtos || 0) + (resumo?.taxa_cartao || 0) + (resumo?.frete_compras || 0) + (resumo?.despesas || 0) + (resumo?.perdas_inadimplencia || 0)
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)', overflowY: 'auto' }}>
@@ -587,7 +589,7 @@ export default function FinanceiroLucro() {
           {/* RECEITA VS CUSTOS MENSAL */}
           <div style={{ margin: '16px 20px 0', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px' }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Receita vs. custos totais por mês</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Custos totais = custo de produtos + taxas + frete + despesas</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Custos totais = custo de produtos + taxas + frete + despesas + perdas por inadimplência</div>
             <GroupedBars dados={historico} />
           </div>
 
@@ -611,7 +613,7 @@ export default function FinanceiroLucro() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Mês', 'Receita', 'Custo produtos', 'Taxas + frete + despesas', 'Lucro real'].map((h) => (
+                  {['Mês', 'Receita', 'Custo produtos', 'Taxas + frete + despesas', 'Perdas', 'Lucro real'].map((h) => (
                     <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', textAlign: h === 'Mês' ? 'left' : 'right', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -623,6 +625,7 @@ export default function FinanceiroLucro() {
                     <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(h.receita)}</td>
                     <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(h.custo)}</td>
                     <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(h.despesas)}</td>
+                    <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right', color: h.perdas > 0 ? '#C53030' : undefined }}>{fmt(h.perdas)}</td>
                     <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700, textAlign: 'right', color: (h.lucro || 0) >= 0 ? '#22863A' : '#C53030' }}>{fmt(h.lucro)}</td>
                   </tr>
                 ))}

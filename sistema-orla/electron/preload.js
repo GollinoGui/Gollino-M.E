@@ -40,6 +40,14 @@ contextBridge.exposeInMainWorld('api', {
     excluir: (codigo) => ipcRenderer.invoke('clientes:excluir', codigo),
   },
 
+  // FORNECEDORES
+  fornecedores: {
+    listar: (filtros) => ipcRenderer.invoke('fornecedores:listar', filtros),
+    buscar: (codigo) => ipcRenderer.invoke('fornecedores:buscar', codigo),
+    salvar: (dados) => ipcRenderer.invoke('fornecedores:salvar', dados),
+    excluir: (codigo) => ipcRenderer.invoke('fornecedores:excluir', codigo),
+  },
+
   // PRODUTOS
   produtos: {
     listar: (filtros) => ipcRenderer.invoke('produtos:listar', filtros),
@@ -63,6 +71,7 @@ contextBridge.exposeInMainWorld('api', {
     listar: (filtros) => ipcRenderer.invoke('contasReceber:listar', filtros),
     receber: (dados) => ipcRenderer.invoke('contasReceber:receber', dados),
     totalAberto: () => ipcRenderer.invoke('contasReceber:totalAberto'),
+    baixarPrejuizo: (dados) => ipcRenderer.invoke('contasReceber:baixarPrejuizo', dados),
   },
 
   // CONTAS A PAGAR
@@ -138,6 +147,7 @@ contextBridge.exposeInMainWorld('api', {
   // PDF
   pdf: {
     gerarVenda: (orcamento) => ipcRenderer.invoke('pdf:gerarVenda', orcamento),
+    gerarRelatorio: (html, nomeArquivo) => ipcRenderer.invoke('pdf:gerarRelatorio', { html, nomeArquivo }),
   },
 
   // IMPORTAÇÃO

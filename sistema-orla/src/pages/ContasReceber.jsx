@@ -1,11 +1,32 @@
 import { useState, useEffect } from 'react'
-import { Search, Filter, DollarSign, RefreshCw } from 'lucide-react'
+import { Search, Filter, DollarSign, RefreshCw, Trash2 } from 'lucide-react'
+import ThOrdenavel from '../components/ThOrdenavel'
+import { BotoesRelatorio } from '../components/BotoesRelatorio'
+import ModalBaixarPrejuizo from '../components/ModalBaixarPrejuizo'
+import { useOrdenacao } from '../utils/ordenacao'
+import {
+  exportarCSV,
+  agruparPorPessoa,
+  buscarEmpresa,
+  gerarHtmlAgrupadoPorPessoa,
+  gerarPdfRelatorio,
+  fmtMoedaBR,
+} from '../utils/relatorios'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 const fmtDate = (d) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-'
+
+const STATUS_CFG = {
+  ABERTO: { bg: '#EBF3FC', color: '#185FA5', label: 'Aberto' },
+  BAIXADO: { bg: '#EAF6EE', color: '#22863A', label: 'Baixado' },
+  VENCIDO: { bg: '#FFF0F0', color: '#C53030', label: 'Vencido' },
+  CANCELADO: { bg: '#F7F7F7', color: 'var(--text-muted)', label: 'Cancelado' },
+  CARTAO: { bg: '#F3EEFC', color: '#6B3FA0', label: 'Cartão (auto)' },
+  PREJUIZO: { bg: '#3A3A3A', color: '#fff', label: 'Prejuízo' },
+}
 
 // Conta gerada automaticamente por venda no cartão de crédito: o repasse é
 // automático da operadora, então não precisa (nem pode) ser confirmada na mão.
@@ -17,6 +38,7 @@ function isCartaoAutomatico(c) {
 function getSituacao(c) {
   if (c.situacao_docto === 'P') return 'BAIXADO'
   if (c.situacao_docto === 'C') return 'CANCELADO'
+  if (c.situacao_docto === 'X') return 'PREJUIZO'
   if (isCartaoAutomatico(c)) return 'CARTAO'
   const hoje = new Date().toISOString().slice(0, 10)
   if (c.data_vencimento && c.data_vencimento < hoje) return 'VENCIDO'
@@ -24,14 +46,7 @@ function getSituacao(c) {
 }
 
 function StatusBadge({ status }) {
-  const cfg = {
-    ABERTO: { bg: '#EBF3FC', color: '#185FA5', label: 'Aberto' },
-    BAIXADO: { bg: '#EAF6EE', color: '#22863A', label: 'Baixado' },
-    VENCIDO: { bg: '#FFF0F0', color: '#C53030', label: 'Vencido' },
-    CANCELADO: { bg: '#F7F7F7', color: 'var(--text-muted)', label: 'Cancelado' },
-    CARTAO: { bg: '#F3EEFC', color: '#6B3FA0', label: 'Cartão (auto)' },
-  }
-  const s = cfg[status] || cfg.ABERTO
+  const s = STATUS_CFG[status] || STATUS_CFG.ABERTO
   return (
     <span
       style={{
@@ -244,6 +259,8 @@ export default function ContasReceber({ usuario }) {
   const [contaRecebendo, setContaRecebendo] = useState(null)
   const [sucesso, setSucesso] = useState(false)
   const [erroRecebimento, setErroRecebimento] = useState('')
+  const [modalPrejuizo, setModalPrejuizo] = useState(false)
+  const [aguardandoAprovacao, setAguardandoAprovacao] = useState(false)
 
   // ── Carrega do banco ─────────────────────────────────────────
   async function carregar() {
@@ -252,6 +269,7 @@ export default function ContasReceber({ usuario }) {
       const filtros = {}
       if (filtroStatus === 'aberto') filtros.situacao = 'A'
       if (filtroStatus === 'baixado') filtros.situacao = 'P'
+      if (filtroStatus === 'prejuizo') filtros.situacao = 'X'
       if (busca) filtros.cliente = busca
 
       const result = await window.api.contasReceber.listar(filtros)
@@ -291,6 +309,82 @@ export default function ContasReceber({ usuario }) {
     .filter((c) => c.situacao_docto !== 'C')
     .reduce((s, c) => s + (c.valor_docto || 0), 0)
 
+  const { ordenados, coluna, direcao, alternar } = useOrdenacao(filtrados, {
+    acessores: {
+      nome_cliente: (c) => c.nome_cliente || c.codigo_cliente || '',
+      em_aberto: (c) => c.valor_docto - (c.valor_pagamento || 0),
+      situacao: (c) => getSituacao(c),
+    },
+  })
+
+  // ── Relatório (Excel/PDF), agrupado por cliente e em ordem alfabética ──
+  function exportarExcel() {
+    const grupos = agruparPorPessoa(filtrados, { codigoKey: 'codigo_cliente', nomeKey: 'nome_cliente' })
+    const linhas = []
+    for (const g of grupos) {
+      for (const c of g.itens) {
+        linhas.push({
+          Documento: c.nro_docto || '—',
+          Cliente: g.nome,
+          Vencimento: fmtDate(c.data_vencimento),
+          'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
+          'Em Aberto (R$)': (c.valor_docto - (c.valor_pagamento || 0)).toFixed(2).replace('.', ','),
+          Situação: STATUS_CFG[getSituacao(c)].label,
+        })
+      }
+      const subDocto = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+      const subAberto = g.itens.reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
+      linhas.push({
+        Documento: '',
+        Cliente: `SUBTOTAL — ${g.nome}`,
+        Vencimento: '',
+        'Valor (R$)': subDocto.toFixed(2).replace('.', ','),
+        'Em Aberto (R$)': subAberto.toFixed(2).replace('.', ','),
+        Situação: '',
+      })
+    }
+    linhas.push({
+      Documento: '',
+      Cliente: 'TOTAL GERAL',
+      Vencimento: '',
+      'Valor (R$)': totalDocto.toFixed(2).replace('.', ','),
+      'Em Aberto (R$)': totalEmAberto.toFixed(2).replace('.', ','),
+      Situação: '',
+    })
+    exportarCSV(linhas, `contas_receber_${new Date().toISOString().slice(0, 10)}`)
+  }
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const grupos = agruparPorPessoa(filtrados, { codigoKey: 'codigo_cliente', nomeKey: 'nome_cliente' })
+    const colunas = [
+      { label: 'Documento' },
+      { label: 'Vencimento' },
+      { label: 'Valor', num: true },
+      { label: 'Em Aberto', num: true },
+      { label: 'Situação' },
+    ]
+    const html = gerarHtmlAgrupadoPorPessoa({
+      empresa,
+      titulo: 'Contas a Receber',
+      subtitulo: `${filtrados.length} parcela(s) — gerado em ${fmtDate(new Date().toISOString().slice(0, 10))}`,
+      colunas,
+      grupos,
+      montarLinha: (c) => {
+        const emAberto = c.valor_docto - (c.valor_pagamento || 0)
+        return `<tr><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${STATUS_CFG[getSituacao(c)].label}</td></tr>`
+      },
+      montarSubtotal: (g) => {
+        const subDocto = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+        const subAberto = g.itens.reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
+        return `<td colspan="2">Subtotal</td><td class="num">${fmtMoedaBR(subDocto)}</td><td class="num">${fmtMoedaBR(subAberto)}</td><td></td>`
+      },
+      montarTotalGeral: () =>
+        `<td colspan="2">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDocto)}</td><td class="num">${fmtMoedaBR(totalEmAberto)}</td><td></td>`,
+    })
+    await gerarPdfRelatorio(html, `contas_receber_${new Date().toISOString().slice(0, 10)}`)
+  }
+
   function toggleSel(id) {
     const conta = dados.find((c) => c.id === id)
     if (conta && isCartaoAutomatico(conta)) return
@@ -328,6 +422,47 @@ export default function ContasReceber({ usuario }) {
   const podeReceber =
     selecionadas.length === 1 && contaSelecionada?.situacao_docto === 'A'
 
+  // ── Baixa por prejuízo (dívida incobrável) ──────────────────────
+  const contasParaPrejuizo = dados.filter((c) => selecionadas.includes(c.id))
+  const podeBaixarPrejuizo =
+    contasParaPrejuizo.length > 0 &&
+    contasParaPrejuizo.every((c) => c.situacao_docto === 'A' && !isCartaoAutomatico(c))
+  const podeExcluirDireto = (usuario?.nivel ?? 0) >= 2
+
+  async function confirmarBaixaPrejuizo(motivo) {
+    const nomeUsuario = usuario?.nome || usuario?.usuario || 'sistema'
+    if (podeExcluirDireto) {
+      const resultado = await window.api.contasReceber.baixarPrejuizo({
+        ids: contasParaPrejuizo.map((c) => c.id),
+        usuario: nomeUsuario,
+        motivo,
+      })
+      if (!resultado.sucesso) throw new Error(resultado.erro)
+      setModalPrejuizo(false)
+      setSelecionadas([])
+      setSucesso(true)
+      setTimeout(() => setSucesso(false), 2500)
+      await carregar()
+    } else {
+      const resultado = await window.api.aprovacoes.solicitar({
+        tipo: 'BAIXA_PREJUIZO_CR',
+        itens: contasParaPrejuizo.map((c) => ({
+          id: c.id,
+          nro_docto: c.nro_docto,
+          cliente: c.nome_cliente || c.codigo_cliente,
+          valor: c.valor_docto - (c.valor_pagamento || 0),
+          motivo,
+        })),
+        usuario_solicitante: nomeUsuario,
+      })
+      if (!resultado.sucesso) throw new Error(resultado.erro)
+      setModalPrejuizo(false)
+      setSelecionadas([])
+      setAguardandoAprovacao(true)
+      setTimeout(() => setAguardandoAprovacao(false), 4000)
+    }
+  }
+
   return (
     <div
       style={{
@@ -359,12 +494,41 @@ export default function ContasReceber({ usuario }) {
         </div>
       )}
 
+      {aguardandoAprovacao && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 16,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#6B21A8',
+            color: '#fff',
+            padding: '9px 22px',
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 500,
+            zIndex: 300,
+          }}
+        >
+          📨 Pedido de exclusão por prejuízo enviado para aprovação!
+        </div>
+      )}
+
       {contaRecebendo && (
         <ModalReceber
           conta={contaRecebendo}
           onClose={() => { setContaRecebendo(null); setErroRecebimento('') }}
           onConfirm={confirmarRecebimento}
           erro={erroRecebimento}
+        />
+      )}
+
+      {modalPrejuizo && (
+        <ModalBaixarPrejuizo
+          contas={contasParaPrejuizo}
+          podeExcluirDireto={podeExcluirDireto}
+          onFechar={() => setModalPrejuizo(false)}
+          onConfirmar={confirmarBaixaPrejuizo}
         />
       )}
 
@@ -413,6 +577,7 @@ export default function ContasReceber({ usuario }) {
             <option value='todos'>Todos</option>
             <option value='aberto'>Aberto</option>
             <option value='baixado'>Baixado</option>
+            <option value='prejuizo'>Prejuízo</option>
           </select>
           <button
             onClick={carregar}
@@ -512,23 +677,29 @@ export default function ContasReceber({ usuario }) {
               <tr>
                 <th style={thStyle}></th>
                 {[
-                  'Documento',
-                  'Seq',
-                  'Cliente',
-                  'Data',
-                  'Vencimento',
-                  'Valor doc.',
-                  'Em aberto',
-                  'Situação',
+                  { label: 'Documento', chave: 'nro_docto' },
+                  { label: 'Seq', chave: 'seq_docto' },
+                  { label: 'Cliente', chave: 'nome_cliente' },
+                  { label: 'Data', chave: 'data_docto' },
+                  { label: 'Vencimento', chave: 'data_vencimento' },
+                  { label: 'Valor doc.', chave: 'valor_docto' },
+                  { label: 'Em aberto', chave: 'em_aberto' },
+                  { label: 'Situação', chave: 'situacao' },
                 ].map((h) => (
-                  <th key={h} style={thStyle}>
-                    {h}
-                  </th>
+                  <ThOrdenavel
+                    key={h.chave}
+                    label={h.label}
+                    chave={h.chave}
+                    colunaAtual={coluna}
+                    direcao={direcao}
+                    onOrdenar={alternar}
+                    style={thStyle}
+                  />
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtrados.map((c) => {
+              {ordenados.map((c) => {
                 const sel = selecionadas.includes(c.id)
                 const sit = getSituacao(c)
                 const vencido = sit === 'VENCIDO'
@@ -658,6 +829,7 @@ export default function ContasReceber({ usuario }) {
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
           {filtrados.length} registro(s) · Selecionadas: {selecionadas.length}
         </span>
+        <BotoesRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />
         <div style={{ flex: 1 }} />
         <button
           disabled={!podeReceber}
@@ -677,6 +849,27 @@ export default function ContasReceber({ usuario }) {
           }}
         >
           <DollarSign size={14} /> Receber
+        </button>
+        <button
+          disabled={!podeBaixarPrejuizo}
+          onClick={() => setModalPrejuizo(true)}
+          title={podeExcluirDireto ? 'Excluir por prejuízo' : 'Solicitar exclusão por prejuízo'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            height: 34,
+            padding: '0 16px',
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 600,
+            background: 'transparent',
+            border: podeBaixarPrejuizo ? '1px solid #FCA5A5' : '1px solid var(--border-md)',
+            color: podeBaixarPrejuizo ? '#C53030' : 'var(--text-muted)',
+            cursor: podeBaixarPrejuizo ? 'pointer' : 'not-allowed',
+          }}
+        >
+          <Trash2 size={14} /> {podeExcluirDireto ? 'Excluir (prejuízo)' : 'Pedir exclusão'}
         </button>
       </div>
     </div>

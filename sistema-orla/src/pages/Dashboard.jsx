@@ -14,6 +14,7 @@ import {
   CheckCircle,
   Search,
   History,
+  Ban,
 } from 'lucide-react'
 import ModalAcessoNegado from '../components/ModalAcessoNegado'
 import ModalCancelarVenda from '../components/ModalCancelarVenda'
@@ -227,6 +228,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
     contasReceber: { total: 0 },
     contasPagar: { total: 0 },
     estoqueBaixo: 0,
+    prejuizoHoje: 0,
     grafico7dias: [],
   })
   const [vendasHoje, setVendasHoje] = useState([])
@@ -890,6 +892,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                 { label: 'Vendas', value: resumo.vendas.qtde },
                 { label: 'A receber', value: fmt(resumo.contasReceber.total) },
                 { label: 'A pagar', value: fmt(resumo.contasPagar.total) },
+                ...(resumo.prejuizoHoje > 0 ? [{ label: 'Prejuízo', value: fmt(resumo.prejuizoHoje) }] : []),
               ].map((item) => (
                 <div key={item.label} style={{ textAlign: 'center' }}>
                   <div
@@ -1462,29 +1465,40 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
               >
                 Resumo financeiro
               </div>
-              {[
-                {
-                  label: 'Entradas hoje',
-                  value: fmt(totalHoje),
-                  color: '#22863A',
-                  bg: 'var(--green-50)',
-                  icon: TrendingUp,
-                },
-                {
-                  label: 'A receber',
-                  value: fmt(resumo.contasReceber.total),
-                  color: 'var(--amber-500)',
-                  bg: '#FFF8E6',
-                  icon: Clock,
-                },
-                {
-                  label: 'A pagar',
-                  value: fmt(resumo.contasPagar.total),
-                  color: '#C53030',
-                  bg: 'var(--red-50)',
-                  icon: TrendingDown,
-                },
-              ].map((item, i) => (
+              {(() => {
+                const itensResumo = [
+                  {
+                    label: 'Entradas hoje',
+                    value: fmt(totalHoje),
+                    color: '#22863A',
+                    bg: 'var(--green-50)',
+                    icon: TrendingUp,
+                  },
+                  {
+                    label: 'A receber',
+                    value: fmt(resumo.contasReceber.total),
+                    color: 'var(--amber-500)',
+                    bg: '#FFF8E6',
+                    icon: Clock,
+                  },
+                  {
+                    label: 'A pagar',
+                    value: fmt(resumo.contasPagar.total),
+                    color: '#C53030',
+                    bg: 'var(--red-50)',
+                    icon: TrendingDown,
+                  },
+                  ...(resumo.prejuizoHoje > 0
+                    ? [{
+                        label: 'Prejuízo (hoje)',
+                        value: fmt(resumo.prejuizoHoje),
+                        color: '#fff',
+                        bg: '#3A3A3A',
+                        icon: Ban,
+                      }]
+                    : []),
+                ]
+                return itensResumo.map((item, i) => (
                 <div
                   key={item.label}
                   style={{
@@ -1494,7 +1508,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                     padding: '9px 12px',
                     borderRadius: 10,
                     background: item.bg,
-                    marginBottom: i < 2 ? 8 : 0,
+                    marginBottom: i < itensResumo.length - 1 ? 8 : 0,
                   }}
                 >
                   <div
@@ -1517,7 +1531,8 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                     {item.value}
                   </span>
                 </div>
-              ))}
+                ))
+              })()}
             </div>
           </div>
         </div>

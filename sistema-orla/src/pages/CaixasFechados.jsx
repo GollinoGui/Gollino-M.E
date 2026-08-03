@@ -1,5 +1,15 @@
 import { useState, useEffect } from 'react'
 import { RefreshCw, FolderOpen } from 'lucide-react'
+import ThOrdenavel from '../components/ThOrdenavel'
+import { BotoesRelatorio } from '../components/BotoesRelatorio'
+import { useOrdenacao } from '../utils/ordenacao'
+import {
+  exportarCSV,
+  buscarEmpresa,
+  gerarHtmlListaSimples,
+  gerarPdfRelatorio,
+  fmtMoedaBR,
+} from '../utils/relatorios'
 
 const fmt = (v) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = (d) => (d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-')
@@ -40,6 +50,80 @@ export default function CaixasFechados() {
   const totalCartaoD = sessoes.reduce((s, c) => s + (c.valor_cartao_debito || 0), 0)
   const totalCheque = sessoes.reduce((s, c) => s + (c.valor_cheque || 0), 0)
 
+  const { ordenados, coluna, direcao, alternar } = useOrdenacao(sessoes, {
+    colunaInicial: 'data_abertura',
+    acessores: {
+      data_abertura: (s) => `${s.data_abertura || ''} ${s.hora_abertura || ''}`,
+      data_fechamento: (s) => `${s.data_fechamento || ''} ${s.hora_fechamento || ''}`,
+    },
+  })
+
+  function exportarExcel() {
+    const linhas = sessoes.map((s) => ({
+      Abertura: `${fmtDate(s.data_abertura)} ${fmtHora(s.hora_abertura)}`,
+      'Aberto por': s.usuario_abertura || '—',
+      Fechamento: `${fmtDate(s.data_fechamento)} ${fmtHora(s.hora_fechamento)}`,
+      'Fechado por': s.usuario_fechamento || '—',
+      Vendas: s.qtde_vendas || 0,
+      'Dinheiro (R$)': (s.valor_dinheiro || 0).toFixed(2).replace('.', ','),
+      'Cartão Créd. (R$)': (s.valor_cartao_credito || 0).toFixed(2).replace('.', ','),
+      'Cartão Déb. (R$)': (s.valor_cartao_debito || 0).toFixed(2).replace('.', ','),
+      'Cheque (R$)': (s.valor_cheque || 0).toFixed(2).replace('.', ','),
+      'Total (R$)': (s.valor_total || 0).toFixed(2).replace('.', ','),
+    }))
+    linhas.push({
+      Abertura: '', 'Aberto por': '', Fechamento: '', 'Fechado por': '',
+      Vendas: totalVendas,
+      'Dinheiro (R$)': totalDinheiro.toFixed(2).replace('.', ','),
+      'Cartão Créd. (R$)': totalCartaoC.toFixed(2).replace('.', ','),
+      'Cartão Déb. (R$)': totalCartaoD.toFixed(2).replace('.', ','),
+      'Cheque (R$)': totalCheque.toFixed(2).replace('.', ','),
+      'Total (R$)': totalGeral.toFixed(2).replace('.', ','),
+    })
+    exportarCSV(linhas, `caixas_fechados_${dataInicio}_${dataFim}`)
+  }
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const colunas = [
+      { label: 'Abertura' },
+      { label: 'Fechamento' },
+      { label: 'Vendas', num: true },
+      { label: 'Dinheiro', num: true },
+      { label: 'Cartão Créd.', num: true },
+      { label: 'Cartão Déb.', num: true },
+      { label: 'Cheque', num: true },
+      { label: 'Total', num: true },
+    ]
+    const html = gerarHtmlListaSimples({
+      empresa,
+      titulo: 'Caixas Fechados',
+      subtitulo: `Período de ${fmtDate(dataInicio)} a ${fmtDate(dataFim)} — ${sessoes.length} fechamento(s)`,
+      colunas,
+      linhas: sessoes,
+      montarLinha: (s) => `<tr>
+        <td>${fmtDate(s.data_abertura)} ${fmtHora(s.hora_abertura)}</td>
+        <td>${fmtDate(s.data_fechamento)} ${fmtHora(s.hora_fechamento)}</td>
+        <td class="num">${s.qtde_vendas || 0}</td>
+        <td class="num">${fmtMoedaBR(s.valor_dinheiro)}</td>
+        <td class="num">${fmtMoedaBR(s.valor_cartao_credito)}</td>
+        <td class="num">${fmtMoedaBR(s.valor_cartao_debito)}</td>
+        <td class="num">${fmtMoedaBR(s.valor_cheque)}</td>
+        <td class="num">${fmtMoedaBR(s.valor_total)}</td>
+      </tr>`,
+      montarTotalGeral: () => `
+        <td colspan="2">TOTAL GERAL</td>
+        <td class="num">${totalVendas}</td>
+        <td class="num">${fmtMoedaBR(totalDinheiro)}</td>
+        <td class="num">${fmtMoedaBR(totalCartaoC)}</td>
+        <td class="num">${fmtMoedaBR(totalCartaoD)}</td>
+        <td class="num">${fmtMoedaBR(totalCheque)}</td>
+        <td class="num">${fmtMoedaBR(totalGeral)}</td>
+      `,
+    })
+    await gerarPdfRelatorio(html, `caixas_fechados_${dataInicio}_${dataFim}`)
+  }
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
       {/* Cabeçalho */}
@@ -60,6 +144,10 @@ export default function CaixasFechados() {
             title='Atualizar'>
             <RefreshCw size={13} /> Atualizar
           </button>
+          <div style={{ flex: 1 }} />
+          {sessoes.length > 0 && (
+            <BotoesRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />
+          )}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
@@ -91,13 +179,32 @@ export default function CaixasFechados() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Abertura', 'Por', 'Fechamento', 'Por', 'Vendas', 'Dinheiro', 'Cartão Créd.', 'Cartão Déb.', 'Cheque', 'Total'].map((h) => (
-                    <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', textAlign: ['Abertura', 'Por', 'Fechamento'].includes(h) ? 'left' : 'right', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
+                  {[
+                    { label: 'Abertura', chave: 'data_abertura', align: 'left' },
+                    { label: 'Por', chave: 'usuario_abertura', align: 'left' },
+                    { label: 'Fechamento', chave: 'data_fechamento', align: 'left' },
+                    { label: 'Por', chave: 'usuario_fechamento', align: 'left' },
+                    { label: 'Vendas', chave: 'qtde_vendas', align: 'right' },
+                    { label: 'Dinheiro', chave: 'valor_dinheiro', align: 'right' },
+                    { label: 'Cartão Créd.', chave: 'valor_cartao_credito', align: 'right' },
+                    { label: 'Cartão Déb.', chave: 'valor_cartao_debito', align: 'right' },
+                    { label: 'Cheque', chave: 'valor_cheque', align: 'right' },
+                    { label: 'Total', chave: 'valor_total', align: 'right' },
+                  ].map((h) => (
+                    <ThOrdenavel
+                      key={h.chave}
+                      label={h.label}
+                      chave={h.chave}
+                      colunaAtual={coluna}
+                      direcao={direcao}
+                      onOrdenar={alternar}
+                      style={{ padding: '9px 14px', fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', textAlign: h.align, background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}
+                    />
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {sessoes.map((s) => (
+                {ordenados.map((s) => (
                   <tr key={s.id} style={{ borderBottom: '1px solid var(--border)' }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>

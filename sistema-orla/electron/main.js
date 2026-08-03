@@ -188,6 +188,12 @@ handle('clientes:buscar', (_, codigo) => db.clientes.buscar(codigo))
 handle('clientes:salvar', (_, dados) => db.clientes.salvar(dados))
 handle('clientes:excluir', (_, codigo) => db.clientes.excluir(codigo))
 
+// --- FORNECEDORES ---
+handle('fornecedores:listar', (_, filtros) => db.fornecedores.listar(filtros))
+handle('fornecedores:buscar', (_, codigo) => db.fornecedores.buscar(codigo))
+handle('fornecedores:salvar', (_, dados) => db.fornecedores.salvar(dados))
+handle('fornecedores:excluir', (_, codigo) => db.fornecedores.excluir(codigo))
+
 // --- PRODUTOS ---
 handle('produtos:listar', (_, filtros) => db.produtos.listar(filtros))
 handle('produtos:buscar', (_, codigo) => db.produtos.buscar(codigo))
@@ -206,6 +212,7 @@ handle('vendas:proximoNumero', () => db.vendas.proximoNumero())
 handle('contasReceber:listar', (_, filtros) => db.contasReceber.listar(filtros))
 handle('contasReceber:receber', (_, dados) => db.contasReceber.receber(dados))
 handle('contasReceber:totalAberto', () => db.contasReceber.totalAberto())
+handle('contasReceber:baixarPrejuizo', (_, dados) => db.contasReceber.baixarPrejuizo(dados))
 
 // --- CONTAS A PAGAR ---
 handle('contasPagar:listar', (_, filtros) => db.contasPagar.listar(filtros))
@@ -599,6 +606,48 @@ ipcMain.handle('pdf:gerarVenda', async (_, orcamento) => {
     return { sucesso: true, caminho: filePath }
   } catch (err) {
     console.error('Erro ao gerar PDF:', err)
+    return { sucesso: false, erro: err.message }
+  }
+})
+
+// Gera um PDF genérico a partir de um HTML pronto (usado pelos botões
+// "Gerar Relatório" das páginas de listagem — o HTML é montado no renderer).
+function getRelatoriosDir() {
+  const dir = path.join(getBancoDir(), 'relatorios')
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+ipcMain.handle('pdf:gerarRelatorio', async (_, { html, nomeArquivo }) => {
+  try {
+    const win = new BrowserWindow({
+      show: false,
+      webPreferences: { nodeIntegration: false, contextIsolation: true },
+    })
+
+    await win.loadURL(
+      `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
+    )
+
+    const pdfBuffer = await win.webContents.printToPDF({
+      pageSize: 'A4',
+      printBackground: true,
+      marginsType: 1,
+    })
+
+    win.close()
+
+    const dir = getRelatoriosDir()
+    const safeName = (nomeArquivo || 'relatorio').replace(/[\\/:*?"<>|]/g, '_')
+    const fileName = `${safeName}.pdf`
+    const filePath = path.join(dir, fileName)
+    fs.writeFileSync(filePath, pdfBuffer)
+
+    await shell.openPath(filePath)
+
+    return { sucesso: true, caminho: filePath }
+  } catch (err) {
+    console.error('Erro ao gerar PDF do relatório:', err)
     return { sucesso: false, erro: err.message }
   }
 })
