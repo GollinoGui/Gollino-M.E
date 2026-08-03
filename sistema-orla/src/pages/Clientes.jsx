@@ -556,6 +556,7 @@ export default function Clientes({ usuario }) {
             salvando={salvando}
             onSalvar={salvar}
             onFechar={fechar}
+            podeEditarFinanceiro={podeEditarFinanceiro}
           />
         )}
 
@@ -961,6 +962,7 @@ export default function Clientes({ usuario }) {
           salvando={salvando}
           onSalvar={salvar}
           onFechar={fechar}
+          podeEditarFinanceiro={podeEditarFinanceiro}
         />
       )}
 
@@ -993,6 +995,7 @@ function FormularioCliente({
   salvando,
   onSalvar,
   onFechar,
+  podeEditarFinanceiro,
 }) {
   function campo(key, val) {
     setForm((p) => ({ ...p, [key]: val }))

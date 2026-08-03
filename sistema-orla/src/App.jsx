@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import TopBar from './components/layout/TopBar'
+import ErrorBoundary from './components/ErrorBoundary'
 import Dashboard from './pages/Dashboard'
 import Vendas from './pages/Vendas'
 import ContasReceber from './pages/ContasReceber'
@@ -458,7 +459,7 @@ export default function App() {
         className='fade-in'
         key={pagina}
       >
-        {renderPagina()}
+        <ErrorBoundary key={pagina}>{renderPagina()}</ErrorBoundary>
       </div>
       {buscaAberta && (
         <BuscaGlobal

@@ -12,6 +12,7 @@ import {
   FileText,
   Wallet,
   Printer,
+  Download,
 } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
 import { BotaoExportarExcel, BotaoGerarRelatorioPDF } from '../components/BotoesRelatorio'
@@ -1925,21 +1926,27 @@ function RelFinanceiro() {
   const [dataInicio, setDataInicio] = useState(ini)
   const [dataFim, setDataFim] = useState(fim)
   const [vendas, setVendas] = useState([])
-  const [contasReceber, setContasReceber] = useState([])
-  const [contasPagar, setContasPagar] = useState([])
+  const [contasReceberPeriodo, setContasReceberPeriodo] = useState([])
+  const [contasPagarPeriodo, setContasPagarPeriodo] = useState([])
+  const [contasReceberAbertas, setContasReceberAbertas] = useState([])
+  const [contasPagarAbertas, setContasPagarAbertas] = useState([])
   const [loading, setLoading] = useState(true)
 
   async function carregar() {
     setLoading(true)
     try {
-      const [v, cr, cp] = await Promise.all([
+      const [v, crP, cpP, crA, cpA] = await Promise.all([
         window.api.vendas.listar({ dataInicio, dataFim, situacao: 'N' }),
         window.api.contasReceber.listar({ situacao: 'P', dataInicio, dataFim }),
+        window.api.contasPagar.listar({ situacao: 'P', dataInicio, dataFim }),
+        window.api.contasReceber.listar({ situacao: 'A' }),
         window.api.contasPagar.listar({ situacao: 'A' }),
       ])
       setVendas(v)
-      setContasReceber(cr)
-      setContasPagar(cp)
+      setContasReceberPeriodo(crP)
+      setContasPagarPeriodo(cpP)
+      setContasReceberAbertas(crA)
+      setContasPagarAbertas(cpA)
     } catch (err) {
       console.error('Erro ao carregar financeiro:', err)
     } finally {
@@ -1949,16 +1956,39 @@ function RelFinanceiro() {
 
   useEffect(() => { carregar() }, [])
 
+  const hoje = new Date().toISOString().slice(0, 10)
+
   const totalVendas = vendas.reduce((s, v) => s + (v.valor_total || 0), 0)
-  const totalRecebido = contasReceber.reduce(
+  const totalRecebido = contasReceberPeriodo.reduce(
     (s, c) => s + (c.valor_pagamento || 0),
     0,
   )
-  const totalPagar = contasPagar.reduce(
+  const totalPago = contasPagarPeriodo.reduce(
+    (s, c) => s + (c.valor_pagamento || 0),
+    0,
+  )
+  // Saldo de caixa real do período: o que entrou menos o que saiu — não
+  // comparar vendas/período com um saldo de contas a pagar sem filtro de data.
+  const saldo = totalRecebido - totalPago
+
+  const totalAbertoReceber = contasReceberAbertas.reduce(
     (s, c) => s + ((c.valor_docto || 0) - (c.valor_pagamento || 0)),
     0,
   )
-  const saldo = totalVendas - totalPagar
+  const totalAbertoPagar = contasPagarAbertas.reduce(
+    (s, c) => s + ((c.valor_docto || 0) - (c.valor_pagamento || 0)),
+    0,
+  )
+  const vencidasReceber = contasReceberAbertas.filter((c) => c.data_vencimento < hoje)
+  const vencidasPagar = contasPagarAbertas.filter((c) => c.data_vencimento < hoje)
+  const totalVencidoReceber = vencidasReceber.reduce(
+    (s, c) => s + ((c.valor_docto || 0) - (c.valor_pagamento || 0)),
+    0,
+  )
+  const totalVencidoPagar = vencidasPagar.reduce(
+    (s, c) => s + ((c.valor_docto || 0) - (c.valor_pagamento || 0)),
+    0,
+  )
 
   const totalDinheiro = vendas.reduce(
     (s, v) => s + (v.valor_pago_dinheiro || 0),
@@ -1979,9 +2009,13 @@ function RelFinanceiro() {
 
   const resumoLinhas = [
     { item: 'Total de vendas (período)', valor: totalVendas },
-    { item: 'Total recebido', valor: totalRecebido },
-    { item: 'Contas a pagar (abertas)', valor: totalPagar },
-    { item: 'Saldo do período', valor: saldo },
+    { item: 'Recebido (período)', valor: totalRecebido },
+    { item: 'Pago (período)', valor: totalPago },
+    { item: 'Saldo de caixa do período', valor: saldo },
+    { item: 'Em aberto a receber (hoje)', valor: totalAbertoReceber },
+    { item: 'Em aberto a pagar (hoje)', valor: totalAbertoPagar },
+    { item: 'Vencido a receber (hoje)', valor: totalVencidoReceber },
+    { item: 'Vencido a pagar (hoje)', valor: totalVencidoPagar },
     { item: 'Dinheiro', valor: totalDinheiro },
     { item: 'Cartão Crédito', valor: totalCartaoC },
     { item: 'Cartão Débito', valor: totalCartaoD },
@@ -2045,19 +2079,54 @@ function RelFinanceiro() {
               color='var(--blue-700)'
             />
             <CardMetrica
-              label='Total recebido'
+              label='Recebido (período)'
               value={fmt(totalRecebido)}
               color='var(--green-500)'
             />
             <CardMetrica
-              label='Contas a pagar (abertas)'
-              value={fmt(totalPagar)}
+              label='Pago (período)'
+              value={fmt(totalPago)}
               color='var(--red-500)'
             />
             <CardMetrica
-              label='Saldo do período'
+              label='Saldo de caixa do período'
               value={fmt(saldo)}
               color={saldo >= 0 ? 'var(--green-500)' : 'var(--red-500)'}
+              sub='recebido − pago, no período'
+            />
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: 12,
+              marginBottom: 24,
+            }}
+          >
+            <CardMetrica
+              label='Vencido a receber (hoje)'
+              value={fmt(totalVencidoReceber)}
+              sub={`${vencidasReceber.length} parcela(s)`}
+              color='var(--red-500)'
+            />
+            <CardMetrica
+              label='Vencido a pagar (hoje)'
+              value={fmt(totalVencidoPagar)}
+              sub={`${vencidasPagar.length} conta(s)`}
+              color='var(--red-500)'
+            />
+            <CardMetrica
+              label='Em aberto a receber'
+              value={fmt(totalAbertoReceber)}
+              sub='todas as datas'
+              color='var(--blue-700)'
+            />
+            <CardMetrica
+              label='Em aberto a pagar'
+              value={fmt(totalAbertoPagar)}
+              sub='todas as datas'
+              color='var(--text-secondary)'
             />
           </div>
 
@@ -2073,22 +2142,22 @@ function RelFinanceiro() {
               }}
             >
               <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 16 }}>
-                Receitas vs Despesas (mês atual)
+                Vendas vs Caixa (período selecionado)
               </div>
               {[
                 {
-                  label: 'Vendas (receita)',
+                  label: 'Vendas (faturamento)',
                   value: totalVendas,
                   color: 'var(--blue-400)',
                 },
                 {
-                  label: 'Recebido efetivo',
+                  label: 'Recebido (caixa)',
                   value: totalRecebido,
                   color: 'var(--green-500)',
                 },
                 {
-                  label: 'Contas a pagar',
-                  value: totalPagar,
+                  label: 'Pago (caixa)',
+                  value: totalPago,
                   color: 'var(--red-400)',
                 },
               ].map((item) => (
@@ -2096,7 +2165,7 @@ function RelFinanceiro() {
                   key={item.label}
                   label={item.label}
                   value={item.value}
-                  max={Math.max(totalVendas, 1)}
+                  max={Math.max(totalVendas, totalRecebido, totalPago, 1)}
                   color={item.color}
                 />
               ))}
