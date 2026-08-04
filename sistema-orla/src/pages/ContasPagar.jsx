@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Search, Plus, DollarSign, RefreshCw } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
 import { BotoesRelatorio } from '../components/BotoesRelatorio'
@@ -248,9 +248,30 @@ function ModalNova({ onClose, onSalvar }) {
     codigo_forma_pagamento: '',
   })
   const [salvando, setSalvando] = useState(false)
+  const [historicos, setHistoricos] = useState([])
+  const [historicoAberto, setHistoricoAberto] = useState(false)
+  const historicoRef = useRef(null)
   const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }))
   const valido =
     form.codigo_fornecedor && parseFloat(form.valor_docto) > 0 && form.data_vencimento
+
+  useEffect(() => {
+    window.api.historicos.listar({ situacao: 'A' }).then(setHistoricos).catch(console.error)
+  }, [])
+
+  useEffect(() => {
+    if (!historicoAberto) return
+    function handleClickFora(e) {
+      if (historicoRef.current && !historicoRef.current.contains(e.target)) setHistoricoAberto(false)
+    }
+    document.addEventListener('mousedown', handleClickFora)
+    return () => document.removeEventListener('mousedown', handleClickFora)
+  }, [historicoAberto])
+
+  const buscaHistorico = form.observacao.trim().toLowerCase()
+  const historicosFiltrados = (
+    buscaHistorico ? historicos.filter((h) => h.nome.toLowerCase().includes(buscaHistorico)) : historicos
+  ).slice(0, 30)
 
   async function handleSalvar() {
     setSalvando(true)
@@ -323,7 +344,7 @@ function ModalNova({ onClose, onSalvar }) {
               placeholder='Nome do fornecedor ou descrição'
             />
           </div>
-          <div style={{ gridColumn: '1 / -1' }}>
+          <div style={{ gridColumn: '1 / -1', position: 'relative' }} ref={historicoRef}>
             <label
               style={{
                 fontSize: 11,
@@ -337,6 +358,7 @@ function ModalNova({ onClose, onSalvar }) {
             <input
               value={form.observacao}
               onChange={f('observacao')}
+              onFocus={() => setHistoricoAberto(true)}
               style={{
                 width: '100%',
                 height: 36,
@@ -344,8 +366,52 @@ function ModalNova({ onClose, onSalvar }) {
                 borderRadius: 8,
                 border: '1px solid var(--border-md)',
               }}
-              placeholder='Ex: Ref. fatura 001/2026'
+              placeholder='Ex: Água e Esgoto — ou digite livre'
             />
+            {historicoAberto && historicosFiltrados.length > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  zIndex: 50,
+                  marginTop: 2,
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border-md)',
+                  borderRadius: 8,
+                  boxShadow: '0 6px 20px rgba(0,0,0,0.12)',
+                  maxHeight: 180,
+                  overflowY: 'auto',
+                }}
+              >
+                {historicosFiltrados.map((h) => (
+                  <button
+                    key={h.codigo}
+                    onClick={() => {
+                      setForm((p) => ({ ...p, observacao: h.nome }))
+                      setHistoricoAberto(false)
+                    }}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '7px 12px',
+                      fontSize: 12.5,
+                      border: 'none',
+                      borderBottom: '1px solid var(--border)',
+                      background: 'transparent',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    {h.nome}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <label

@@ -219,6 +219,38 @@ const fornecedores = {
 }
 
 // ============================================================
+// HISTÓRICOS — descrições padrão pra agilizar lançamento de
+// contas a pagar/receber (ex: "Água e Esgoto", "Energia Elétrica").
+// ============================================================
+const historicos = {
+  async listar(filtros = {}) {
+    let q = supabase.from('historicos').select('*')
+    if (filtros.busca) {
+      const b = orValue(`%${filtros.busca}%`)
+      q = q.or(`nome.like.${b},codigo.like.${b}`)
+    }
+    if (filtros.situacao) q = q.eq('situacao', filtros.situacao)
+    const { data, error } = await q.order('nome').limit(500)
+    if (error) throw new Error(error.message)
+    return data
+  },
+
+  async salvar(dados) {
+    const { error } = await supabase
+      .from('historicos')
+      .upsert({ ...dados, data_atualizacao: hoje() }, { onConflict: 'codigo' })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+
+  async excluir(codigo) {
+    const { error } = await supabase.from('historicos').update({ situacao: 'I' }).eq('codigo', codigo)
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+}
+
+// ============================================================
 // PRODUTOS
 // ============================================================
 const produtos = {
@@ -1249,6 +1281,7 @@ module.exports = {
   sessaoValida,
   clientes,
   fornecedores,
+  historicos,
   produtos,
   vendas,
   contasReceber,

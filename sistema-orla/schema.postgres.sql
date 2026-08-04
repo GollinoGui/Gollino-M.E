@@ -352,6 +352,19 @@ CREATE TABLE IF NOT EXISTS fornecedores (
 );
 
 -- ============================================================
+-- TABELA: historicos — descrições padrão pra agilizar lançamento
+-- de contas a pagar/receber (ex: "Água e Esgoto", "Energia Elétrica")
+-- ============================================================
+CREATE TABLE IF NOT EXISTS historicos (
+  id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  codigo TEXT UNIQUE NOT NULL,
+  nome TEXT NOT NULL,
+  situacao TEXT DEFAULT 'A',
+  entra_relatorio TEXT DEFAULT 'S',
+  data_atualizacao TEXT
+);
+
+-- ============================================================
 -- TABELA: usuarios
 -- ============================================================
 CREATE TABLE IF NOT EXISTS usuarios (

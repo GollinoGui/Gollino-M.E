@@ -48,6 +48,13 @@ contextBridge.exposeInMainWorld('api', {
     excluir: (codigo) => ipcRenderer.invoke('fornecedores:excluir', codigo),
   },
 
+  // HISTÓRICOS
+  historicos: {
+    listar: (filtros) => ipcRenderer.invoke('historicos:listar', filtros),
+    salvar: (dados) => ipcRenderer.invoke('historicos:salvar', dados),
+    excluir: (codigo) => ipcRenderer.invoke('historicos:excluir', codigo),
+  },
+
   // PRODUTOS
   produtos: {
     listar: (filtros) => ipcRenderer.invoke('produtos:listar', filtros),

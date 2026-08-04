@@ -194,6 +194,11 @@ handle('fornecedores:buscar', (_, codigo) => db.fornecedores.buscar(codigo))
 handle('fornecedores:salvar', (_, dados) => db.fornecedores.salvar(dados))
 handle('fornecedores:excluir', (_, codigo) => db.fornecedores.excluir(codigo))
 
+// --- HISTÓRICOS ---
+handle('historicos:listar', (_, filtros) => db.historicos.listar(filtros))
+handle('historicos:salvar', (_, dados) => db.historicos.salvar(dados))
+handle('historicos:excluir', (_, codigo) => db.historicos.excluir(codigo))
+
 // --- PRODUTOS ---
 handle('produtos:listar', (_, filtros) => db.produtos.listar(filtros))
 handle('produtos:buscar', (_, codigo) => db.produtos.buscar(codigo))
