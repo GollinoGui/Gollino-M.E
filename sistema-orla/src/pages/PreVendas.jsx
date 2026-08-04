@@ -70,7 +70,7 @@ function ModalItem({ produto, onConfirm, onClose }) {
 
 function ModalBaixar({ pv, onConfirm, onClose, salvando }) {
   const [forma, setForma] = useState('')
-  const formas = ['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'Convênio', 'Cheque', 'Haver']
+  const formas = ['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'PIX', 'Convênio', 'Cheque', 'Haver']
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500 }}>
       <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-md)', width: 420, padding: 24, boxShadow: '0 20px 50px rgba(0,0,0,0.18)' }}>

@@ -2004,6 +2004,10 @@ function RelFinanceiro() {
     (s, v) => s + (v.valor_pago_cheque || 0),
     0,
   )
+  const totalPix = vendas.reduce(
+    (s, v) => s + (v.valor_pago_pix || 0),
+    0,
+  )
 
   const resumoLinhas = [
     { item: 'Total de vendas (período)', valor: totalVendas },
@@ -2018,6 +2022,7 @@ function RelFinanceiro() {
     { item: 'Cartão Crédito', valor: totalCartaoC },
     { item: 'Cartão Débito', valor: totalCartaoD },
     { item: 'Cheque', valor: totalCheque },
+    { item: 'PIX', valor: totalPix },
   ]
 
   function exportarExcel() {
@@ -2199,6 +2204,11 @@ function RelFinanceiro() {
                   label: 'Cheque',
                   value: totalCheque,
                   color: 'var(--amber-500)',
+                },
+                {
+                  label: 'PIX',
+                  value: totalPix,
+                  color: '#0D9488',
                 },
               ]
                 .filter((i) => i.value > 0)
@@ -2426,6 +2436,7 @@ function RelFechamentoCaixa() {
   const totalCartaoC = fechadas.reduce((s, c) => s + (c.valor_cartao_credito || 0), 0)
   const totalCartaoD = fechadas.reduce((s, c) => s + (c.valor_cartao_debito || 0), 0)
   const totalCheque = fechadas.reduce((s, c) => s + (c.valor_cheque || 0), 0)
+  const totalPix = fechadas.reduce((s, c) => s + (c.valor_pix || 0), 0)
 
   const { ordenados, coluna, direcao, alternar } = useOrdenacao(sessoes, {
     colunaInicial: 'data_abertura',
@@ -2447,6 +2458,7 @@ function RelFechamentoCaixa() {
       { label: 'Cartão Créd.', num: true },
       { label: 'Cartão Déb.', num: true },
       { label: 'Cheque', num: true },
+      { label: 'PIX', num: true },
       { label: 'Total', num: true },
     ]
     const html = gerarHtmlListaSimples({
@@ -2464,6 +2476,7 @@ function RelFechamentoCaixa() {
         <td class="num">${fmtMoedaBR(s.valor_cartao_credito)}</td>
         <td class="num">${fmtMoedaBR(s.valor_cartao_debito)}</td>
         <td class="num">${fmtMoedaBR(s.valor_cheque)}</td>
+        <td class="num">${fmtMoedaBR(s.valor_pix)}</td>
         <td class="num">${fmtMoedaBR(s.valor_total)}</td>
       </tr>`,
       montarTotalGeral: () => `
@@ -2473,6 +2486,7 @@ function RelFechamentoCaixa() {
         <td class="num">${fmtMoedaBR(totalCartaoC)}</td>
         <td class="num">${fmtMoedaBR(totalCartaoD)}</td>
         <td class="num">${fmtMoedaBR(totalCheque)}</td>
+        <td class="num">${fmtMoedaBR(totalPix)}</td>
         <td class="num">${fmtMoedaBR(totalGeral)}</td>
       `,
     })
@@ -2505,6 +2519,7 @@ function RelFechamentoCaixa() {
             'Cartão Créd. (R$)': (s.valor_cartao_credito || 0).toFixed(2).replace('.', ','),
             'Cartão Déb. (R$)': (s.valor_cartao_debito || 0).toFixed(2).replace('.', ','),
             'Cheque (R$)': (s.valor_cheque || 0).toFixed(2).replace('.', ','),
+            'PIX (R$)': (s.valor_pix || 0).toFixed(2).replace('.', ','),
             'Total (R$)': (s.valor_total || 0).toFixed(2).replace('.', ','),
           })), `fechamento_caixa_${dataInicio}_${dataFim}`)}
           onGerarPDF={gerarRelatorioPDF}
@@ -2535,6 +2550,7 @@ function RelFechamentoCaixa() {
                   { label: 'CARTÃO CRÉD.', chave: 'valor_cartao_credito', align: 'right' },
                   { label: 'CARTÃO DÉB.', chave: 'valor_cartao_debito', align: 'right' },
                   { label: 'CHEQUE', chave: 'valor_cheque', align: 'right' },
+                  { label: 'PIX', chave: 'valor_pix', align: 'right' },
                   { label: 'TOTAL', chave: 'valor_total', align: 'right' },
                 ].map((h) => (
                   <ThOrdenavel
@@ -2572,6 +2588,7 @@ function RelFechamentoCaixa() {
                   <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmt(s.valor_cartao_credito)}</td>
                   <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmt(s.valor_cartao_debito)}</td>
                   <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmt(s.valor_cheque)}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmt(s.valor_pix)}</td>
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600 }}>{fmt(s.valor_total)}</td>
                 </tr>
               ))}
@@ -2584,6 +2601,7 @@ function RelFechamentoCaixa() {
                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>{fmt(totalCartaoC)}</td>
                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>{fmt(totalCartaoD)}</td>
                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>{fmt(totalCheque)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{fmt(totalPix)}</td>
                 <td style={{ padding: '8px 10px', textAlign: 'right', color: 'var(--blue-700)' }}>{fmt(totalGeral)}</td>
               </tr>
             </tfoot>

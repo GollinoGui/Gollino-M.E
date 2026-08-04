@@ -49,6 +49,7 @@ export default function CaixasFechados() {
   const totalCartaoC = sessoes.reduce((s, c) => s + (c.valor_cartao_credito || 0), 0)
   const totalCartaoD = sessoes.reduce((s, c) => s + (c.valor_cartao_debito || 0), 0)
   const totalCheque = sessoes.reduce((s, c) => s + (c.valor_cheque || 0), 0)
+  const totalPix = sessoes.reduce((s, c) => s + (c.valor_pix || 0), 0)
 
   const { ordenados, coluna, direcao, alternar } = useOrdenacao(sessoes, {
     colunaInicial: 'data_abertura',
@@ -69,6 +70,7 @@ export default function CaixasFechados() {
       'Cartão Créd. (R$)': (s.valor_cartao_credito || 0).toFixed(2).replace('.', ','),
       'Cartão Déb. (R$)': (s.valor_cartao_debito || 0).toFixed(2).replace('.', ','),
       'Cheque (R$)': (s.valor_cheque || 0).toFixed(2).replace('.', ','),
+      'PIX (R$)': (s.valor_pix || 0).toFixed(2).replace('.', ','),
       'Total (R$)': (s.valor_total || 0).toFixed(2).replace('.', ','),
     }))
     linhas.push({
@@ -78,6 +80,7 @@ export default function CaixasFechados() {
       'Cartão Créd. (R$)': totalCartaoC.toFixed(2).replace('.', ','),
       'Cartão Déb. (R$)': totalCartaoD.toFixed(2).replace('.', ','),
       'Cheque (R$)': totalCheque.toFixed(2).replace('.', ','),
+      'PIX (R$)': totalPix.toFixed(2).replace('.', ','),
       'Total (R$)': totalGeral.toFixed(2).replace('.', ','),
     })
     exportarCSV(linhas, `caixas_fechados_${dataInicio}_${dataFim}`)
@@ -93,6 +96,7 @@ export default function CaixasFechados() {
       { label: 'Cartão Créd.', num: true },
       { label: 'Cartão Déb.', num: true },
       { label: 'Cheque', num: true },
+      { label: 'PIX', num: true },
       { label: 'Total', num: true },
     ]
     const html = gerarHtmlListaSimples({
@@ -109,6 +113,7 @@ export default function CaixasFechados() {
         <td class="num">${fmtMoedaBR(s.valor_cartao_credito)}</td>
         <td class="num">${fmtMoedaBR(s.valor_cartao_debito)}</td>
         <td class="num">${fmtMoedaBR(s.valor_cheque)}</td>
+        <td class="num">${fmtMoedaBR(s.valor_pix)}</td>
         <td class="num">${fmtMoedaBR(s.valor_total)}</td>
       </tr>`,
       montarTotalGeral: () => `
@@ -118,6 +123,7 @@ export default function CaixasFechados() {
         <td class="num">${fmtMoedaBR(totalCartaoC)}</td>
         <td class="num">${fmtMoedaBR(totalCartaoD)}</td>
         <td class="num">${fmtMoedaBR(totalCheque)}</td>
+        <td class="num">${fmtMoedaBR(totalPix)}</td>
         <td class="num">${fmtMoedaBR(totalGeral)}</td>
       `,
     })
@@ -189,6 +195,7 @@ export default function CaixasFechados() {
                     { label: 'Cartão Créd.', chave: 'valor_cartao_credito', align: 'right' },
                     { label: 'Cartão Déb.', chave: 'valor_cartao_debito', align: 'right' },
                     { label: 'Cheque', chave: 'valor_cheque', align: 'right' },
+                    { label: 'PIX', chave: 'valor_pix', align: 'right' },
                     { label: 'Total', chave: 'valor_total', align: 'right' },
                   ].map((h) => (
                     <ThOrdenavel
@@ -217,6 +224,7 @@ export default function CaixasFechados() {
                     <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(s.valor_cartao_credito)}</td>
                     <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(s.valor_cartao_debito)}</td>
                     <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(s.valor_cheque)}</td>
+                    <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(s.valor_pix)}</td>
                     <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700, textAlign: 'right', color: '#185FA5' }}>{fmt(s.valor_total)}</td>
                   </tr>
                 ))}
@@ -229,6 +237,7 @@ export default function CaixasFechados() {
                   <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(totalCartaoC)}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(totalCartaoD)}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(totalCheque)}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(totalPix)}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right', color: '#185FA5' }}>{fmt(totalGeral)}</td>
                 </tr>
               </tfoot>

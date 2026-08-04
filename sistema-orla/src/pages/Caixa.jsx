@@ -148,6 +148,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario, onNavigate
   const totalCartaoC = resumoSessao?.cartaoCredito || 0
   const totalCartaoD = resumoSessao?.cartaoDebito || 0
   const totalCheque = resumoSessao?.cheque || 0
+  const totalPix = resumoSessao?.pix || 0
   const qtdeVendas = resumoSessao?.qtdeVendas || 0
   const dinheiroEsperado = resumoSessao?.dinheiroEsperado ?? totalDinheiro
 
@@ -572,6 +573,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario, onNavigate
             { label: 'Cartão Créd.', value: totalCartaoC, color: '#185FA5' },
             { label: 'Cartão Déb.', value: totalCartaoD, color: '#B7791F' },
             { label: 'Cheque', value: totalCheque, color: 'var(--text-muted)' },
+            { label: 'PIX', value: totalPix, color: '#0D9488' },
           ]
             .filter((f) => f.value > 0)
             .map((f) => (

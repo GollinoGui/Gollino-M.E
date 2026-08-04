@@ -414,11 +414,15 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
       (s, v) => s + (v.valor_pago_cheque || 0),
       0,
     )
+    const pix = vendasHoje.reduce(
+      (s, v) => s + (v.valor_pago_pix || 0),
+      0,
+    )
     const haver = vendasHoje.reduce(
       (s, v) => s + (v.valor_pago_haver || 0),
       0,
     )
-    const total = dinheiro + cartaoC + cartaoD + cheque + haver || 1
+    const total = dinheiro + cartaoC + cartaoD + cheque + pix + haver || 1
     return [
       {
         forma: 'Dinheiro',
@@ -443,6 +447,12 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
         valor: cheque,
         pct: Math.round((cheque / total) * 100),
         cor: '#6B21A8',
+      },
+      {
+        forma: 'PIX',
+        valor: pix,
+        pct: Math.round((pix / total) * 100),
+        cor: '#0D9488',
       },
       {
         forma: 'Haver',

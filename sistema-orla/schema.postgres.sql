@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS vendas (
   valor_pago_cartao_credito DOUBLE PRECISION DEFAULT 0,
   valor_pago_cartao_debito DOUBLE PRECISION DEFAULT 0,
   valor_pago_cheque DOUBLE PRECISION DEFAULT 0,
+  valor_pago_pix DOUBLE PRECISION DEFAULT 0,
   valor_pago_haver DOUBLE PRECISION DEFAULT 0,
   valor_deixado_em_haver DOUBLE PRECISION DEFAULT 0,
   valor_pago_contas_receber DOUBLE PRECISION DEFAULT 0,
@@ -318,6 +319,7 @@ CREATE TABLE IF NOT EXISTS movimentos_caixa (
   valor_cheque DOUBLE PRECISION DEFAULT 0,
   valor_cartao_credito DOUBLE PRECISION DEFAULT 0,
   valor_cartao_debito DOUBLE PRECISION DEFAULT 0,
+  valor_pix DOUBLE PRECISION DEFAULT 0,
   valor_outros DOUBLE PRECISION DEFAULT 0,
   situacao TEXT DEFAULT 'A'
 );

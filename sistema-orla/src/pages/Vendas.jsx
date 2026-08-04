@@ -284,7 +284,7 @@ function gerarParcelas(total, qtde, primeiroPgto) {
   })
 }
 
-const FORMAS_DIRETAS = ['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'Cheque', 'Haver']
+const FORMAS_DIRETAS = ['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'PIX', 'Cheque', 'Haver']
 
 function ModalPagamento({ total, clienteAnonimo, onClose, onFinalizar, salvando }) {
   const [ativas, setAtivas] = useState([]) // formas diretas selecionadas (pagamento misto)
@@ -777,6 +777,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
           valor_pago_cartao_credito: 0,
           valor_pago_cartao_debito: 0,
           valor_pago_cheque: 0,
+          valor_pago_pix: 0,
           valor_pago_haver: 0,
           valor_troco: 0,
           valor_entrada: 0,
@@ -795,6 +796,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
           valor_pago_cartao_credito: valores['Cartão Crédito'] || 0,
           valor_pago_cartao_debito: valores['Cartão Débito'] || 0,
           valor_pago_cheque: valores.Cheque || 0,
+          valor_pago_pix: valores.PIX || 0,
           valor_pago_haver: valores.Haver || 0,
           valor_troco: troco,
           valor_entrada: total - restante,
