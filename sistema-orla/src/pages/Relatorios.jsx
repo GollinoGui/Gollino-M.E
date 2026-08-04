@@ -15,7 +15,7 @@ import {
   Download,
 } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
-import { BotaoExportarExcel, BotaoGerarRelatorioPDF } from '../components/BotoesRelatorio'
+import { BotaoExportarExcel, BotaoGerarRelatorio } from '../components/BotoesRelatorio'
 import { useOrdenacao } from '../utils/ordenacao'
 import {
   exportarCSV,
@@ -804,8 +804,8 @@ function RelProdutos() {
                 Listagem de produtos ({produtos.length})
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <BtnExportar
-                  onClick={() =>
+                <BotaoGerarRelatorio
+                  onExportarExcel={() =>
                     exportarCSV(
                       [...produtos]
                         .sort((a, b) =>
@@ -823,8 +823,8 @@ function RelProdutos() {
                       'produtos_estoque',
                     )
                   }
+                  onGerarPDF={gerarRelatorioPDF}
                 />
-                <BotaoGerarRelatorioPDF onGerar={gerarRelatorioPDF} />
               </div>
             </div>
             <table
@@ -1299,8 +1299,7 @@ function RelContasReceber() {
                 Listagem de parcelas ({contas.length})
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <BtnExportar onClick={exportarExcel} />
-                <BotaoGerarRelatorioPDF onGerar={gerarRelatorioPDF} />
+                <BotaoGerarRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />
               </div>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1737,8 +1736,7 @@ function RelContasPagar() {
                 Listagem de contas a pagar ({contas.length})
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <BtnExportar onClick={exportarExcel} />
-                <BotaoGerarRelatorioPDF onGerar={gerarRelatorioPDF} />
+                <BotaoGerarRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />
               </div>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -2058,8 +2056,7 @@ function RelFinanceiro() {
           <RefreshCw size={12} /> Buscar
         </button>
         <div style={{ flex: 1 }} />
-        {!loading && <BtnExportar onClick={exportarExcel} />}
-        {!loading && <BotaoGerarRelatorioPDF onGerar={gerarRelatorioPDF} />}
+        {!loading && <BotaoGerarRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />}
       </div>
       {loading ? (
         <Carregando />
@@ -2498,18 +2495,20 @@ function RelFechamentoCaixa() {
         <button onClick={carregar} style={{ height: 32, padding: '0 16px', borderRadius: 6, background: 'var(--blue-700)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
           {loading ? 'Carregando…' : 'Atualizar'}
         </button>
-        <BtnExportar onClick={() => exportarCSV(sessoes.map(s => ({
-          'Abertura (data)': fmtDate(s.data_abertura), 'Abertura (hora)': fmtHora(s.hora_abertura), 'Usuário abertura': s.usuario_abertura || '—',
-          'Fechamento (data)': fmtDate(s.data_fechamento), 'Fechamento (hora)': fmtHora(s.hora_fechamento), 'Usuário fechamento': s.usuario_fechamento || '—',
-          Situação: s.situacao === 'F' ? 'Fechado' : 'Aberto',
-          'Qtde vendas': s.qtde_vendas || 0,
-          'Dinheiro (R$)': (s.valor_dinheiro || 0).toFixed(2).replace('.', ','),
-          'Cartão Créd. (R$)': (s.valor_cartao_credito || 0).toFixed(2).replace('.', ','),
-          'Cartão Déb. (R$)': (s.valor_cartao_debito || 0).toFixed(2).replace('.', ','),
-          'Cheque (R$)': (s.valor_cheque || 0).toFixed(2).replace('.', ','),
-          'Total (R$)': (s.valor_total || 0).toFixed(2).replace('.', ','),
-        })), `fechamento_caixa_${dataInicio}_${dataFim}`)} />
-        <BotaoGerarRelatorioPDF onGerar={gerarRelatorioPDF} />
+        <BotaoGerarRelatorio
+          onExportarExcel={() => exportarCSV(sessoes.map(s => ({
+            'Abertura (data)': fmtDate(s.data_abertura), 'Abertura (hora)': fmtHora(s.hora_abertura), 'Usuário abertura': s.usuario_abertura || '—',
+            'Fechamento (data)': fmtDate(s.data_fechamento), 'Fechamento (hora)': fmtHora(s.hora_fechamento), 'Usuário fechamento': s.usuario_fechamento || '—',
+            Situação: s.situacao === 'F' ? 'Fechado' : 'Aberto',
+            'Qtde vendas': s.qtde_vendas || 0,
+            'Dinheiro (R$)': (s.valor_dinheiro || 0).toFixed(2).replace('.', ','),
+            'Cartão Créd. (R$)': (s.valor_cartao_credito || 0).toFixed(2).replace('.', ','),
+            'Cartão Déb. (R$)': (s.valor_cartao_debito || 0).toFixed(2).replace('.', ','),
+            'Cheque (R$)': (s.valor_cheque || 0).toFixed(2).replace('.', ','),
+            'Total (R$)': (s.valor_total || 0).toFixed(2).replace('.', ','),
+          })), `fechamento_caixa_${dataInicio}_${dataFim}`)}
+          onGerarPDF={gerarRelatorioPDF}
+        />
       </div>
 
       {!loading && (
