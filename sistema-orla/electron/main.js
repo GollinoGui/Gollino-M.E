@@ -199,6 +199,11 @@ handle('historicos:listar', (_, filtros) => db.historicos.listar(filtros))
 handle('historicos:salvar', (_, dados) => db.historicos.salvar(dados))
 handle('historicos:excluir', (_, codigo) => db.historicos.excluir(codigo))
 
+// --- PLANO DE CONTAS ---
+handle('planoContas:listar', (_, filtros) => db.planoContas.listar(filtros))
+handle('planoContas:salvar', (_, dados) => db.planoContas.salvar(dados))
+handle('planoContas:excluir', (_, codigo) => db.planoContas.excluir(codigo))
+
 // --- PRODUTOS ---
 handle('produtos:listar', (_, filtros) => db.produtos.listar(filtros))
 handle('produtos:buscar', (_, codigo) => db.produtos.buscar(codigo))

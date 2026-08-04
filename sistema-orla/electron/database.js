@@ -251,6 +251,40 @@ const historicos = {
 }
 
 // ============================================================
+// PLANO DE CONTAS — estrutura hierárquica de despesas (grupo →
+// subgrupo → conta), usada pra classificar contas a pagar e gerar
+// o relatório "Plano de Contas - Despesas Empresariais".
+// ============================================================
+const planoContas = {
+  async listar(filtros = {}) {
+    let q = supabase.from('plano_contas').select('*')
+    if (filtros.busca) {
+      const b = orValue(`%${filtros.busca}%`)
+      q = q.or(`descricao.like.${b},codigo.like.${b},numero_conta.like.${b}`)
+    }
+    if (filtros.situacao) q = q.eq('situacao', filtros.situacao)
+    if (filtros.nivel) q = q.eq('nivel', filtros.nivel)
+    const { data, error } = await q.order('numero_conta').limit(500)
+    if (error) throw new Error(error.message)
+    return data
+  },
+
+  async salvar(dados) {
+    const { error } = await supabase
+      .from('plano_contas')
+      .upsert({ ...dados, data_atualizacao: hoje() }, { onConflict: 'codigo' })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+
+  async excluir(codigo) {
+    const { error } = await supabase.from('plano_contas').update({ situacao: 'I' }).eq('codigo', codigo)
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+}
+
+// ============================================================
 // PRODUTOS
 // ============================================================
 const produtos = {
@@ -1282,6 +1316,7 @@ module.exports = {
   clientes,
   fornecedores,
   historicos,
+  planoContas,
   produtos,
   vendas,
   contasReceber,

@@ -248,29 +248,39 @@ function ModalNova({ onClose, onSalvar }) {
     codigo_forma_pagamento: '',
   })
   const [salvando, setSalvando] = useState(false)
-  const [historicos, setHistoricos] = useState([])
-  const [historicoAberto, setHistoricoAberto] = useState(false)
-  const historicoRef = useRef(null)
+  const [planoContas, setPlanoContas] = useState([])
+  const [contaAberta, setContaAberta] = useState(false)
+  const contaRef = useRef(null)
   const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }))
   const valido =
     form.codigo_fornecedor && parseFloat(form.valor_docto) > 0 && form.data_vencimento
 
   useEffect(() => {
-    window.api.historicos.listar({ situacao: 'A' }).then(setHistoricos).catch(console.error)
+    window.api.planoContas.listar({ situacao: 'A' }).then(setPlanoContas).catch(console.error)
   }, [])
 
   useEffect(() => {
-    if (!historicoAberto) return
+    if (!contaAberta) return
     function handleClickFora(e) {
-      if (historicoRef.current && !historicoRef.current.contains(e.target)) setHistoricoAberto(false)
+      if (contaRef.current && !contaRef.current.contains(e.target)) setContaAberta(false)
     }
     document.addEventListener('mousedown', handleClickFora)
     return () => document.removeEventListener('mousedown', handleClickFora)
-  }, [historicoAberto])
+  }, [contaAberta])
 
-  const buscaHistorico = form.observacao.trim().toLowerCase()
-  const historicosFiltrados = (
-    buscaHistorico ? historicos.filter((h) => h.nome.toLowerCase().includes(buscaHistorico)) : historicos
+  // Só as contas-folha (nível 4) servem pra classificar um lançamento — os
+  // níveis 2/3 são só agrupadores. O grupo (nível 3) vira o "breadcrumb" pra
+  // dar contexto na lista, achado pelo prefixo do número da conta.
+  const gruposPorNumero = Object.fromEntries(
+    planoContas.filter((c) => c.nivel === 3).map((c) => [c.numero_conta, c.descricao]),
+  )
+  const contasFolha = planoContas
+    .filter((c) => c.nivel === 4)
+    .map((c) => ({ ...c, grupo: gruposPorNumero[c.numero_conta.split('.').slice(0, -1).join('.')] || '' }))
+
+  const buscaConta = form.observacao.trim().toLowerCase()
+  const contasFiltradas = (
+    buscaConta ? contasFolha.filter((c) => c.descricao.toLowerCase().includes(buscaConta)) : contasFolha
   ).slice(0, 30)
 
   async function handleSalvar() {
@@ -344,7 +354,7 @@ function ModalNova({ onClose, onSalvar }) {
               placeholder='Nome do fornecedor ou descrição'
             />
           </div>
-          <div style={{ gridColumn: '1 / -1', position: 'relative' }} ref={historicoRef}>
+          <div style={{ gridColumn: '1 / -1', position: 'relative' }} ref={contaRef}>
             <label
               style={{
                 fontSize: 11,
@@ -353,12 +363,12 @@ function ModalNova({ onClose, onSalvar }) {
                 marginBottom: 4,
               }}
             >
-              Observação / Histórico
+              Observação / Conta
             </label>
             <input
               value={form.observacao}
               onChange={f('observacao')}
-              onFocus={() => setHistoricoAberto(true)}
+              onFocus={() => setContaAberta(true)}
               style={{
                 width: '100%',
                 height: 36,
@@ -368,7 +378,7 @@ function ModalNova({ onClose, onSalvar }) {
               }}
               placeholder='Ex: Água e Esgoto — ou digite livre'
             />
-            {historicoAberto && historicosFiltrados.length > 0 && (
+            {contaAberta && contasFiltradas.length > 0 && (
               <div
                 style={{
                   position: 'absolute',
@@ -385,12 +395,12 @@ function ModalNova({ onClose, onSalvar }) {
                   overflowY: 'auto',
                 }}
               >
-                {historicosFiltrados.map((h) => (
+                {contasFiltradas.map((c) => (
                   <button
-                    key={h.codigo}
+                    key={c.codigo}
                     onClick={() => {
-                      setForm((p) => ({ ...p, observacao: h.nome }))
-                      setHistoricoAberto(false)
+                      setForm((p) => ({ ...p, observacao: c.descricao }))
+                      setContaAberta(false)
                     }}
                     style={{
                       display: 'block',
@@ -407,7 +417,10 @@ function ModalNova({ onClose, onSalvar }) {
                     onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
-                    {h.nome}
+                    {c.grupo && (
+                      <span style={{ color: 'var(--text-muted)' }}>{c.grupo} › </span>
+                    )}
+                    {c.descricao}
                   </button>
                 ))}
               </div>

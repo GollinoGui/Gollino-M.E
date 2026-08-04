@@ -365,6 +365,22 @@ CREATE TABLE IF NOT EXISTS historicos (
 );
 
 -- ============================================================
+-- TABELA: plano_contas — estrutura hierárquica de despesas
+-- (grupo → subgrupo → conta), usada pra classificar contas a
+-- pagar e gerar o relatório "Plano de Contas - Despesas Empresariais"
+-- ============================================================
+CREATE TABLE IF NOT EXISTS plano_contas (
+  id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  codigo TEXT UNIQUE NOT NULL,
+  numero_conta TEXT NOT NULL,
+  nivel INTEGER NOT NULL,
+  descricao TEXT NOT NULL,
+  historico_nome TEXT,
+  situacao TEXT DEFAULT 'A',
+  data_atualizacao TEXT
+);
+
+-- ============================================================
 -- TABELA: usuarios
 -- ============================================================
 CREATE TABLE IF NOT EXISTS usuarios (

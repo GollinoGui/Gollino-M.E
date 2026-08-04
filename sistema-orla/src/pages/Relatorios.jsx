@@ -13,6 +13,7 @@ import {
   Wallet,
   Printer,
   Download,
+  ListTree,
 } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
 import { BotaoExportarExcel, BotaoGerarRelatorio } from '../components/BotoesRelatorio'
@@ -54,6 +55,7 @@ const abas = [
   { id: 'rel-contas-receber', label: 'Contas a receber', icon: TrendingUp },
   { id: 'rel-contas-pagar', label: 'Contas a pagar', icon: TrendingDown },
   { id: 'rel-financeiro', label: 'Financeiro', icon: DollarSign },
+  { id: 'rel-plano-contas', label: 'Plano de Contas', icon: ListTree },
 ]
 
 function CardMetrica({ label, value, sub, color }) {
@@ -2804,6 +2806,110 @@ function RelExtrato() {
   )
 }
 
+// ── PLANO DE CONTAS ──────────────────────────────────────────────────────────
+function RelPlanoContas() {
+  const [contas, setContas] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [busca, setBusca] = useState('')
+
+  useEffect(() => {
+    window.api.planoContas.listar({ situacao: 'A' }).then(setContas).finally(() => setLoading(false))
+  }, [])
+
+  const filtradas = busca
+    ? contas.filter((c) => c.descricao.toLowerCase().includes(busca.toLowerCase()) || c.codigo.includes(busca))
+    : contas
+  const totalContas = filtradas.filter((c) => c.nivel >= 4).length
+
+  function exportarExcel() {
+    exportarCSV(
+      filtradas.map((c) => ({
+        Código: c.codigo,
+        Número: c.numero_conta,
+        Nível: c.nivel,
+        Descrição: c.descricao,
+        Histórico: c.historico_nome || '',
+      })),
+      `plano_contas_${new Date().toISOString().slice(0, 10)}`,
+    )
+  }
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const html = gerarHtmlListaSimples({
+      empresa,
+      titulo: 'Plano de Contas - Despesas Empresariais',
+      subtitulo: `${totalContas} conta(s)`,
+      colunas: [
+        { label: 'Código' },
+        { label: 'Número' },
+        { label: 'Nível', num: true },
+        { label: 'Descrição' },
+        { label: 'Histórico' },
+      ],
+      linhas: filtradas,
+      montarLinha: (c) => `<tr${c.nivel < 4 ? ' style="font-weight:700;background:#f3f4f6"' : ''}>
+        <td>${c.codigo}</td>
+        <td>${c.numero_conta}</td>
+        <td class="num">${c.nivel}</td>
+        <td>${c.descricao}</td>
+        <td>${c.historico_nome || ''}</td>
+      </tr>`,
+    })
+    await gerarPdfRelatorio(html, `plano_contas_${new Date().toISOString().slice(0, 10)}`)
+  }
+
+  return (
+    <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <input
+          placeholder='Buscar conta…'
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          style={{ height: 32, padding: '0 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: 13, width: 240 }}
+        />
+        {!loading && <BotaoGerarRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />}
+        <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 'auto' }}>{totalContas} conta(s)</span>
+      </div>
+      {loading ? (
+        <Carregando />
+      ) : (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--gray-50)', borderBottom: '2px solid var(--border)' }}>
+                {['CÓDIGO', 'NÚMERO', 'NÍVEL', 'DESCRIÇÃO', 'HISTÓRICO'].map((h) => (
+                  <th key={h} style={{ padding: '8px 10px', textAlign: h === 'NÍVEL' ? 'right' : 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11, whiteSpace: 'nowrap' }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtradas.map((c) => (
+                <tr
+                  key={c.codigo}
+                  style={{
+                    borderBottom: '1px solid var(--border)',
+                    background: c.nivel < 4 ? 'var(--gray-50)' : 'transparent',
+                    fontWeight: c.nivel < 4 ? 600 : 400,
+                  }}
+                >
+                  <td style={{ padding: '6px 10px', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{c.codigo}</td>
+                  <td style={{ padding: '6px 10px', fontFamily: 'monospace' }}>{c.numero_conta}</td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right' }}>{c.nivel}</td>
+                  <td style={{ padding: '6px 10px', paddingLeft: 10 + (c.nivel - 2) * 18 }}>{c.descricao}</td>
+                  <td style={{ padding: '6px 10px', color: 'var(--text-muted)' }}>{c.historico_nome || ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── COMPONENTE PRINCIPAL ──────────────────────────────────────────────────────
 export default function Relatorios({ paginaAtiva }) {
   const abaInicial = abas.find((a) => a.id === paginaAtiva)?.id || 'rel-vendas'
@@ -2895,6 +3001,8 @@ export default function Relatorios({ paginaAtiva }) {
         return <RelContasPagar />
       case 'rel-financeiro':
         return <RelFinanceiro />
+      case 'rel-plano-contas':
+        return <RelPlanoContas />
       default:
         return (
           <div

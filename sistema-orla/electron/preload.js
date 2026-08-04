@@ -55,6 +55,13 @@ contextBridge.exposeInMainWorld('api', {
     excluir: (codigo) => ipcRenderer.invoke('historicos:excluir', codigo),
   },
 
+  // PLANO DE CONTAS
+  planoContas: {
+    listar: (filtros) => ipcRenderer.invoke('planoContas:listar', filtros),
+    salvar: (dados) => ipcRenderer.invoke('planoContas:salvar', dados),
+    excluir: (codigo) => ipcRenderer.invoke('planoContas:excluir', codigo),
+  },
+
   // PRODUTOS
   produtos: {
     listar: (filtros) => ipcRenderer.invoke('produtos:listar', filtros),
