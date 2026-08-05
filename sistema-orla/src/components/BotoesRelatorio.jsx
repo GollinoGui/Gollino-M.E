@@ -46,7 +46,12 @@ export function BotaoExportarExcel({ onClick, label = 'Exportar Excel' }) {
 // Botão único "Gerar Relatório": abre um dropdown com as opções PDF e Excel.
 // PDF chama onGerarPDF (async, monta HTML e manda pro processo principal
 // imprimir/salvar); Excel chama onExportarExcel (síncrono, gera o .xlsx/.csv).
-export function BotaoGerarRelatorio({ onExportarExcel, onGerarPDF, label = 'Gerar Relatório' }) {
+export function BotaoGerarRelatorio({
+  onExportarExcel,
+  onGerarPDF,
+  label = 'Gerar Relatório',
+  abrirParaCima = false,
+}) {
   const [aberto, setAberto] = useState(false)
   const [gerando, setGerando] = useState(false)
   const [erro, setErro] = useState('')
@@ -96,7 +101,7 @@ export function BotaoGerarRelatorio({ onExportarExcel, onGerarPDF, label = 'Gera
         <div
           style={{
             position: 'absolute',
-            top: '110%',
+            ...(abrirParaCima ? { bottom: '110%' } : { top: '110%' }),
             right: 0,
             zIndex: 20,
             minWidth: 160,
@@ -129,7 +134,7 @@ export function BotaoGerarRelatorio({ onExportarExcel, onGerarPDF, label = 'Gera
         <div
           style={{
             position: 'absolute',
-            top: '110%',
+            ...(abrirParaCima ? { bottom: '110%' } : { top: '110%' }),
             right: 0,
             zIndex: 20,
             background: '#C53030',
@@ -148,6 +153,12 @@ export function BotaoGerarRelatorio({ onExportarExcel, onGerarPDF, label = 'Gera
   )
 }
 
-export function BotoesRelatorio({ onExportarExcel, onGerarPDF }) {
-  return <BotaoGerarRelatorio onExportarExcel={onExportarExcel} onGerarPDF={onGerarPDF} />
+export function BotoesRelatorio({ onExportarExcel, onGerarPDF, abrirParaCima }) {
+  return (
+    <BotaoGerarRelatorio
+      onExportarExcel={onExportarExcel}
+      onGerarPDF={onGerarPDF}
+      abrirParaCima={abrirParaCima}
+    />
+  )
 }

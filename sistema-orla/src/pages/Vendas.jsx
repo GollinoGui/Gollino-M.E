@@ -64,6 +64,7 @@ function ModalItem({ produto, onConfirm, onClose }) {
   const fracionavel = UNIDADES_FRACIONAVEIS.has(produto.unidade)
   const [qty, setQty] = useState('1')
   const [precoStr, setPrecoStr] = useState(precoOriginal.toFixed(2).replace('.', ','))
+  const [precoAntesEdicao, setPrecoAntesEdicao] = useState(null)
   const [desc, setDesc] = useState('0')
   const descAplicado = clampDesconto(desc)
   const preco = parseQtd(precoStr)
@@ -148,7 +149,17 @@ function ModalItem({ produto, onConfirm, onClose }) {
             </label>
             <input
               value={precoStr}
+              onFocus={() => {
+                setPrecoAntesEdicao(precoStr)
+                setPrecoStr('')
+              }}
               onChange={(e) => setPrecoStr(maskQtd(e.target.value))}
+              onBlur={() => {
+                if (precoStr.trim() === '' && precoAntesEdicao !== null) {
+                  setPrecoStr(precoAntesEdicao)
+                }
+                setPrecoAntesEdicao(null)
+              }}
               inputMode='decimal'
               placeholder='0,00'
               style={{

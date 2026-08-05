@@ -33,6 +33,7 @@ import Login from './pages/Login'
 import AtalhosTecla from './components/AtalhosTecla'
 import AvisoCaixaAtrasado from './components/AvisoCaixaAtrasado'
 import ModalConfirmacao from './components/ModalConfirmacao'
+import ModalConfirmarSaida from './components/ModalConfirmarSaida'
 import { DownloadCloud, RefreshCw } from 'lucide-react'
 
 const CHAVE_SESSAO = 'gollino_sessao'
@@ -114,6 +115,7 @@ export default function App() {
   const [temaEscuro, setTemaEscuro] = useState(false)
   const [updateDisponivel, setUpdateDisponivel] = useState(false)
   const [updateBaixado, setUpdateBaixado] = useState(false)
+  const [pedidoSaida, setPedidoSaida] = useState(false)
 
   // O login "lembrado" acima só pula a TELA de login — não garante que a
   // sessão real do Supabase (processo principal) ainda seja aceita. Se ela
@@ -143,6 +145,22 @@ export default function App() {
       offBaixado?.()
     }
   }, [])
+
+  // Fechar a janela (X/Alt+F4) é interceptado no main.js, que manda esse
+  // evento em vez de sair direto. Se o caixa já está fechado, não há motivo
+  // pra incomodar ninguém — confirma a saída na hora. Reinscreve sempre que
+  // caixaAberto muda pra nunca decidir com um valor desatualizado.
+  useEffect(() => {
+    if (!window.api?.app) return
+    const off = window.api.app.aoSolicitarFechamento(() => {
+      if (!caixaAberto) {
+        window.api.app.confirmarSaida()
+      } else {
+        setPedidoSaida(true)
+      }
+    })
+    return () => off?.()
+  }, [caixaAberto])
 
   function handleLogout() {
     window.api.auth.logout().catch(() => {})
@@ -373,7 +391,7 @@ export default function App() {
     }
   }
 
-  const modaisAtualizacao = (
+  const modaisGlobais = (
     <>
       {updateDisponivel && (
         <ModalConfirmacao
@@ -396,6 +414,13 @@ export default function App() {
           ]}
         />
       )}
+      {pedidoSaida && (
+        <ModalConfirmarSaida
+          usuario={usuario}
+          onCancelar={() => setPedidoSaida(false)}
+          onCaixaFechado={() => setCaixaAberto(false)}
+        />
+      )}
     </>
   )
 
@@ -403,7 +428,7 @@ export default function App() {
   if (!usuario) return (
     <>
       <Login onLogin={setUsuario} />
-      {modaisAtualizacao}
+      {modaisGlobais}
     </>
   )
   return (
@@ -469,7 +494,7 @@ export default function App() {
       )}
       <Assistente caixaAberto={caixaAberto} onNavigate={setPagina} usuario={usuario} />
       <AtalhosTecla />
-      {modaisAtualizacao}
+      {modaisGlobais}
     </div>
   )
 }

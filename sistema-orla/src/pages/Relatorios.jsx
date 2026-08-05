@@ -16,7 +16,7 @@ import {
   ListTree,
 } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
-import { BotaoExportarExcel, BotaoGerarRelatorio } from '../components/BotoesRelatorio'
+import { BotaoGerarRelatorio } from '../components/BotoesRelatorio'
 import { useOrdenacao } from '../utils/ordenacao'
 import {
   exportarCSV,
@@ -32,10 +32,6 @@ const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = (d) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-'
-
-function BtnExportar({ onClick }) {
-  return <BotaoExportarExcel onClick={onClick} />
-}
 
 function mesAtual() {
   const d = new Date()
@@ -216,6 +212,41 @@ function RelVendas() {
   const maxForma = Math.max(...Object.values(porForma), 1)
   const maxCliente = Math.max(...Object.values(porCliente), 1)
   const formas = [...new Set(vendas.map((v) => v.codigo_forma_pagamento1).filter(Boolean))]
+
+  function exportarExcel() {
+    exportarCSV(
+      filtradas.map((v) => ({
+        'Nº Venda': v.orcamento,
+        Data: fmtDate(v.data),
+        Cliente: v.nome_cliente || '—',
+        'Forma Pagamento': v.codigo_forma_pagamento1 || '—',
+        'Total (R$)': (v.valor_total || 0).toFixed(2).replace('.', ','),
+      })),
+      `vendas_${dataInicio}_${dataFim}`,
+    )
+  }
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const colunas = [
+      { label: 'Nº Venda' },
+      { label: 'Data' },
+      { label: 'Cliente' },
+      { label: 'Forma' },
+      { label: 'Total', num: true },
+    ]
+    const html = gerarHtmlListaSimples({
+      empresa,
+      titulo: 'Vendas',
+      subtitulo: `Período de ${fmtDate(dataInicio)} a ${fmtDate(dataFim)} — ${filtradas.length} venda(s)`,
+      colunas,
+      linhas: filtradas,
+      montarLinha: (v) =>
+        `<tr><td>${v.orcamento}</td><td>${fmtDate(v.data)}</td><td>${v.nome_cliente || '—'}</td><td>${v.codigo_forma_pagamento1 || '—'}</td><td class="num">${fmtMoedaBR(v.valor_total)}</td></tr>`,
+      montarTotalGeral: () => `<td colspan="4">TOTAL DO PERÍODO</td><td class="num">${fmtMoedaBR(totalVendas)}</td>`,
+    })
+    await gerarPdfRelatorio(html, `vendas_${dataInicio}_${dataFim}`)
+  }
 
   return (
     <div style={{ padding: 20, overflowY: 'auto', height: '100%', position: 'relative' }}>
@@ -433,20 +464,7 @@ function RelVendas() {
               <div style={{ fontSize: 13, fontWeight: 500 }}>
                 Listagem de vendas ({filtradas.length})
               </div>
-              <BtnExportar
-                onClick={() =>
-                  exportarCSV(
-                    filtradas.map((v) => ({
-                      'Nº Venda': v.orcamento,
-                      Data: fmtDate(v.data),
-                      Cliente: v.nome_cliente || '—',
-                      'Forma Pagamento': v.codigo_forma_pagamento1 || '—',
-                      'Total (R$)': (v.valor_total || 0).toFixed(2).replace('.', ','),
-                    })),
-                    `vendas_${dataInicio}_${dataFim}`,
-                  )
-                }
-              />
+              <BotaoGerarRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -2272,6 +2290,36 @@ function RelItenisVendidos() {
   const totalQtd = itens.reduce((s, i) => s + (i.quantidade || 0), 0)
   const totalVal = itens.reduce((s, i) => s + (i.valor_venda || 0), 0)
 
+  function exportarExcel() {
+    exportarCSV(itens.map(i => ({
+      Código: i.codigo, Descrição: i.descricao,
+      Quantidade: String(i.quantidade || 0).replace('.', ','),
+      'Valor Venda (R$)': (i.valor_venda || 0).toFixed(2).replace('.', ','),
+    })), `itens_vendidos_${dataInicio}_${dataFim}`)
+  }
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const colunas = [
+      { label: 'Código' },
+      { label: 'Descrição' },
+      { label: 'Quantidade', num: true },
+      { label: 'Valor Venda', num: true },
+    ]
+    const html = gerarHtmlListaSimples({
+      empresa,
+      titulo: 'Itens Vendidos',
+      subtitulo: `Período de ${fmtDate(dataInicio)} a ${fmtDate(dataFim)} — ${itens.length} produto(s)`,
+      colunas,
+      linhas: itens,
+      montarLinha: (it) =>
+        `<tr><td>${it.codigo}</td><td>${it.descricao}</td><td class="num">${(it.quantidade || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td><td class="num">${fmtMoedaBR(it.valor_venda)}</td></tr>`,
+      montarTotalGeral: () =>
+        `<td>TOTAL — ${itens.length} produtos</td><td></td><td class="num">${totalQtd.toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td><td class="num">${fmtMoedaBR(totalVal)}</td>`,
+    })
+    await gerarPdfRelatorio(html, `itens_vendidos_${dataInicio}_${dataFim}`)
+  }
+
   return (
     <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -2288,11 +2336,7 @@ function RelItenisVendidos() {
         <button onClick={carregar} style={{ height: 32, padding: '0 16px', borderRadius: 6, background: 'var(--blue-700)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
           {loading ? 'Carregando…' : 'Atualizar'}
         </button>
-        <BtnExportar onClick={() => exportarCSV(itens.map(i => ({
-          Código: i.codigo, Descrição: i.descricao,
-          Quantidade: String(i.quantidade || 0).replace('.', ','),
-          'Valor Venda (R$)': (i.valor_venda || 0).toFixed(2).replace('.', ','),
-        })), `itens_vendidos_${dataInicio}_${dataFim}`)} />
+        <BotaoGerarRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />
       </div>
       {loading ? <Carregando /> : (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
@@ -2352,6 +2396,36 @@ function RelEntradasMercadoria() {
   const totalQtd = itens.reduce((s, i) => s + (i.qtde_total || 0), 0)
   const totalVal = itens.reduce((s, i) => s + (i.valor_total || 0), 0)
 
+  function exportarExcel() {
+    exportarCSV(itens.map(i => ({
+      Código: i.codigo, 'Nome/Descrição': i.descricao,
+      'Qtde Total': String(i.qtde_total || 0).replace('.', ','),
+      'Valor Total (R$)': (i.valor_total || 0).toFixed(2).replace('.', ','),
+    })), `entradas_mercadoria_${dataInicio}_${dataFim}`)
+  }
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const colunas = [
+      { label: 'Código' },
+      { label: 'Nome/Descrição' },
+      { label: 'Qtde Total', num: true },
+      { label: 'Valor Total', num: true },
+    ]
+    const html = gerarHtmlListaSimples({
+      empresa,
+      titulo: 'Entradas de Mercadoria',
+      subtitulo: `Período de ${fmtDate(dataInicio)} a ${fmtDate(dataFim)} — ${itens.length} produto(s)`,
+      colunas,
+      linhas: itens,
+      montarLinha: (it) =>
+        `<tr><td>${it.codigo}</td><td>${it.descricao}</td><td class="num">${(it.qtde_total || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td><td class="num">${fmtMoedaBR(it.valor_total)}</td></tr>`,
+      montarTotalGeral: () =>
+        `<td>TOTAL — ${itens.length} produtos</td><td></td><td class="num">${totalQtd.toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td><td class="num">${fmtMoedaBR(totalVal)}</td>`,
+    })
+    await gerarPdfRelatorio(html, `entradas_mercadoria_${dataInicio}_${dataFim}`)
+  }
+
   return (
     <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -2368,11 +2442,7 @@ function RelEntradasMercadoria() {
         <button onClick={carregar} style={{ height: 32, padding: '0 16px', borderRadius: 6, background: 'var(--blue-700)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
           {loading ? 'Carregando…' : 'Atualizar'}
         </button>
-        <BtnExportar onClick={() => exportarCSV(itens.map(i => ({
-          Código: i.codigo, 'Nome/Descrição': i.descricao,
-          'Qtde Total': String(i.qtde_total || 0).replace('.', ','),
-          'Valor Total (R$)': (i.valor_total || 0).toFixed(2).replace('.', ','),
-        })), `entradas_mercadoria_${dataInicio}_${dataFim}`)} />
+        <BotaoGerarRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />
       </div>
       {loading ? <Carregando /> : (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
@@ -2630,20 +2700,58 @@ function RelInventario() {
   const totalCusto = filtrados.reduce((s, i) => s + (i.valor_custo || 0), 0)
   const totalVista = filtrados.reduce((s, i) => s + (i.valor_vista || 0), 0)
 
+  function exportarExcel() {
+    exportarCSV(filtrados.map(i => ({
+      Código: i.codigo, Descrição: i.descricao, Unidade: i.unidade,
+      'Estoque Atual': String(i.estoque_atual || 0).replace('.', ','),
+      'Estoque Mínimo': String(i.estoque_minimo || 0).replace('.', ','),
+      'Custo Unit. (R$)': (i.preco_custo_atual || 0).toFixed(4).replace('.', ','),
+      'Preço Vista (R$)': (i.preco_venda_vista || 0).toFixed(4).replace('.', ','),
+      'Total Custo (R$)': (i.valor_custo || 0).toFixed(2).replace('.', ','),
+      'Total Vista (R$)': (i.valor_vista || 0).toFixed(2).replace('.', ','),
+    })), `inventario_${new Date().toISOString().slice(0,10)}`)
+  }
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const colunas = [
+      { label: 'Código' },
+      { label: 'Descrição' },
+      { label: 'Un' },
+      { label: 'Estoque', num: true },
+      { label: 'Mín', num: true },
+      { label: 'Custo Unit.', num: true },
+      { label: 'Preço Vista', num: true },
+      { label: 'Total Custo', num: true },
+      { label: 'Total Vista', num: true },
+    ]
+    const html = gerarHtmlListaSimples({
+      empresa,
+      titulo: 'Inventário de Produtos',
+      subtitulo: `${filtrados.length} produto(s) — gerado em ${fmtDate(new Date().toISOString().slice(0, 10))}`,
+      colunas,
+      linhas: filtrados,
+      montarLinha: (it) => `<tr>
+        <td>${it.codigo}</td><td>${it.descricao}</td><td>${it.unidade}</td>
+        <td class="num">${(it.estoque_atual || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td>
+        <td class="num">${it.estoque_minimo || 0}</td>
+        <td class="num">${(it.preco_custo_atual || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+        <td class="num">${(it.preco_venda_vista || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+        <td class="num">${fmtMoedaBR(it.valor_custo)}</td>
+        <td class="num">${fmtMoedaBR(it.valor_vista)}</td>
+      </tr>`,
+      montarTotalGeral: () =>
+        `<td colspan="7">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalCusto)}</td><td class="num">${fmtMoedaBR(totalVista)}</td>`,
+    })
+    await gerarPdfRelatorio(html, `inventario_${new Date().toISOString().slice(0, 10)}`)
+  }
+
   return (
     <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <input placeholder='Buscar produto…' value={busca} onChange={e => setBusca(e.target.value)}
           style={{ height: 32, padding: '0 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: 13, width: 240 }} />
-        <BtnExportar onClick={() => exportarCSV(filtrados.map(i => ({
-          Código: i.codigo, Descrição: i.descricao, Unidade: i.unidade,
-          'Estoque Atual': String(i.estoque_atual || 0).replace('.', ','),
-          'Estoque Mínimo': String(i.estoque_minimo || 0).replace('.', ','),
-          'Custo Unit. (R$)': (i.preco_custo_atual || 0).toFixed(4).replace('.', ','),
-          'Preço Vista (R$)': (i.preco_venda_vista || 0).toFixed(4).replace('.', ','),
-          'Total Custo (R$)': (i.valor_custo || 0).toFixed(2).replace('.', ','),
-          'Total Vista (R$)': (i.valor_vista || 0).toFixed(2).replace('.', ','),
-        })), `inventario_${new Date().toISOString().slice(0,10)}`)} />
+        <BotaoGerarRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />
         <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 'auto' }}>{filtrados.length} produtos</span>
       </div>
       {loading ? <Carregando /> : (
@@ -2716,6 +2824,51 @@ function RelExtrato() {
   const totalCred = (dados.movimentos || []).reduce((s, m) => s + (m.credito || 0), 0)
   const saldoFinal = (dados.saldoInicial || 0) + totalCred - totalDeb
 
+  function exportarExcel() {
+    exportarCSV([
+      { Data: '', Histórico: 'SALDO ANTERIOR', Débito: '', Crédito: '', Saldo: dados.saldoInicial.toFixed(2).replace('.', ','), Documento: '', Observação: '' },
+      ...linhas.map(m => ({
+        Data: fmtDate(m.data), Histórico: m.historico,
+        'Débito (R$)': m.debito ? (m.debito).toFixed(2).replace('.', ',') : '',
+        'Crédito (R$)': m.credito ? (m.credito).toFixed(2).replace('.', ',') : '',
+        'Saldo (R$)': m.saldo.toFixed(2).replace('.', ','),
+        Documento: m.documento || '', Observação: m.observacao || '',
+      })),
+      { Data: '', Histórico: 'SALDO FINAL', Débito: totalDeb.toFixed(2).replace('.', ','), Crédito: totalCred.toFixed(2).replace('.', ','), Saldo: saldoFinal.toFixed(2).replace('.', ','), Documento: '', Observação: '' },
+    ], `extrato_${dataInicio}_${dataFim}`)
+  }
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const colunas = [
+      { label: 'Data' },
+      { label: 'Histórico' },
+      { label: 'Débito', num: true },
+      { label: 'Crédito', num: true },
+      { label: 'Saldo', num: true },
+      { label: 'Documento' },
+      { label: 'Observação' },
+    ]
+    const linhasRelatorio = [
+      { tipo: 'marco', rotulo: 'SALDO ANTERIOR', saldo: dados.saldoInicial },
+      ...linhas.map((m) => ({ tipo: 'movimento', ...m })),
+      { tipo: 'marco', rotulo: 'SALDO FINAL', saldo: saldoFinal },
+    ]
+    const montarLinha = (l) =>
+      l.tipo === 'marco'
+        ? `<tr><td colspan="4"><b>${l.rotulo}</b></td><td class="num"><b>${fmtMoedaBR(l.saldo)}</b></td><td colspan="2"></td></tr>`
+        : `<tr><td>${fmtDate(l.data)}</td><td>${l.historico}</td><td class="num">${l.debito ? fmtMoedaBR(l.debito) : '—'}</td><td class="num">${l.credito ? fmtMoedaBR(l.credito) : '—'}</td><td class="num">${fmtMoedaBR(l.saldo)}</td><td>${l.documento || ''}</td><td>${l.observacao || ''}</td></tr>`
+    const html = gerarHtmlListaSimples({
+      empresa,
+      titulo: 'Extrato',
+      subtitulo: `Período de ${fmtDate(dataInicio)} a ${fmtDate(dataFim)}`,
+      colunas,
+      linhas: linhasRelatorio,
+      montarLinha,
+    })
+    await gerarPdfRelatorio(html, `extrato_${dataInicio}_${dataFim}`)
+  }
+
   return (
     <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -2732,17 +2885,7 @@ function RelExtrato() {
         <button onClick={carregar} style={{ height: 32, padding: '0 16px', borderRadius: 6, background: 'var(--blue-700)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
           {loading ? 'Carregando…' : 'Atualizar'}
         </button>
-        <BtnExportar onClick={() => exportarCSV([
-          { Data: '', Histórico: 'SALDO ANTERIOR', Débito: '', Crédito: '', Saldo: dados.saldoInicial.toFixed(2).replace('.', ','), Documento: '', Observação: '' },
-          ...linhas.map(m => ({
-            Data: fmtDate(m.data), Histórico: m.historico,
-            'Débito (R$)': m.debito ? (m.debito).toFixed(2).replace('.', ',') : '',
-            'Crédito (R$)': m.credito ? (m.credito).toFixed(2).replace('.', ',') : '',
-            'Saldo (R$)': m.saldo.toFixed(2).replace('.', ','),
-            Documento: m.documento || '', Observação: m.observacao || '',
-          })),
-          { Data: '', Histórico: 'SALDO FINAL', Débito: totalDeb.toFixed(2).replace('.', ','), Crédito: totalCred.toFixed(2).replace('.', ','), Saldo: saldoFinal.toFixed(2).replace('.', ','), Documento: '', Observação: '' },
-        ], `extrato_${dataInicio}_${dataFim}`)} />
+        <BotaoGerarRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />
       </div>
 
       {/* Cards de totais */}

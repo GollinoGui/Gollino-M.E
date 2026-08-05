@@ -9,6 +9,7 @@ import {
   agruparPorPessoa,
   buscarEmpresa,
   gerarHtmlAgrupadoPorPessoa,
+  gerarHtmlSecoes,
   gerarPdfRelatorio,
   fmtMoedaBR,
 } from '../utils/relatorios'
@@ -65,19 +66,32 @@ function StatusBadge({ status }) {
   )
 }
 
-function ModalReceber({ conta, onClose, onConfirm, erro }) {
-  const emAberto = conta.valor_docto - (conta.valor_pagamento || 0)
+// Confirmação de recebimento — cobre tanto uma conta única (onde ainda dá pra
+// ajustar o valor recebido, ex: recebimento parcial) quanto um lote de várias
+// contas selecionadas (cada uma quitada pelo próprio valor em aberto). É a
+// etapa de "conferir antes de receber": lista as contas resumidas e só
+// efetiva ao clicar em Receber de novo, aqui dentro.
+function ModalConfirmarRecebimento({ contas, onClose, onConfirm }) {
+  const unico = contas.length === 1
+  const emAberto = (c) => c.valor_docto - (c.valor_pagamento || 0)
+  const totalEmAberto = contas.reduce((s, c) => s + emAberto(c), 0)
   const [forma, setForma] = useState(null)
-  const [valor, setValor] = useState(emAberto.toFixed(2))
+  const [valorUnico, setValorUnico] = useState(unico ? emAberto(contas[0]).toFixed(2) : '')
+  const [data, setData] = useState(new Date().toISOString().slice(0, 10))
   const [salvando, setSalvando] = useState(false)
 
-  const valorValido = parseFloat(valor) > 0
-  const podeConfirmar = forma && valorValido
+  const valorFinal = unico ? parseFloat(valorUnico) || 0 : totalEmAberto
+  const valorValido = unico ? parseFloat(valorUnico) > 0 : true
+  const podeConfirmar = !!forma && valorValido
 
   async function handleConfirm() {
     if (!podeConfirmar) return
     setSalvando(true)
-    await onConfirm(conta.id, forma, parseFloat(valor))
+    const pagamentos = contas.map((c) => ({
+      id: c.id,
+      valor_pagamento: unico ? valorFinal : emAberto(c),
+    }))
+    await onConfirm(pagamentos, forma, data)
     setSalvando(false)
   }
 
@@ -98,38 +112,85 @@ function ModalReceber({ conta, onClose, onConfirm, erro }) {
           background: 'var(--surface)',
           borderRadius: 14,
           border: '1px solid var(--border-md)',
-          width: 400,
+          width: 460,
           boxShadow: '0 16px 40px rgba(0,0,0,0.14)',
           overflow: 'hidden',
         }}
       >
         <div style={{ background: '#185FA5', padding: '16px 20px' }}>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>
-            {conta.nome_cliente || conta.codigo_cliente}
-            {conta.telefone_cliente ? ` · ${conta.telefone_cliente}` : ''}
-          </div>
           <div
             style={{
-              color: 'var(--surface)',
-              fontSize: 22,
-              fontWeight: 600,
-              marginTop: 2,
+              color: 'rgba(255,255,255,0.7)',
+              fontSize: 12,
+              marginBottom: 2,
             }}
           >
-            {fmt(emAberto)}
+            {unico
+              ? `${contas[0].nome_cliente || contas[0].codigo_cliente}${contas[0].telefone_cliente ? ' · ' + contas[0].telefone_cliente : ''}`
+              : `${contas.length} conta(s) selecionada(s)`}
           </div>
-          <div
-            style={{
-              color: 'rgba(255,255,255,0.6)',
-              fontSize: 11,
-              marginTop: 2,
-            }}
-          >
-            Vencimento: {fmtDate(conta.data_vencimento)} · Doc:{' '}
-            {conta.nro_docto}
+          <div style={{ color: 'var(--surface)', fontSize: 22, fontWeight: 600 }}>
+            {fmt(valorFinal)}
           </div>
+          {unico && (
+            <div
+              style={{
+                color: 'rgba(255,255,255,0.6)',
+                fontSize: 11,
+                marginTop: 2,
+              }}
+            >
+              Vencimento: {fmtDate(contas[0].data_vencimento)} · Doc: {contas[0].nro_docto}
+            </div>
+          )}
         </div>
         <div style={{ padding: '18px 20px' }}>
+          {/* Conferência — lista resumida do que está prestes a virar "recebido" */}
+          <div
+            style={{
+              border: '1px solid var(--border-md)',
+              borderRadius: 8,
+              maxHeight: 160,
+              overflowY: 'auto',
+              marginBottom: 16,
+            }}
+          >
+            {contas.map((c, i) => (
+              <div
+                key={c.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  padding: '8px 12px',
+                  borderBottom: i < contas.length - 1 ? '1px solid var(--border)' : 'none',
+                  fontSize: 12.5,
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 500,
+                      color: 'var(--text-primary)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {c.nome_cliente || c.codigo_cliente}
+                  </div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                    Venc. {fmtDate(c.data_vencimento)}
+                    {c.nro_docto ? ` · Doc: ${c.nro_docto}` : ''}
+                  </div>
+                </div>
+                <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                  {fmt(emAberto(c))}
+                </div>
+              </div>
+            ))}
+          </div>
+
           <div style={{ marginBottom: 14 }}>
             <div
               style={{
@@ -162,8 +223,77 @@ function ModalReceber({ conta, onClose, onConfirm, erro }) {
               ))}
             </div>
           </div>
-          {forma && (
-            <div style={{ marginBottom: 16 }}>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 12,
+              marginBottom: 16,
+            }}
+          >
+            {unico ? (
+              <div>
+                <label
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--text-muted)',
+                    display: 'block',
+                    marginBottom: 4,
+                  }}
+                >
+                  Valor recebido
+                </label>
+                <input
+                  value={valorUnico}
+                  onChange={(e) => setValorUnico(e.target.value)}
+                  type='number'
+                  step='0.01'
+                  style={{
+                    width: '100%',
+                    height: 36,
+                    padding: '0 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-md)',
+                  }}
+                  autoFocus
+                />
+                {valorUnico !== '' && !valorValido && (
+                  <div style={{ fontSize: 11, color: '#C53030', marginTop: 4 }}>
+                    Informe um valor maior que zero.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div>
+                <label
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--text-muted)',
+                    display: 'block',
+                    marginBottom: 4,
+                  }}
+                >
+                  Total a receber
+                </label>
+                <div
+                  style={{
+                    height: 36,
+                    padding: '0 10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    background: '#F7F7F7',
+                    border: '1px solid var(--border-md)',
+                    borderRadius: 8,
+                    fontWeight: 600,
+                    fontSize: 13,
+                  }}
+                >
+                  {fmt(totalEmAberto)}
+                </div>
+              </div>
+            )}
+            <div>
               <label
                 style={{
                   fontSize: 11,
@@ -172,49 +302,23 @@ function ModalReceber({ conta, onClose, onConfirm, erro }) {
                   marginBottom: 4,
                 }}
               >
-                Valor recebido
+                Data do recebimento
               </label>
               <input
-                value={valor}
-                onChange={(e) => setValor(e.target.value)}
-                type='number'
-                step='0.01'
+                value={data}
+                onChange={(e) => setData(e.target.value)}
+                type='date'
                 style={{
                   width: '100%',
-                  height: 38,
-                  padding: '0 12px',
-                  fontSize: 15,
-                  fontWeight: 500,
+                  height: 36,
+                  padding: '0 10px',
                   borderRadius: 8,
                   border: '1px solid var(--border-md)',
                 }}
-                autoFocus
               />
-              {valor !== '' && !valorValido && (
-                <div style={{ fontSize: 11, color: '#C53030', marginTop: 4 }}>
-                  Informe um valor maior que zero.
-                </div>
-              )}
             </div>
-          )}
-          {erro && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                marginBottom: 14,
-                padding: '8px 10px',
-                borderRadius: 8,
-                background: '#FEF2F2',
-                border: '1px solid #FCA5A5',
-                color: '#B91C1C',
-                fontSize: 12,
-              }}
-            >
-              {erro}
-            </div>
-          )}
+          </div>
+
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button
               onClick={onClose}
@@ -241,7 +345,7 @@ function ModalReceber({ conta, onClose, onConfirm, erro }) {
                 cursor: podeConfirmar ? 'pointer' : 'not-allowed',
               }}
             >
-              {salvando ? 'Salvando...' : 'Confirmar (F5)'}
+              {salvando ? 'Salvando...' : 'Receber'}
             </button>
           </div>
         </div>
@@ -256,9 +360,8 @@ export default function ContasReceber({ usuario }) {
   const [busca, setBusca] = useState('')
   const [filtroStatus, setFiltroStatus] = useState('todos')
   const [selecionadas, setSelecionadas] = useState([])
-  const [contaRecebendo, setContaRecebendo] = useState(null)
-  const [sucesso, setSucesso] = useState(false)
-  const [erroRecebimento, setErroRecebimento] = useState('')
+  const [loteRecebimento, setLoteRecebimento] = useState(null)
+  const [sucesso, setSucesso] = useState('')
   const [modalPrejuizo, setModalPrejuizo] = useState(false)
   const [aguardandoAprovacao, setAguardandoAprovacao] = useState(false)
 
@@ -385,68 +488,156 @@ export default function ContasReceber({ usuario }) {
     await gerarPdfRelatorio(html, `contas_receber_${new Date().toISOString().slice(0, 10)}`)
   }
 
+  // Só faz sentido marcar como "selecionada" uma conta ainda em aberto (nem
+  // baixada/cancelada/prejuízo, nem o repasse automático do cartão) — por
+  // isso a seleção em si já filtra isso, em vez de deixar marcar qualquer
+  // linha e só bloquear os botões depois.
   function toggleSel(id) {
     const conta = dados.find((c) => c.id === id)
-    if (conta && isCartaoAutomatico(conta)) return
+    if (!conta) return
+    if (conta.situacao_docto !== 'A' || isCartaoAutomatico(conta)) return
     setSelecionadas((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
     )
   }
 
-  async function confirmarRecebimento(id, forma, valor) {
-    setErroRecebimento('')
-    try {
-      const resultado = await window.api.contasReceber.receber({
-        id,
-        valor_pagamento: valor,
-        forma,
-        data_pagamento: new Date().toISOString().slice(0, 10),
-        usuario: usuario?.usuario || 'sistema',
-      })
-      if (!resultado.sucesso) {
-        setErroRecebimento(resultado.erro || 'Erro ao receber conta.')
-        return
+  // Recebe a lista já conferida no modal (uma conta ou um lote) e quita cada
+  // uma via a mesma RPC de sempre — não existe um "receber em lote" no banco,
+  // então repete a chamada já auditada por conta em vez de criar uma via de
+  // escrita direta na tabela.
+  async function confirmarRecebimento(pagamentos, forma, data) {
+    const contasAlvo = dados.filter((c) => pagamentos.some((p) => p.id === c.id))
+    const recebidas = []
+    const falhas = []
+    for (const p of pagamentos) {
+      const conta = contasAlvo.find((c) => c.id === p.id)
+      try {
+        const resultado = await window.api.contasReceber.receber({
+          id: p.id,
+          valor_pagamento: p.valor_pagamento,
+          forma,
+          data_pagamento: data,
+          usuario: usuario?.usuario || 'sistema',
+        })
+        if (resultado?.sucesso) recebidas.push({ conta, valor: p.valor_pagamento })
+        else falhas.push({ conta, erro: resultado?.erro || 'Erro desconhecido.' })
+      } catch (err) {
+        falhas.push({ conta, erro: err.message })
       }
-      setContaRecebendo(null)
-      setSelecionadas([])
-      setSucesso(true)
-      setTimeout(() => setSucesso(false), 2500)
-      await carregar()
-    } catch (err) {
-      console.error('Erro ao receber conta:', err)
-      setErroRecebimento('Erro ao receber conta.')
+    }
+
+    setLoteRecebimento(null)
+    setSelecionadas([])
+    await carregar()
+
+    if (falhas.length > 0) {
+      await window.api.dialog.alert(
+        `${recebidas.length} conta(s) recebida(s) com sucesso.\n${falhas.length} falharam:\n` +
+          falhas
+            .map((f) => `• ${f.conta?.nome_cliente || f.conta?.codigo_cliente || '?'}: ${f.erro}`)
+            .join('\n'),
+      )
+    }
+
+    if (recebidas.length > 0) {
+      setSucesso(`✅ ${recebidas.length} conta(s) recebida(s)!`)
+      setTimeout(() => setSucesso(''), 2500)
+      try {
+        await gerarRelatorioRecebimento(recebidas)
+      } catch (err) {
+        console.error('Erro ao gerar relatório de recebimento:', err)
+      }
     }
   }
 
-  const contaSelecionada = dados.find((c) => c.id === selecionadas[0])
-  const podeReceber =
-    selecionadas.length === 1 && contaSelecionada?.situacao_docto === 'A'
+  // Relatório em três seções: o que acabou de ser recebido nesta operação,
+  // o que ainda está em aberto (dentro do prazo) e o que já está vencido —
+  // não só o que está filtrado na tela no momento, é a conferência completa
+  // que a secretária leva pro Elter.
+  async function gerarRelatorioRecebimento(recebidas) {
+    const abertas = (await window.api.contasReceber.listar({ situacao: 'A' })).filter(
+      (c) => !isCartaoAutomatico(c),
+    )
+    const hoje = new Date().toISOString().slice(0, 10)
+    const emAbertoList = abertas.filter((c) => !c.data_vencimento || c.data_vencimento >= hoje)
+    const vencidasList = abertas.filter((c) => c.data_vencimento && c.data_vencimento < hoje)
+
+    const empresa = await buscarEmpresa()
+    const colunas = [
+      { label: 'Cliente' },
+      { label: 'Documento' },
+      { label: 'Vencimento' },
+      { label: 'Valor', num: true },
+    ]
+    const montarLinhaConta = (c) => {
+      const emAberto = c.valor_docto - (c.valor_pagamento || 0)
+      return `<tr><td>${c.nome_cliente || c.codigo_cliente}</td><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(emAberto)}</td></tr>`
+    }
+    const montarLinhaRecebida = (r) =>
+      `<tr><td>${r.conta?.nome_cliente || r.conta?.codigo_cliente || '?'}</td><td>${r.conta?.nro_docto || '—'}</td><td>${fmtDate(r.conta?.data_vencimento)}</td><td class="num">${fmtMoedaBR(r.valor)}</td></tr>`
+
+    const totalRecebido = recebidas.reduce((s, r) => s + r.valor, 0)
+    const totalAberto = emAbertoList.reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
+    const totalVencido = vencidasList.reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
+
+    const html = gerarHtmlSecoes({
+      empresa,
+      titulo: 'Recebimento de Contas',
+      subtitulo: `Gerado em ${fmtDate(new Date().toISOString().slice(0, 10))}`,
+      secoes: [
+        {
+          titulo: 'Recebidas nesta operação',
+          colunas,
+          linhas: recebidas,
+          montarLinha: montarLinhaRecebida,
+          montarTotal: () => `<td colspan="3">Total recebido</td><td class="num">${fmtMoedaBR(totalRecebido)}</td>`,
+        },
+        {
+          titulo: 'Em aberto',
+          colunas,
+          linhas: emAbertoList,
+          montarLinha: montarLinhaConta,
+          montarTotal: () => `<td colspan="3">Total em aberto</td><td class="num">${fmtMoedaBR(totalAberto)}</td>`,
+        },
+        {
+          titulo: 'Vencidas',
+          colunas,
+          linhas: vencidasList,
+          montarLinha: montarLinhaConta,
+          montarTotal: () => `<td colspan="3">Total vencido</td><td class="num">${fmtMoedaBR(totalVencido)}</td>`,
+        },
+      ],
+    })
+    await gerarPdfRelatorio(html, `recebimento_contas_${new Date().toISOString().slice(0, 10)}`)
+  }
+
+  // A seleção já só admite contas em aberto (ver toggleSel), então serve
+  // tanto para "Receber" quanto para "Baixar por prejuízo".
+  const contasSelecionadas = dados.filter((c) => selecionadas.includes(c.id))
+  const podeReceber = contasSelecionadas.length > 0
 
   // ── Baixa por prejuízo (dívida incobrável) ──────────────────────
-  const contasParaPrejuizo = dados.filter((c) => selecionadas.includes(c.id))
-  const podeBaixarPrejuizo =
-    contasParaPrejuizo.length > 0 &&
-    contasParaPrejuizo.every((c) => c.situacao_docto === 'A' && !isCartaoAutomatico(c))
+  const podeBaixarPrejuizo = contasSelecionadas.length > 0
   const podeExcluirDireto = (usuario?.nivel ?? 0) >= 2
 
   async function confirmarBaixaPrejuizo(motivo) {
     const nomeUsuario = usuario?.nome || usuario?.usuario || 'sistema'
     if (podeExcluirDireto) {
       const resultado = await window.api.contasReceber.baixarPrejuizo({
-        ids: contasParaPrejuizo.map((c) => c.id),
+        ids: contasSelecionadas.map((c) => c.id),
         usuario: nomeUsuario,
         motivo,
       })
       if (!resultado.sucesso) throw new Error(resultado.erro)
       setModalPrejuizo(false)
       setSelecionadas([])
-      setSucesso(true)
-      setTimeout(() => setSucesso(false), 2500)
+      setSucesso('✅ Conta(s) baixada(s) por prejuízo!')
+      setTimeout(() => setSucesso(''), 2500)
       await carregar()
     } else {
       const resultado = await window.api.aprovacoes.solicitar({
         tipo: 'BAIXA_PREJUIZO_CR',
-        itens: contasParaPrejuizo.map((c) => ({
+        itens: contasSelecionadas.map((c) => ({
           id: c.id,
           nro_docto: c.nro_docto,
           cliente: c.nome_cliente || c.codigo_cliente,
@@ -490,7 +681,7 @@ export default function ContasReceber({ usuario }) {
             zIndex: 300,
           }}
         >
-          ✅ Parcela recebida com sucesso!
+          {sucesso}
         </div>
       )}
 
@@ -514,18 +705,17 @@ export default function ContasReceber({ usuario }) {
         </div>
       )}
 
-      {contaRecebendo && (
-        <ModalReceber
-          conta={contaRecebendo}
-          onClose={() => { setContaRecebendo(null); setErroRecebimento('') }}
+      {loteRecebimento && (
+        <ModalConfirmarRecebimento
+          contas={loteRecebimento}
+          onClose={() => setLoteRecebimento(null)}
           onConfirm={confirmarRecebimento}
-          erro={erroRecebimento}
         />
       )}
 
       {modalPrejuizo && (
         <ModalBaixarPrejuizo
-          contas={contasParaPrejuizo}
+          contas={contasSelecionadas}
           podeExcluirDireto={podeExcluirDireto}
           onFechar={() => setModalPrejuizo(false)}
           onConfirmar={confirmarBaixaPrejuizo}
@@ -704,30 +894,31 @@ export default function ContasReceber({ usuario }) {
                 const sit = getSituacao(c)
                 const vencido = sit === 'VENCIDO'
                 const auto = isCartaoAutomatico(c)
+                const selecionavel = c.situacao_docto === 'A' && !auto
                 const emAberto = c.valor_docto - (c.valor_pagamento || 0)
                 return (
                   <tr
                     key={c.id}
                     onClick={() => toggleSel(c.id)}
-                    onDoubleClick={() => c.situacao_docto === 'A' && !auto && setContaRecebendo(c)}
+                    onDoubleClick={() => selecionavel && setLoteRecebimento([c])}
                     style={{
                       background: sel
                         ? '#EBF3FC'
                         : vencido
                           ? '#FFF5F5'
                           : 'transparent',
-                      cursor: auto ? 'default' : 'pointer',
-                      opacity: auto ? 0.75 : 1,
+                      cursor: selecionavel ? 'pointer' : 'default',
+                      opacity: selecionavel ? 1 : 0.75,
                       transition: 'background 0.08s',
                     }}
                     onMouseEnter={(e) => {
-                      if (!sel)
+                      if (!sel && selecionavel)
                         e.currentTarget.style.background = vencido
                           ? '#FEE2E2'
                           : 'var(--gray-50)'
                     }}
                     onMouseLeave={(e) => {
-                      if (!sel)
+                      if (!sel && selecionavel)
                         e.currentTarget.style.background = vencido
                           ? '#FFF5F5'
                           : 'transparent'
@@ -737,10 +928,10 @@ export default function ContasReceber({ usuario }) {
                       <input
                         type='checkbox'
                         checked={sel}
-                        disabled={auto}
+                        disabled={!selecionavel}
                         onChange={() => toggleSel(c.id)}
                         onClick={(e) => e.stopPropagation()}
-                        style={{ width: 14, height: 14 }}
+                        style={{ width: 14, height: 14, cursor: selecionavel ? 'pointer' : 'not-allowed' }}
                         title={auto ? 'Recebimento automático da operadora de cartão' : undefined}
                       />
                     </td>
@@ -829,11 +1020,11 @@ export default function ContasReceber({ usuario }) {
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
           {filtrados.length} registro(s) · Selecionadas: {selecionadas.length}
         </span>
-        <BotoesRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />
+        <BotoesRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} abrirParaCima />
         <div style={{ flex: 1 }} />
         <button
           disabled={!podeReceber}
-          onClick={() => setContaRecebendo(contaSelecionada)}
+          onClick={() => podeReceber && setLoteRecebimento(contasSelecionadas)}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -848,7 +1039,8 @@ export default function ContasReceber({ usuario }) {
             cursor: podeReceber ? 'pointer' : 'not-allowed',
           }}
         >
-          <DollarSign size={14} /> Receber
+          <DollarSign size={14} />
+          {selecionadas.length > 1 ? `Receber (${selecionadas.length})` : 'Receber'}
         </button>
         <button
           disabled={!podeBaixarPrejuizo}

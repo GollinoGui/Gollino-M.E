@@ -8,10 +8,10 @@ import {
   RefreshCw,
   ArrowDownCircle,
   ArrowUpCircle,
-  Receipt,
-  Wallet,
 } from 'lucide-react'
 import { BotoesRelatorio } from '../components/BotoesRelatorio'
+import ModalRelatorioCaixa from '../components/ModalRelatorioCaixa'
+import { TIPO_LABEL, ICONE_POR_TIPO, montarHistoricoSessao } from '../utils/caixaHistorico'
 import {
   exportarCSV,
   buscarEmpresa,
@@ -22,17 +22,6 @@ import {
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-
-const TIPO_LABEL = {
-  venda: 'Venda',
-  abertura: 'Abertura',
-  sangria: 'Sangria',
-  reforco: 'Reforço',
-  despesa: 'Despesa',
-  vale: 'Vale',
-  receita: 'Receita',
-  recebimento_cr: 'Recebimento (CR)',
-}
 
 function ModalMovimento({ tipo, onClose, onConfirm, salvando, erro }) {
   const [valor, setValor] = useState('')
@@ -108,6 +97,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario, onNavigate
   const [modalMovimento, setModalMovimento] = useState(null) // 'SANGRIA' | 'REFORCO' | null
   const [erroMovimento, setErroMovimento] = useState('')
   const [salvandoMovimento, setSalvandoMovimento] = useState(false)
+  const [relatorioFechamento, setRelatorioFechamento] = useState(null) // { resumo, historico } | null
 
   // ── Carrega status e resumo da sessão atual do banco ──────────
   // O resumo é calculado no servidor a partir das vendas ligadas à sessão de
@@ -205,6 +195,13 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario, onNavigate
   async function fecharCaixa() {
     setSalvando(true)
     try {
+      // Captura o estado da sessão ANTES de fechar — depois do fechamento,
+      // carregar() zera resumoSessao/vendasSessao (não há mais sessão "A"),
+      // e o relatório detalhado precisa dos dados de quem/quando abriu +
+      // toda a movimentação, não só os totais que a RPC de fechamento devolve.
+      const snapshotResumo = resumoSessao
+      const snapshotHistorico = historico
+
       const resultado = await window.api.caixa.fechar({ usuario: usuario?.nome || 'sistema' })
       if (!resultado.sucesso) throw new Error(resultado.erro)
       setCaixaAberto(false)
@@ -216,6 +213,16 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario, onNavigate
           : '✅ Caixa fechado com sucesso!',
       )
       setTimeout(() => setSucesso(''), 4000)
+      setRelatorioFechamento({
+        resumo: {
+          ...snapshotResumo,
+          ...r,
+          usuarioFechamento: usuario?.nome || 'sistema',
+          dataFechamento: new Date().toISOString().slice(0, 10),
+          horaFechamento: new Date().toTimeString().slice(0, 8),
+        },
+        historico: snapshotHistorico,
+      })
       await carregar()
     } catch (err) {
       console.error('Erro ao fechar caixa:', err)
@@ -225,37 +232,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario, onNavigate
     }
   }
 
-  // Linha do tempo da sessão aberta: abertura + vendas + sangria/reforço/despesas/vales/recebimentos
-  const historico = [
-    resumoSessao
-      ? { tipo: 'abertura', hora: horaAbertura, descricao: `Abertura de caixa (${dataAbertura?.split('-').reverse().join('/') || ''})`, valor: 0 }
-      : null,
-    ...vendasSessao.map((v) => ({
-      tipo: 'venda',
-      hora: v.hora_cadastro || '--:--',
-      descricao: `Venda #${v.orcamento} — ${v.nome_cliente || 'Consumidor'}`,
-      valor: v.valor_total || 0,
-    })),
-    ...(resumoSessao?.movimentosExtras || []).map((m) => ({
-      tipo: m.tipo.toLowerCase(),
-      hora: m.hora || '--:--',
-      descricao: m.descricao || m.tipo,
-      valor: m.valor || 0,
-    })),
-  ]
-    .filter(Boolean)
-    .sort((a, b) => (a.hora > b.hora ? 1 : -1))
-
-  const iconePorTipo = {
-    venda: { icon: TrendingUp, bg: '#EBF3FC', color: '#185FA5' },
-    abertura: { icon: FolderOpen, bg: '#EAF6EE', color: '#22863A' },
-    sangria: { icon: ArrowDownCircle, bg: '#FEF2F2', color: '#C53030' },
-    reforco: { icon: ArrowUpCircle, bg: '#EAF6EE', color: '#22863A' },
-    despesa: { icon: ArrowDownCircle, bg: '#FEF2F2', color: '#C53030' },
-    vale: { icon: Wallet, bg: '#EFF6FF', color: '#1E40AF' },
-    receita: { icon: ArrowUpCircle, bg: '#F0FDF4', color: '#15803D' },
-    recebimento_cr: { icon: Receipt, bg: '#F0FDF4', color: '#15803D' },
-  }
+  const historico = montarHistoricoSessao(resumoSessao, vendasSessao)
 
   // ── Relatório da movimentação da sessão atual (Excel/PDF) ──────────────
   function exportarExcelSessao() {
@@ -333,6 +310,14 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario, onNavigate
           erro={erroMovimento}
           onClose={() => { setModalMovimento(null); setErroMovimento('') }}
           onConfirm={confirmarMovimento}
+        />
+      )}
+
+      {relatorioFechamento && (
+        <ModalRelatorioCaixa
+          resumo={relatorioFechamento.resumo}
+          historico={relatorioFechamento.historico}
+          onFechar={() => setRelatorioFechamento(null)}
         />
       )}
 
@@ -641,7 +626,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario, onNavigate
           </div>
         ) : (
           historico.map((h, i) => {
-            const cfgIcone = iconePorTipo[h.tipo] || { icon: X, bg: '#F0F4FA', color: 'var(--text-muted)' }
+            const cfgIcone = ICONE_POR_TIPO[h.tipo] || { icon: X, bg: '#F0F4FA', color: 'var(--text-muted)' }
             const IconeTipo = cfgIcone.icon
             return (
             <div

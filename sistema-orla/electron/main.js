@@ -8,19 +8,25 @@ const db = require('./database')
 
 const isDev = !app.isPackaged
 
-// Pasta local para arquivos gerados pelo app (recibos em PDF)
+// Pasta local para arquivos gerados pelo app (recibos em PDF). Usa a pasta de
+// dados do usuário (userData) em vez da pasta onde o .exe está instalado —
+// essa última pode ficar em Program Files e exigir admin pra gravar, o que
+// falha silenciosamente em máquinas onde o instalador foi posto lá.
 function getBancoDir() {
-  const base = isDev
-    ? path.join(__dirname, '..')
-    : path.dirname(app.getPath('exe'))
+  const base = isDev ? path.join(__dirname, '..') : app.getPath('userData')
   const dir = path.join(base, 'banco')
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
   return dir
 }
 
 let mainWindow = null
+// true só depois que o renderer confirma que pode sair (ver 'app:confirmarSaida'
+// abaixo) — até lá, o listener 'close' intercepta e pergunta pro usuário.
+let podeFecharJanela = false
 
 function createWindow() {
+  podeFecharJanela = false
+
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -42,6 +48,15 @@ function createWindow() {
   // Forçando o foco no webContents sempre que a janela ganha foco evita isso.
   win.on('focus', () => {
     win.webContents.focus()
+  })
+
+  // Fechar a janela (X, Alt+F4) não sai direto — avisa o renderer, que decide
+  // se pergunta pro usuário sobre o caixa aberto (ver App.jsx / ModalConfirmarSaida).
+  // Só fecha de verdade depois que 'app:confirmarSaida' for chamado.
+  win.on('close', (e) => {
+    if (podeFecharJanela) return
+    e.preventDefault()
+    win.webContents.send('app:solicitarFechamento')
   })
 
   // Em dev carrega o Vite; em produção carrega o build
@@ -97,8 +112,18 @@ function setupAutoUpdater() {
 
 // Popups de atualização são renderizados no React (ver ModalConfirmacao) em
 // vez de dialog.showMessageBox — o clique em "Reiniciar agora" chega aqui.
+// O usuário já confirmou a ação nesse modal, então não empilha uma segunda
+// pergunta — só libera o fechamento da janela antes de reiniciar.
 ipcMain.handle('update:reiniciarAgora', () => {
+  podeFecharJanela = true
   autoUpdater.quitAndInstall(true, true)
+})
+
+// Chamado pelo renderer quando o usuário decide sair de verdade (com ou sem
+// fechar o caixa antes) — ver ModalConfirmarSaida / App.jsx.
+ipcMain.handle('app:confirmarSaida', () => {
+  podeFecharJanela = true
+  mainWindow?.close()
 })
 
 app.on('window-all-closed', () => {

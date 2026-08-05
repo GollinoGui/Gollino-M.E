@@ -159,4 +159,38 @@ ${cabecalhoPdf(empresa, titulo, subtitulo, linhas.length)}
 </body></html>`
 }
 
+// Relatório em seções independentes (cada uma com seu próprio título, colunas
+// e total) — usado quando o mesmo documento precisa mostrar, por exemplo, o
+// que acabou de ser pago separado do que ainda está em aberto.
+export function gerarHtmlSecoes({ empresa, titulo, subtitulo, secoes }) {
+  const totalRegistros = secoes.reduce((s, sec) => s + sec.linhas.length, 0)
+  const corpo = secoes
+    .map(
+      (sec) => `
+    <div style="margin-top:16px;margin-bottom:4px;font-size:12px;font-weight:700;color:#185FA5;border-bottom:1px solid #B7CDE5;padding-bottom:3px">
+      ${sec.titulo} (${sec.linhas.length})
+    </div>
+    ${
+      sec.linhas.length === 0
+        ? `<div style="font-size:11px;color:#888;padding:6px 0 10px">Nenhum registro.</div>`
+        : `<table>
+      <thead><tr>${sec.colunas.map((c) => `<th${c.num ? ' class="num"' : ''}>${c.label}</th>`).join('')}</tr></thead>
+      <tbody>
+        ${sec.linhas.map(sec.montarLinha).join('')}
+        ${sec.montarTotal ? `<tr class="total-geral">${sec.montarTotal()}</tr>` : ''}
+      </tbody>
+    </table>`
+    }
+  `,
+    )
+    .join('')
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><style>${estiloBasePdf()}</style></head>
+<body>
+${cabecalhoPdf(empresa, titulo, subtitulo, totalRegistros)}
+${corpo}
+</body></html>`
+}
+
 export { fmtDataBR, fmtMoedaBR, fmtNumCSV }

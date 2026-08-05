@@ -17,6 +17,17 @@ contextBridge.exposeInMainWorld('api', {
     alert: (mensagem) => ipcRenderer.invoke('dialog:alert', mensagem),
   },
 
+  // CICLO DE VIDA DO APP (fechar a janela intercepta e pergunta pro renderer
+  // sobre o caixa aberto — ver main.js 'close' listener / ModalConfirmarSaida)
+  app: {
+    aoSolicitarFechamento: (callback) => {
+      const listener = () => callback()
+      ipcRenderer.on('app:solicitarFechamento', listener)
+      return () => ipcRenderer.removeListener('app:solicitarFechamento', listener)
+    },
+    confirmarSaida: () => ipcRenderer.invoke('app:confirmarSaida'),
+  },
+
   // ATUALIZAÇÕES (autoUpdater no main.js envia os eventos; UI é o ModalConfirmacao no React)
   updates: {
     aoDisponivel: (callback) => {

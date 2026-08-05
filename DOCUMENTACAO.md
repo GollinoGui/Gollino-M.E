@@ -325,7 +325,7 @@ Fluxo completo de devolução de mercadoria:
 - Listagem com filtros: Todas / Abertas / Pagas + Vencidas
 - Busca por cliente ou número do documento
 - Indicadores: total em aberto, total pago, total vencido
-- Modal de recebimento com forma de pagamento, valor e data
+- Modal de recebimento com forma de pagamento, valor e data — aceita uma conta ou várias selecionadas de uma vez (recebimento em lote), com relatório automático em PDF/Excel ao confirmar
 - Criação manual de lançamentos
 - Geração automática pela venda (Convênio = 30 dias, A Prazo = parcelas configuradas)
 
@@ -336,8 +336,8 @@ Fluxo completo de devolução de mercadoria:
 - Listagem com filtros: Todos / Aberto / Vencido / Pago
 - Busca por fornecedor ou documento
 - Indicadores: total em aberto, total vencido, total pago
-- Modal de pagamento com forma, valor e data
-- Criação manual de novos lançamentos
+- Modal de pagamento com forma, valor e data — aceita uma conta ou várias selecionadas de uma vez (pagamento em lote), com relatório automático em PDF/Excel ao confirmar
+- Criação manual de novos lançamentos, com fornecedor/descrição e seleção de despesa a partir do Plano de Contas — Despesas Empresariais
 - Seleção por checkbox para operações em lote
 
 ---
@@ -346,6 +346,7 @@ Fluxo completo de devolução de mercadoria:
 
 - Abertura de turno com valor inicial informado
 - Fechamento com totais por forma de pagamento (dinheiro, cheque, cartão crédito, cartão débito)
+- Relatório de fechamento detalhado (linha do tempo da sessão) exibido automaticamente ao fechar — inclusive ao fechar um caixa esquecido de dia anterior ou ao sair do app com o caixa aberto
 - Indicador visual no TopBar (caixa aberto/fechado)
 - Histórico de movimentos do caixa
 
@@ -566,6 +567,16 @@ window.api.haver.totalGeral()
 - **Página Haver** criada do zero: consulta de créditos, total geral, ajuste manual de saldo
 - API de haver adicionada ao backend (database.js, main.js, preload.js)
 
+### Fase 7 — Fechamento de caixa, lote em Contas a Pagar/Receber e relatórios (agosto/2026)
+
+- **Relatório de fechamento de caixa:** ao fechar o turno (fluxo normal, caixa esquecido aberto de um dia anterior, ou saída do app com caixa aberto), abre automaticamente um relatório detalhado — linha do tempo da sessão (abertura, vendas, sangria/reforço, despesas, vales, recebimentos, baixas por prejuízo), exportável em PDF/Excel. Lógica compartilhada extraída para `src/utils/caixaHistorico.js` e componente `ModalRelatorioCaixa`.
+- **Confirmação ao fechar o app com caixa aberto:** fechar a janela (X / Alt+F4) com o caixa em aberto agora pergunta antes de sair — permite fechar o caixa (mostrando o relatório acima) ou sair mesmo assim. Sem caixa aberto, fecha direto sem interromper. (`ModalConfirmarSaida`, IPC `app:solicitarFechamento` / `app:confirmarSaida`.)
+- **Pagamento/recebimento em lote:** em Contas a Pagar e Contas a Receber, agora dá pra selecionar várias contas em aberto e pagar/receber todas de uma vez (cada uma continua batendo na mesma rotina auditada de sempre, uma por vez). Ao confirmar, gera automaticamente um relatório PDF em seções — o que acabou de ser pago/recebido nesta operação, separado do que ainda está em aberto (e vencido, em Contas a Receber) no restante do sistema.
+- **Dashboard — Meta do dia:** a barra de meta agora é segmentada por forma de pagamento (mesmas cores do card "Formas de pagamento"), com o valor do dia em Convênio/Fiado aparecendo à parte, em textura riscada, já que ainda não é caixa de verdade — não conta para bater a meta, mas fica visível.
+- **Relatórios — PDF nas abas que só tinham Excel:** Vendas, Itens Vendidos, Entradas de Mercadoria, Inventário e Extrato passam a gerar PDF além do Excel, usando o mesmo botão "Gerar Relatório" (dropdown) das demais telas.
+- **Correção de pasta de dados em produção:** a pasta `banco/` (PDFs gerados, etc.) passa a usar a pasta de dados do usuário (`userData`) em vez da pasta de instalação do `.exe` — em instalações dentro de `Program Files`, gravar ali exigia permissão de administrador e falhava silenciosamente.
+- Ajustes menores: Assistente abre automaticamente no login (antes só abria por clique) e o badge de notificação não reaparece sozinho por um alerta já visto; campo de preço em Vendas limpa ao focar e restaura o valor anterior se deixado em branco; coluna "Prejuízo" adicionada ao relatório de Caixas Fechados; categoria "Baixas por prejuízo" adicionada ao filtro do Log do Sistema.
+
 ---
 
 ## 8. ⚠️ Dados Pendentes — Clientes e Produtos
@@ -621,7 +632,6 @@ O banco de dados atualmente **não possui os clientes e produtos reais da empres
 
 | Item | Status | Observação |
 |---|---|---|
-| Caixa — Relatório de fechamento | 🔶 Parcial | Fecha o turno mas não gera resumo imprimível |
 | Estoque — Saída manual | 🔶 Parcial | Tela mostra aviso "Em desenvolvimento" |
 | Estoque — Acerto de estoque | 🔶 Parcial | Idem |
 | Estoque — Contagem de estoque | 🔶 Parcial | Idem |

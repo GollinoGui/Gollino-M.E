@@ -397,71 +397,63 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
   const maxValor = Math.max(...dias.map((d) => d.valor), META_DIARIA)
 
   // ── Formas de pagamento (calculadas das vendas de hoje) ───────
-  const formasPagamento = (() => {
-    const dinheiro = vendasHoje.reduce(
-      (s, v) => s + (v.valor_pago_dinheiro || 0),
-      0,
-    )
-    const cartaoC = vendasHoje.reduce(
-      (s, v) => s + (v.valor_pago_cartao_credito || 0),
-      0,
-    )
-    const cartaoD = vendasHoje.reduce(
-      (s, v) => s + (v.valor_pago_cartao_debito || 0),
-      0,
-    )
-    const cheque = vendasHoje.reduce(
-      (s, v) => s + (v.valor_pago_cheque || 0),
-      0,
-    )
-    const pix = vendasHoje.reduce(
-      (s, v) => s + (v.valor_pago_pix || 0),
-      0,
-    )
-    const haver = vendasHoje.reduce(
-      (s, v) => s + (v.valor_pago_haver || 0),
-      0,
-    )
-    const total = dinheiro + cartaoC + cartaoD + cheque + pix + haver || 1
-    return [
-      {
-        forma: 'Dinheiro',
-        valor: dinheiro,
-        pct: Math.round((dinheiro / total) * 100),
-        cor: '#22863A',
-      },
-      {
-        forma: 'Cartão Crédito',
-        valor: cartaoC,
-        pct: Math.round((cartaoC / total) * 100),
-        cor: '#185FA5',
-      },
-      {
-        forma: 'Cartão Débito',
-        valor: cartaoD,
-        pct: Math.round((cartaoD / total) * 100),
-        cor: '#B7791F',
-      },
-      {
-        forma: 'Cheque',
-        valor: cheque,
-        pct: Math.round((cheque / total) * 100),
-        cor: '#6B21A8',
-      },
-      {
-        forma: 'PIX',
-        valor: pix,
-        pct: Math.round((pix / total) * 100),
-        cor: '#0D9488',
-      },
-      {
-        forma: 'Haver',
-        valor: haver,
-        pct: Math.round((haver / total) * 100),
-        cor: '#0E7490',
-      },
-    ].filter((f) => f.valor > 0)
+  // Cores compartilhadas entre o card "Formas de pagamento" e a barra da
+  // Meta do dia, pra bater visualmente: mesmo laranja em ambos os lugares.
+  const CORES_FORMA = {
+    Dinheiro: '#22863A',
+    'Cartão Crédito': '#185FA5',
+    'Cartão Débito': '#B7791F',
+    Cheque: '#6B21A8',
+    PIX: '#0D9488',
+    Haver: '#0E7490',
+  }
+  const COR_A_RECEBER = '#DC6803'
+
+  const valoresPorForma = (() => {
+    const dinheiro = vendasHoje.reduce((s, v) => s + (v.valor_pago_dinheiro || 0), 0)
+    const cartaoC = vendasHoje.reduce((s, v) => s + (v.valor_pago_cartao_credito || 0), 0)
+    const cartaoD = vendasHoje.reduce((s, v) => s + (v.valor_pago_cartao_debito || 0), 0)
+    const cheque = vendasHoje.reduce((s, v) => s + (v.valor_pago_cheque || 0), 0)
+    const pix = vendasHoje.reduce((s, v) => s + (v.valor_pago_pix || 0), 0)
+    const haver = vendasHoje.reduce((s, v) => s + (v.valor_pago_haver || 0), 0)
+    // Convênio/fiado e o restante de vendas mistas caem em "valor_restante" —
+    // não é dinheiro que entrou no caixa, mas precisa aparecer aqui, senão a
+    // venda some do gráfico sem explicação nenhuma.
+    const aReceber = vendasHoje.reduce((s, v) => s + (v.valor_restante || 0), 0)
+    return { dinheiro, cartaoC, cartaoD, cheque, pix, haver, aReceber }
   })()
+
+  const formasPagamento = (() => {
+    const { dinheiro, cartaoC, cartaoD, cheque, pix, haver, aReceber } = valoresPorForma
+    const total = dinheiro + cartaoC + cartaoD + cheque + pix + haver + aReceber || 1
+    return [
+      { forma: 'Dinheiro', valor: dinheiro, cor: CORES_FORMA.Dinheiro },
+      { forma: 'Cartão Crédito', valor: cartaoC, cor: CORES_FORMA['Cartão Crédito'] },
+      { forma: 'Cartão Débito', valor: cartaoD, cor: CORES_FORMA['Cartão Débito'] },
+      { forma: 'Cheque', valor: cheque, cor: CORES_FORMA.Cheque },
+      { forma: 'PIX', valor: pix, cor: CORES_FORMA.PIX },
+      { forma: 'Haver', valor: haver, cor: CORES_FORMA.Haver },
+      { forma: 'A Receber (Convênio/Fiado)', valor: aReceber, cor: COR_A_RECEBER },
+    ]
+      .map((f) => ({ ...f, pct: Math.round((f.valor / total) * 100) }))
+      .filter((f) => f.valor > 0)
+  })()
+
+  // ── Segmentos da barra "Meta do dia" ───────────────────────────
+  // A barra sólida representa só o que já é caixa de verdade (mesma regra
+  // de sempre pra "bateu a meta"); o convênio/fiado do dia aparece como um
+  // trecho riscado depois dela — visível, mas não conta pro %.
+  const segmentosCaixa = [
+    { forma: 'Dinheiro', valor: valoresPorForma.dinheiro, cor: CORES_FORMA.Dinheiro },
+    { forma: 'Cartão Crédito', valor: valoresPorForma.cartaoC, cor: CORES_FORMA['Cartão Crédito'] },
+    { forma: 'Cartão Débito', valor: valoresPorForma.cartaoD, cor: CORES_FORMA['Cartão Débito'] },
+    { forma: 'Cheque', valor: valoresPorForma.cheque, cor: CORES_FORMA.Cheque },
+    { forma: 'PIX', valor: valoresPorForma.pix, cor: CORES_FORMA.PIX },
+    { forma: 'Haver', valor: valoresPorForma.haver, cor: CORES_FORMA.Haver },
+  ].filter((s) => s.valor > 0)
+  const aReceberHoje = valoresPorForma.aReceber
+  const domainMeta = Math.max(META_DIARIA, totalHoje + aReceberHoje)
+  const metaMarkerPct = (META_DIARIA / domainMeta) * 100
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', background: 'var(--bg)' }}>
@@ -817,7 +809,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                   Meta do dia
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                  Faturamento diário
+                  Recebido em caixa hoje (não inclui Convênio/Fiado)
                 </div>
               </div>
               <div
@@ -862,26 +854,54 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                   de {fmt(META_DIARIA)}
                 </span>
               </div>
-              <div
-                style={{
-                  height: 10,
-                  background: 'var(--gray-50)',
-                  borderRadius: 99,
-                  overflow: 'hidden',
-                }}
-              >
+              <div style={{ position: 'relative', padding: '2px 0' }}>
                 <div
                   style={{
-                    height: '100%',
+                    height: 10,
+                    background: 'var(--gray-50)',
                     borderRadius: 99,
-                    background:
-                      totalHoje >= META_DIARIA
-                        ? 'linear-gradient(90deg,#155724,#22863A)'
-                        : 'linear-gradient(90deg,#0C3F7A,#378ADD)',
-                    width: `${Math.min((totalHoje / META_DIARIA) * 100, 100)}%`,
-                    transition: 'width 1s ease',
+                    overflow: 'hidden',
+                    display: 'flex',
                   }}
-                />
+                >
+                  {segmentosCaixa.map((s) => (
+                    <div
+                      key={s.forma}
+                      title={`${s.forma}: ${fmt(s.valor)}`}
+                      style={{
+                        height: '100%',
+                        width: `${(s.valor / domainMeta) * 100}%`,
+                        background: s.cor,
+                        transition: 'width 1s ease',
+                      }}
+                    />
+                  ))}
+                  {aReceberHoje > 0 && (
+                    <div
+                      title={`Convênio/Fiado hoje: ${fmt(aReceberHoje)} — ainda não entrou no caixa`}
+                      style={{
+                        height: '100%',
+                        width: `${(aReceberHoje / domainMeta) * 100}%`,
+                        background:
+                          'repeating-linear-gradient(45deg, #DC6803, #DC6803 5px, #F2B685 5px, #F2B685 10px)',
+                        transition: 'width 1s ease',
+                      }}
+                    />
+                  )}
+                </div>
+                {domainMeta > META_DIARIA && (
+                  <div
+                    title={`Meta: ${fmt(META_DIARIA)}`}
+                    style={{
+                      position: 'absolute',
+                      left: `${metaMarkerPct}%`,
+                      top: 0,
+                      bottom: 0,
+                      width: 0,
+                      borderLeft: '2px dashed #0C3F7A',
+                    }}
+                  />
+                )}
               </div>
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -889,6 +909,12 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                 ? '🎉 Meta atingida! Parabéns!'
                 : `Faltam ${fmt(META_DIARIA - totalHoje)} para a meta`}
             </div>
+            {aReceberHoje > 0 && (
+              <div style={{ fontSize: 11, color: COR_A_RECEBER, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 7, height: 7, borderRadius: 2, background: COR_A_RECEBER, flexShrink: 0 }} />
+                + {fmt(aReceberHoje)} em Convênio/Fiado hoje (não contabilizado na meta)
+              </div>
+            )}
             <div
               style={{
                 borderTop: '1px solid var(--gray-100)',
@@ -1336,7 +1362,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
               }}
             >
               <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 }}>
-                {vendasAntigas !== null ? `Total do período (${vendasAntigas.length})` : 'Total do dia'}
+                {vendasAntigas !== null ? `Total do período (${vendasAntigas.length})` : 'Recebido hoje (caixa)'}
               </span>
               <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--blue-800)' }}>
                 {fmt(vendasAntigas !== null ? vendasAntigas.reduce((s, v) => s + (v.valor_total || 0), 0) : totalHoje)}
@@ -1478,7 +1504,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
               {(() => {
                 const itensResumo = [
                   {
-                    label: 'Entradas hoje',
+                    label: 'Recebido hoje (caixa)',
                     value: fmt(totalHoje),
                     color: '#22863A',
                     bg: 'var(--green-50)',

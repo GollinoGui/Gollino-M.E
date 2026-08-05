@@ -33,3 +33,4 @@ banco/*.db
 banco/*.db-shm
 banco/*.db-wal
 banco/vendas/
+banco/relatorios/

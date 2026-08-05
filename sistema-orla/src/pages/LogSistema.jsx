@@ -5,6 +5,7 @@ const CATEGORIAS = [
   { value: 'VENDA', label: 'Vendas' },
   { value: 'CANCELAMENTO', label: 'Cancelamentos' },
   { value: 'RECEBIMENTO', label: 'Recebimentos' },
+  { value: 'PREJUIZO_CR', label: 'Baixas por prejuízo' },
   { value: 'ESTOQUE_', label: 'Estoque' },
   { value: 'CAIXA_', label: 'Caixa' },
 ]
@@ -13,6 +14,7 @@ const ICONES = {
   VENDA:             { icon: '🛒', bg: '#EFF6FF', cor: '#1E40AF', label: 'Venda' },
   CANCELAMENTO:      { icon: '✕',  bg: '#FEF2F2', cor: '#991B1B', label: 'Cancelamento' },
   RECEBIMENTO:       { icon: '💰', bg: '#F0FDF4', cor: '#166534', label: 'Recebimento' },
+  PREJUIZO_CR:       { icon: '⚠',  bg: '#FEF2F2', cor: '#991B1B', label: 'Baixa por prejuízo' },
   ESTOQUE_ENTRADA:   { icon: '+',  bg: '#ECFDF5', cor: '#065F46', label: 'Entrada estoque' },
   ESTOQUE_SAIDA:     { icon: '−',  bg: '#FEF2F2', cor: '#991B1B', label: 'Saída estoque' },
   ESTOQUE_ACERTO:    { icon: '⟳',  bg: '#EFF6FF', cor: '#1E40AF', label: 'Acerto estoque' },

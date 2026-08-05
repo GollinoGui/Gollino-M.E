@@ -72,11 +72,19 @@ function formatarTexto(texto) {
 }
 
 export default function Assistente({ caixaAberto, onNavigate, usuario }) {
-  const [aberto, setAberto] = useState(false)
+  // Abre sozinho só na primeira vez (login) — depois disso, fechar o chat
+  // significa fechar mesmo: alertas viram só o badge/balão no canto, nunca
+  // reabrem o painel grande sozinhos.
+  const [aberto, setAberto] = useState(true)
   const [mensagens, setMensagens] = useState(mensagensIniciais)
   const [input, setInput] = useState('')
   const [digitando, setDigitando] = useState(false)
   const [notificacoes, setNotificacoes] = useState(0)
+  // Maior contagem de notificações já "vista" (painel aberto ou balão
+  // dispensado) — o balão de alertas só reaparece quando passa disso, em vez
+  // de voltar a cada atualização (2 em 2 min) enquanto o mesmo alerta antigo
+  // (ex: caixa fechado) continuar valendo.
+  const [notificacoesVistas, setNotificacoesVistas] = useState(0)
   const [aprovacoesPendentes, setAprovacoesPendentes] = useState([])
   const [processandoAprovacao, setProcessandoAprovacao] = useState(null)
   const [confirmacaoAprovacao, setConfirmacaoAprovacao] = useState(null)
@@ -261,10 +269,13 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
   }, [caixaAberto, podeAprovar, nomeUsuarioAtual])
 
   useEffect(() => {
-    if (aberto) {
-      setNotificacoes(0)
-      setTimeout(() => inputRef.current?.focus(), 100)
-    }
+    // Marca como "visto" sempre que o painel abre ou fecha — se estava
+    // aberto, os alertas já apareceram na seção "ALERTAS ATIVOS"; se acabou
+    // de fechar, não faz sentido o balão voltar imediatamente com o que já
+    // era conhecido.
+    setNotificacoesVistas(notificacoes)
+    if (aberto) setTimeout(() => inputRef.current?.focus(), 100)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aberto])
 
   useEffect(() => {
@@ -377,7 +388,7 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
         .fab-btn:active { transform: scale(0.95) !important; }
       `}</style>
 
-      {!aberto && notificacoes > 0 && (
+      {!aberto && notificacoes > notificacoesVistas && (
         <div
           style={{
             position: 'fixed',
@@ -415,7 +426,7 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
               <Bot size={13} style={{ color: '#185FA5' }} /> Assistente
             </div>
             <button
-              onClick={() => setNotificacoes(0)}
+              onClick={() => setNotificacoesVistas(notificacoes)}
               style={{ color: '#9AA3B2', lineHeight: 1 }}
             >
               <X size={13} />

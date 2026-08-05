@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { AlertTriangle, FolderOpen } from 'lucide-react'
+import ModalRelatorioCaixa from './ModalRelatorioCaixa'
+import { montarHistoricoSessao } from '../utils/caixaHistorico'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -8,32 +10,62 @@ const fmtData = (d) => (d ? d.split('-').reverse().join('/') : '')
 
 // Modal bloqueante exibido ao abrir o sistema quando existe uma sessão de
 // caixa aberta em um dia anterior (esquecida sem fechar). Não pode ser
-// dispensado — só sai da tela fechando o caixa atrasado.
+// dispensado — só sai da tela fechando o caixa atrasado. Ao fechar, mostra o
+// mesmo relatório detalhado do fluxo normal (ModalRelatorioCaixa) antes de
+// liberar o app.
 export default function AvisoCaixaAtrasado({ status, usuario, onFechado }) {
   const [resumo, setResumo] = useState(null)
+  const [vendasSessao, setVendasSessao] = useState([])
   const [fechando, setFechando] = useState(false)
   const [erro, setErro] = useState('')
+  const [relatorioFechamento, setRelatorioFechamento] = useState(null)
 
   useEffect(() => {
-    window.api.caixa.resumoAtual().then(setResumo).catch(() => {})
+    window.api.caixa.resumoAtual().then(async (r) => {
+      setResumo(r)
+      if (r) {
+        const vendas = await window.api.vendas.listar({ caixaSessaoId: r.id, situacao: 'N' }).catch(() => [])
+        setVendasSessao(vendas)
+      }
+    }).catch(() => {})
   }, [])
 
   async function fechar() {
     setFechando(true)
     setErro('')
     try {
+      const snapshotHistorico = montarHistoricoSessao(resumo, vendasSessao)
       const resultado = await window.api.caixa.fechar({ usuario: usuario?.nome || 'sistema' })
       if (!resultado.sucesso) {
         setErro(resultado.erro || 'Erro ao fechar o caixa.')
         return
       }
-      onFechado(resultado.resumo)
+      setRelatorioFechamento({
+        resumo: {
+          ...resumo,
+          ...resultado.resumo,
+          usuarioFechamento: usuario?.nome || 'sistema',
+          dataFechamento: new Date().toISOString().slice(0, 10),
+          horaFechamento: new Date().toTimeString().slice(0, 8),
+        },
+        historico: snapshotHistorico,
+      })
     } catch (err) {
       console.error('Erro ao fechar caixa atrasado:', err)
       setErro('Erro ao fechar o caixa.')
     } finally {
       setFechando(false)
     }
+  }
+
+  if (relatorioFechamento) {
+    return (
+      <ModalRelatorioCaixa
+        resumo={relatorioFechamento.resumo}
+        historico={relatorioFechamento.historico}
+        onFechar={() => onFechado(relatorioFechamento.resumo)}
+      />
+    )
   }
 
   return (

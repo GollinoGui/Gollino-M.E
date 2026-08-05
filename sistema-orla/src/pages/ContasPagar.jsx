@@ -8,6 +8,7 @@ import {
   agruparPorPessoa,
   buscarEmpresa,
   gerarHtmlAgrupadoPorPessoa,
+  gerarHtmlSecoes,
   gerarPdfRelatorio,
   fmtMoedaBR,
 } from '../utils/relatorios'
@@ -50,20 +51,33 @@ function StatusBadge({ status }) {
   )
 }
 
-function ModalPagar({ conta, onClose, onConfirm }) {
-  const valorDocto = conta.valor_docto || 0
+// Confirmação de pagamento — cobre tanto uma conta única (onde ainda dá pra
+// ajustar o valor pago, ex: desconto por pagar em dia) quanto um lote de
+// várias contas selecionadas (cada uma quitada pelo próprio valor do
+// documento). É a etapa de "conferir antes de pagar": lista as contas
+// resumidas e só efetiva ao clicar em Pagar de novo, aqui dentro.
+function ModalConfirmarPagamento({ contas, onClose, onConfirm }) {
+  const unico = contas.length === 1
+  const totalDocumentos = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
   const [forma, setForma] = useState('')
-  const [valor, setValor] = useState(valorDocto.toFixed(2))
+  const [valorUnico, setValorUnico] = useState(
+    unico ? (contas[0].valor_docto || 0).toFixed(2) : '',
+  )
   const [data, setData] = useState(new Date().toISOString().slice(0, 10))
   const [salvando, setSalvando] = useState(false)
 
-  const valorValido = parseFloat(valor) > 0
+  const valorFinal = unico ? parseFloat(valorUnico) || 0 : totalDocumentos
+  const valorValido = unico ? parseFloat(valorUnico) > 0 : true
   const podeConfirmar = !!forma && valorValido
 
   async function handleConfirm() {
     if (!podeConfirmar) return
     setSalvando(true)
-    await onConfirm(conta.id, forma, parseFloat(valor), data)
+    const pagamentos = contas.map((c) => ({
+      id: c.id,
+      valor_pagamento: unico ? valorFinal : c.valor_docto || 0,
+    }))
+    await onConfirm(pagamentos, forma, data)
     setSalvando(false)
   }
 
@@ -84,7 +98,7 @@ function ModalPagar({ conta, onClose, onConfirm }) {
           background: 'var(--surface)',
           borderRadius: 14,
           border: '1px solid var(--border-md)',
-          width: 420,
+          width: 460,
           boxShadow: '0 16px 40px rgba(0,0,0,0.14)',
           overflow: 'hidden',
         }}
@@ -97,27 +111,76 @@ function ModalPagar({ conta, onClose, onConfirm }) {
               marginBottom: 2,
             }}
           >
-            {conta.nome_fornecedor || conta.codigo_fornecedor}
+            {unico
+              ? contas[0].nome_fornecedor || contas[0].codigo_fornecedor
+              : `${contas.length} conta(s) selecionada(s)`}
           </div>
           <div style={{ color: 'var(--surface)', fontSize: 22, fontWeight: 600 }}>
-            {fmt(valorDocto)}
+            {fmt(valorFinal)}
           </div>
-          <div
-            style={{
-              color: 'rgba(255,255,255,0.6)',
-              fontSize: 11,
-              marginTop: 2,
-            }}
-          >
-            Vencimento: {fmtDate(conta.data_vencimento)}
-            {conta.nro_docto ? ` · Doc: ${conta.nro_docto}` : ''}
-          </div>
+          {unico && (
+            <div
+              style={{
+                color: 'rgba(255,255,255,0.6)',
+                fontSize: 11,
+                marginTop: 2,
+              }}
+            >
+              Vencimento: {fmtDate(contas[0].data_vencimento)}
+              {contas[0].nro_docto ? ` · Doc: ${contas[0].nro_docto}` : ''}
+            </div>
+          )}
         </div>
         <div style={{ padding: '18px 20px' }}>
+          {/* Conferência — lista resumida do que está prestes a virar "pago" */}
+          <div
+            style={{
+              border: '1px solid var(--border-md)',
+              borderRadius: 8,
+              maxHeight: 160,
+              overflowY: 'auto',
+              marginBottom: 16,
+            }}
+          >
+            {contas.map((c, i) => (
+              <div
+                key={c.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  padding: '8px 12px',
+                  borderBottom: i < contas.length - 1 ? '1px solid var(--border)' : 'none',
+                  fontSize: 12.5,
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 500,
+                      color: 'var(--text-primary)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {c.nome_fornecedor || c.codigo_fornecedor}
+                  </div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                    Venc. {fmtDate(c.data_vencimento)}
+                    {c.nro_docto ? ` · Doc: ${c.nro_docto}` : ''}
+                  </div>
+                </div>
+                <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                  {fmt(c.valor_docto)}
+                </div>
+              </div>
+            ))}
+          </div>
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
+              gridTemplateColumns: unico ? '1fr 1fr' : '1fr 1fr',
               gap: 12,
               marginBottom: 16,
             }}
@@ -153,31 +216,61 @@ function ModalPagar({ conta, onClose, onConfirm }) {
                 <option>Cartão</option>
               </select>
             </div>
-            <div>
-              <label
-                style={{
-                  fontSize: 11,
-                  color: 'var(--text-muted)',
-                  display: 'block',
-                  marginBottom: 4,
-                }}
-              >
-                Valor pago
-              </label>
-              <input
-                value={valor}
-                onChange={(e) => setValor(e.target.value)}
-                type='number'
-                step='0.01'
-                style={{
-                  width: '100%',
-                  height: 36,
-                  padding: '0 10px',
-                  borderRadius: 8,
-                  border: '1px solid var(--border-md)',
-                }}
-              />
-            </div>
+            {unico ? (
+              <div>
+                <label
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--text-muted)',
+                    display: 'block',
+                    marginBottom: 4,
+                  }}
+                >
+                  Valor pago
+                </label>
+                <input
+                  value={valorUnico}
+                  onChange={(e) => setValorUnico(e.target.value)}
+                  type='number'
+                  step='0.01'
+                  style={{
+                    width: '100%',
+                    height: 36,
+                    padding: '0 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-md)',
+                  }}
+                />
+              </div>
+            ) : (
+              <div>
+                <label
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--text-muted)',
+                    display: 'block',
+                    marginBottom: 4,
+                  }}
+                >
+                  Total a pagar
+                </label>
+                <div
+                  style={{
+                    height: 36,
+                    padding: '0 10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    background: '#F7F7F7',
+                    border: '1px solid var(--border-md)',
+                    borderRadius: 8,
+                    fontWeight: 600,
+                    fontSize: 13,
+                  }}
+                >
+                  {fmt(totalDocumentos)}
+                </div>
+              </div>
+            )}
             <div>
               <label
                 style={{
@@ -229,7 +322,7 @@ function ModalPagar({ conta, onClose, onConfirm }) {
                 cursor: podeConfirmar ? 'pointer' : 'not-allowed',
               }}
             >
-              {salvando ? 'Salvando...' : 'Confirmar pagamento'}
+              {salvando ? 'Salvando...' : 'Pagar'}
             </button>
           </div>
         </div>
@@ -571,7 +664,7 @@ export default function ContasPagar({ usuario }) {
   const [busca, setBusca] = useState('')
   const [filtroStatus, setFiltroStatus] = useState('todos')
   const [selecionadas, setSelecionadas] = useState([])
-  const [contaPagando, setContaPagando] = useState(null)
+  const [lotePagamento, setLotePagamento] = useState(null)
   const [modalNova, setModalNova] = useState(false)
   const [sucesso, setSucesso] = useState('')
 
@@ -691,34 +784,106 @@ export default function ContasPagar({ usuario }) {
     await gerarPdfRelatorio(html, `contas_pagar_${new Date().toISOString().slice(0, 10)}`)
   }
 
+  // Só faz sentido marcar como "selecionada para pagar" uma conta que ainda
+  // não foi paga/cancelada — por isso a seleção em si já filtra isso, em vez
+  // de deixar marcar qualquer linha e só bloquear o botão depois.
   function toggleSel(id) {
+    const conta = dados.find((c) => c.id === id)
+    if (!conta) return
+    const sit = getSituacao(conta)
+    if (sit === 'PAGO' || sit === 'CANCELADO') return
     setSelecionadas((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
     )
   }
 
-  async function confirmarPagamento(id, forma, valor, data) {
-    try {
-      const resultado = await window.api.contasPagar.pagar({
-        id,
-        forma,
-        valor_pagamento: valor,
-        data_pagamento: data,
-        usuario: usuario?.usuario || 'sistema',
-      })
-      if (!resultado?.sucesso) {
-        await window.api.dialog.alert(resultado?.erro || 'Erro ao registrar pagamento.')
-        return
+  // Recebe a lista já conferida no modal (uma conta ou um lote) e quita cada
+  // uma via a mesma RPC de sempre — não existe um "pagar em lote" no banco,
+  // então repete a chamada já auditada por conta em vez de criar uma nova via
+  // de escrita direta na tabela.
+  async function confirmarPagamento(pagamentos, forma, data) {
+    const contasAlvo = dados.filter((c) => pagamentos.some((p) => p.id === c.id))
+    const pagas = []
+    const falhas = []
+    for (const p of pagamentos) {
+      const conta = contasAlvo.find((c) => c.id === p.id)
+      try {
+        const resultado = await window.api.contasPagar.pagar({
+          id: p.id,
+          forma,
+          valor_pagamento: p.valor_pagamento,
+          data_pagamento: data,
+          usuario: usuario?.usuario || 'sistema',
+        })
+        if (resultado?.sucesso) pagas.push(conta)
+        else falhas.push({ conta, erro: resultado?.erro || 'Erro desconhecido.' })
+      } catch (err) {
+        falhas.push({ conta, erro: err.message })
       }
-      setContaPagando(null)
-      setSelecionadas([])
-      setSucesso('✅ Pagamento registrado!')
-      setTimeout(() => setSucesso(''), 2500)
-      await carregar()
-    } catch (err) {
-      console.error('Erro ao registrar pagamento:', err)
-      await window.api.dialog.alert('Erro ao registrar pagamento: ' + err.message)
     }
+
+    setLotePagamento(null)
+    setSelecionadas([])
+    await carregar()
+
+    if (falhas.length > 0) {
+      await window.api.dialog.alert(
+        `${pagas.length} conta(s) paga(s) com sucesso.\n${falhas.length} falharam:\n` +
+          falhas
+            .map((f) => `• ${f.conta?.nome_fornecedor || f.conta?.codigo_fornecedor || '?'}: ${f.erro}`)
+            .join('\n'),
+      )
+    }
+
+    if (pagas.length > 0) {
+      setSucesso(`✅ ${pagas.length} conta(s) paga(s)!`)
+      setTimeout(() => setSucesso(''), 2500)
+      try {
+        await gerarRelatorioPagamento(pagas)
+      } catch (err) {
+        console.error('Erro ao gerar relatório de pagamento:', err)
+      }
+    }
+  }
+
+  // Relatório em duas seções: o que acabou de ser pago nesta operação e tudo
+  // que ainda continua em aberto no sistema (não só o que está filtrado na
+  // tela no momento) — é a conferência que a secretária leva pro Elter.
+  async function gerarRelatorioPagamento(pagas) {
+    const abertas = await window.api.contasPagar.listar({ situacao: 'A' })
+    const empresa = await buscarEmpresa()
+    const colunas = [
+      { label: 'Fornecedor' },
+      { label: 'Documento' },
+      { label: 'Vencimento' },
+      { label: 'Valor', num: true },
+    ]
+    const montarLinha = (c) =>
+      `<tr><td>${c.nome_fornecedor || c.codigo_fornecedor}</td><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td></tr>`
+    const totalPagas = pagas.reduce((s, c) => s + (c.valor_docto || 0), 0)
+    const totalAbertas = abertas.reduce((s, c) => s + (c.valor_docto || 0), 0)
+    const html = gerarHtmlSecoes({
+      empresa,
+      titulo: 'Pagamento de Contas',
+      subtitulo: `Gerado em ${fmtDate(new Date().toISOString().slice(0, 10))}`,
+      secoes: [
+        {
+          titulo: 'Pagas nesta operação',
+          colunas,
+          linhas: pagas,
+          montarLinha,
+          montarTotal: () => `<td colspan="3">Total pago</td><td class="num">${fmtMoedaBR(totalPagas)}</td>`,
+        },
+        {
+          titulo: 'Ainda em aberto',
+          colunas,
+          linhas: abertas,
+          montarLinha,
+          montarTotal: () => `<td colspan="3">Total em aberto</td><td class="num">${fmtMoedaBR(totalAbertas)}</td>`,
+        },
+      ],
+    })
+    await gerarPdfRelatorio(html, `pagamento_contas_${new Date().toISOString().slice(0, 10)}`)
   }
 
   async function salvarNova(form) {
@@ -743,11 +908,10 @@ export default function ContasPagar({ usuario }) {
     }
   }
 
-  const contaSel =
-    selecionadas.length === 1
-      ? dados.find((c) => c.id === selecionadas[0])
-      : null
-  const podePagar = podeGerenciar && contaSel && getSituacao(contaSel) !== 'PAGO'
+  // A seleção já só admite contas ABERTO/VENCIDO (ver toggleSel), então aqui
+  // só falta checar permissão e se há algo selecionado.
+  const podePagar = podeGerenciar && selecionadas.length > 0
+  const contasSelecionadas = dados.filter((c) => selecionadas.includes(c.id))
 
   return (
     <div
@@ -779,10 +943,10 @@ export default function ContasPagar({ usuario }) {
         </div>
       )}
 
-      {contaPagando && (
-        <ModalPagar
-          conta={contaPagando}
-          onClose={() => setContaPagando(null)}
+      {lotePagamento && (
+        <ModalConfirmarPagamento
+          contas={lotePagamento}
+          onClose={() => setLotePagamento(null)}
           onConfirm={confirmarPagamento}
         />
       )}
@@ -978,6 +1142,7 @@ export default function ContasPagar({ usuario }) {
                 const sel = selecionadas.includes(c.id)
                 const sit = getSituacao(c)
                 const vencido = sit === 'VENCIDO'
+                const selecionavel = sit === 'ABERTO' || sit === 'VENCIDO'
                 return (
                   <tr
                     key={c.id}
@@ -988,17 +1153,18 @@ export default function ContasPagar({ usuario }) {
                         : vencido
                           ? '#FFF5F5'
                           : 'transparent',
-                      cursor: 'pointer',
+                      cursor: selecionavel ? 'pointer' : 'default',
+                      opacity: selecionavel ? 1 : 0.7,
                       transition: 'background 0.08s',
                     }}
                     onMouseEnter={(e) => {
-                      if (!sel)
+                      if (!sel && selecionavel)
                         e.currentTarget.style.background = vencido
                           ? '#FEE2E2'
                           : 'var(--gray-50)'
                     }}
                     onMouseLeave={(e) => {
-                      if (!sel)
+                      if (!sel && selecionavel)
                         e.currentTarget.style.background = vencido
                           ? '#FFF5F5'
                           : 'transparent'
@@ -1008,9 +1174,10 @@ export default function ContasPagar({ usuario }) {
                       <input
                         type='checkbox'
                         checked={sel}
+                        disabled={!selecionavel}
                         onChange={() => toggleSel(c.id)}
                         onClick={(e) => e.stopPropagation()}
-                        style={{ width: 14, height: 14 }}
+                        style={{ width: 14, height: 14, cursor: selecionavel ? 'pointer' : 'not-allowed' }}
                       />
                     </td>
                     <td
@@ -1094,12 +1261,12 @@ export default function ContasPagar({ usuario }) {
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
           {filtrados.length} registro(s) · Selecionadas: {selecionadas.length}
         </span>
-        <BotoesRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />
+        <BotoesRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} abrirParaCima />
         <div style={{ flex: 1 }} />
         {podeGerenciar && (
           <button
             disabled={!podePagar}
-            onClick={() => contaSel && setContaPagando(contaSel)}
+            onClick={() => podePagar && setLotePagamento(contasSelecionadas)}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -1115,7 +1282,8 @@ export default function ContasPagar({ usuario }) {
               border: 'none',
             }}
           >
-            <DollarSign size={14} /> Registrar pagamento
+            <DollarSign size={14} />
+            {selecionadas.length > 1 ? `Pagar (${selecionadas.length})` : 'Pagar'}
           </button>
         )}
       </div>
