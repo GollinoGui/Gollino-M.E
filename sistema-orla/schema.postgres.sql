@@ -320,6 +320,7 @@ CREATE TABLE IF NOT EXISTS movimentos_caixa (
   valor_cartao_credito DOUBLE PRECISION DEFAULT 0,
   valor_cartao_debito DOUBLE PRECISION DEFAULT 0,
   valor_pix DOUBLE PRECISION DEFAULT 0,
+  valor_convenio DOUBLE PRECISION DEFAULT 0,
   valor_outros DOUBLE PRECISION DEFAULT 0,
   situacao TEXT DEFAULT 'A'
 );

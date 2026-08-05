@@ -72,6 +72,7 @@ export default function ModalRelatorioCaixa({ resumo, historico, onFechar }) {
     { label: 'Cartão Déb.', value: resumo?.cartaoDebito, color: '#B7791F' },
     { label: 'Cheque', value: resumo?.cheque, color: 'var(--text-muted)' },
     { label: 'PIX', value: resumo?.pix, color: '#0D9488' },
+    { label: 'Convênio', value: resumo?.convenio, color: '#7C3AED' },
   ].filter((c) => c.value > 0)
 
   return (
