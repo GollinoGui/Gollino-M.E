@@ -1232,6 +1232,43 @@ const aprovacoes = {
 }
 
 // ============================================================
+// COMENTÁRIOS DE SOLICITAÇÃO
+// (conversa anexada a cada solicitação de aprovação — permite ao
+// solicitante explicar o motivo e ao aprovador tirar dúvida antes
+// de decidir, sem precisar de um chat solto separado)
+// ============================================================
+const comentarios = {
+  async listar(solicitacaoId) {
+    const { data, error } = await supabase
+      .from('solicitacoes_comentarios')
+      .select('*')
+      .eq('solicitacao_id', solicitacaoId)
+      .order('id', { ascending: true })
+    if (error) throw new Error(error.message)
+    return data
+  },
+  async enviar(solicitacaoId, usuario, mensagem) {
+    const { error } = await supabase.from('solicitacoes_comentarios').insert({
+      solicitacao_id: solicitacaoId,
+      usuario,
+      mensagem,
+      data: hoje(),
+      hora: agora(),
+    })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+  async marcarVisto(solicitacaoId, usuario) {
+    const { error } = await supabase.rpc('solicitacoes_comentarios_marcar_visto', {
+      p_solicitacao_id: solicitacaoId,
+      p_usuario: usuario,
+    })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+}
+
+// ============================================================
 // NF-e
 // ============================================================
 const nfe = {
@@ -1359,4 +1396,5 @@ module.exports = {
   reajustesPreco,
   relatorios,
   aprovacoes,
+  comentarios,
 }

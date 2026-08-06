@@ -251,4 +251,11 @@ contextBridge.exposeInMainWorld('api', {
     listarResolvidasNaoVistas: (usuarioSolicitante) => ipcRenderer.invoke('aprovacoes:listarResolvidasNaoVistas', usuarioSolicitante),
     marcarVisualizado: (id) => ipcRenderer.invoke('aprovacoes:marcarVisualizado', id),
   },
+
+  // COMENTÁRIOS (conversa anexada a cada solicitação de aprovação)
+  comentarios: {
+    listar: (solicitacaoId) => ipcRenderer.invoke('comentarios:listar', solicitacaoId),
+    enviar: (solicitacaoId, usuario, mensagem) => ipcRenderer.invoke('comentarios:enviar', { solicitacaoId, usuario, mensagem }),
+    marcarVisto: (solicitacaoId, usuario) => ipcRenderer.invoke('comentarios:marcarVisto', { solicitacaoId, usuario }),
+  },
 })

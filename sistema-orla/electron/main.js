@@ -310,6 +310,11 @@ handle('aprovacoes:rejeitar', (_, { id, usuario, motivo }) => db.aprovacoes.reje
 handle('aprovacoes:listarResolvidasNaoVistas', (_, usuarioSolicitante) => db.aprovacoes.listarResolvidasNaoVistas(usuarioSolicitante))
 handle('aprovacoes:marcarVisualizado', (_, id) => db.aprovacoes.marcarVisualizado(id))
 
+// --- COMENTÁRIOS DE SOLICITAÇÃO ---
+handle('comentarios:listar', (_, solicitacaoId) => db.comentarios.listar(solicitacaoId))
+handle('comentarios:enviar', (_, { solicitacaoId, usuario, mensagem }) => db.comentarios.enviar(solicitacaoId, usuario, mensagem))
+handle('comentarios:marcarVisto', (_, { solicitacaoId, usuario }) => db.comentarios.marcarVisto(solicitacaoId, usuario))
+
 // --- DASHBOARD ---
 handle('dashboard:resumo', (_, periodo) => db.dashboard.resumo(periodo))
 

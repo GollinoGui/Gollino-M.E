@@ -55,6 +55,96 @@ function textoSolicitacaoResolvida(s) {
     : `❌ Sua contagem de estoque foi rejeitada por ${s.usuario_aprovador || 'um administrador'}.`
 }
 
+// Card mostrado pro próprio solicitante enquanto a solicitação ainda está
+// pendente (hoje só quem aprova via nível 2+ enxergava algo sobre ela).
+function textoMinhaPendente(s) {
+  if (s.tipo === 'BAIXA_PREJUIZO_CR') {
+    const { qtde, total } = resumoItensPrejuizo(s.itens)
+    return `Você pediu para excluir ${qtde} conta${qtde !== 1 ? 's' : ''} a receber por prejuízo (${fmt(total)}) — aguardando aprovação.`
+  }
+  return `Você solicitou aprovação de contagem de estoque (${(s.itens || []).length} produto${(s.itens || []).length !== 1 ? 's' : ''}) — aguardando aprovação.`
+}
+
+function contarNaoLidos(comentarios, usuarioAtual) {
+  return (comentarios || []).filter(
+    (c) => c.usuario !== usuarioAtual && !(c.visualizado_por || []).includes(usuarioAtual),
+  ).length
+}
+
+// Conversa anexada a uma solicitação — reaproveitada nos três tipos de card
+// (pendente pra quem aprova, pendente pro próprio solicitante, e resolvida).
+function ThreadComentarios({ comentarios, usuarioAtual, onEnviar, enviando }) {
+  const [texto, setTexto] = useState('')
+  function disparar() {
+    const msg = texto.trim()
+    if (!msg || enviando) return
+    onEnviar(msg)
+    setTexto('')
+  }
+  return (
+    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed currentColor' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 5,
+          maxHeight: 150,
+          overflowY: 'auto',
+          marginBottom: 6,
+        }}
+      >
+        {comentarios.length === 0 && (
+          <div style={{ fontSize: 11, fontStyle: 'italic', opacity: 0.75 }}>
+            Nenhuma mensagem ainda.
+          </div>
+        )}
+        {comentarios.map((c) => (
+          <div key={c.id} style={{ fontSize: 11, lineHeight: 1.4 }}>
+            <strong>{c.usuario === usuarioAtual ? 'Você' : c.usuario}:</strong> {c.mensagem}{' '}
+            <span style={{ opacity: 0.65 }}>({c.hora})</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && disparar()}
+          placeholder='Escreva uma mensagem...'
+          style={{
+            flex: 1,
+            height: 28,
+            padding: '0 8px',
+            borderRadius: 6,
+            border: '1px solid currentColor',
+            background: 'rgba(255,255,255,0.7)',
+            fontSize: 11,
+            outline: 'none',
+            color: '#1A202C',
+          }}
+        />
+        <button
+          onClick={disparar}
+          disabled={enviando || !texto.trim()}
+          style={{
+            padding: '0 10px',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: 600,
+            background: '#185FA5',
+            color: '#fff',
+            border: 'none',
+            cursor: enviando || !texto.trim() ? 'not-allowed' : 'pointer',
+            opacity: enviando || !texto.trim() ? 0.6 : 1,
+          }}
+        >
+          Enviar
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function formatarTexto(texto) {
   const partes = texto.split('\n')
   return partes.map((linha, i) => {
@@ -86,9 +176,13 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
   // (ex: caixa fechado) continuar valendo.
   const [notificacoesVistas, setNotificacoesVistas] = useState(0)
   const [aprovacoesPendentes, setAprovacoesPendentes] = useState([])
+  const [minhasPendentes, setMinhasPendentes] = useState([])
   const [processandoAprovacao, setProcessandoAprovacao] = useState(null)
   const [confirmacaoAprovacao, setConfirmacaoAprovacao] = useState(null)
   const [resultadosAprovacao, setResultadosAprovacao] = useState([])
+  const [comentariosPorSolicitacao, setComentariosPorSolicitacao] = useState({})
+  const [threadAberta, setThreadAberta] = useState(null)
+  const [enviandoComentario, setEnviandoComentario] = useState(false)
   const [dados, setDados] = useState({
     resumo: null,
     contasReceber: [],
@@ -119,6 +213,11 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
     ...aprovacoesPendentes.map((s) => ({
       tipo: 'aprovacao',
       texto: textoSolicitacaoPendente(s),
+      solicitacao: s,
+    })),
+    ...minhasPendentes.map((s) => ({
+      tipo: 'minha_pendente',
+      texto: textoMinhaPendente(s),
       solicitacao: s,
     })),
     ...crVencidos.slice(0, 2).map((r) => ({
@@ -181,12 +280,15 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
 
   async function carregarDados() {
     try {
-      const [resumo, cr, cp, prods, pendentes, resolvidas] = await Promise.all([
+      // Pendentes é buscado sempre (não só para quem aprova), pra quem pediu
+      // também conseguir ver o status e conversar enquanto aguarda — antes só
+      // era avisado quando a solicitação já estava resolvida.
+      const [resumo, cr, cp, prods, todasPendentes, resolvidas] = await Promise.all([
         window.api.dashboard.resumo('hoje'),
         window.api.contasReceber.listar({ situacao: 'A' }),
         window.api.contasPagar.listar({ situacao: 'A' }),
         window.api.produtos.listar({ estoqueBaixo: true }),
-        podeAprovar ? window.api.aprovacoes.listarPendentes({}) : Promise.resolve([]),
+        window.api.aprovacoes.listarPendentes({}),
         nomeUsuarioAtual ? window.api.aprovacoes.listarResolvidasNaoVistas(nomeUsuarioAtual) : Promise.resolve([]),
       ])
       const novosDados = {
@@ -196,16 +298,122 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
         produtosBaixo: prods || [],
       }
       setDados(novosDados)
-      setAprovacoesPendentes(pendentes || [])
+      // Quem aprova já vê tudo pendente (com botões Aprovar/Rejeitar); pra não
+      // duplicar, quem não aprova só vê as próprias pendentes (com conversa).
+      const pendentes = podeAprovar ? todasPendentes || [] : []
+      const minhas = podeAprovar
+        ? []
+        : (todasPendentes || []).filter((s) => s.usuario_solicitante === nomeUsuarioAtual)
+      setAprovacoesPendentes(pendentes)
+      setMinhasPendentes(minhas)
       setResultadosAprovacao(resolvidas || [])
+
+      const idsComConversa = [
+        ...pendentes.map((s) => s.id),
+        ...minhas.map((s) => s.id),
+        ...(resolvidas || []).map((s) => s.id),
+      ]
+      const listasComentarios = await Promise.all(
+        idsComConversa.map((id) => window.api.comentarios.listar(id).catch(() => [])),
+      )
+      const mapaComentarios = {}
+      idsComConversa.forEach((id, i) => {
+        mapaComentarios[id] = listasComentarios[i]
+      })
+      setComentariosPorSolicitacao(mapaComentarios)
+      const naoLidosComentarios = Object.values(mapaComentarios).reduce(
+        (acc, lista) => acc + contarNaoLidos(lista, nomeUsuarioAtual),
+        0,
+      )
+
       const hoje = new Date().toISOString().slice(0, 10)
       const nCrVenc = (cr || []).filter((r) => r.data_vencimento <= hoje).length
       const nCpVenc = (cp || []).filter((p) => p.data_vencimento <= hoje).length
-      const total = (!caixaAberto ? 1 : 0) + nCrVenc + nCpVenc + (prods?.length || 0) + (pendentes?.length || 0) + (resolvidas?.length || 0)
+      const total =
+        (!caixaAberto ? 1 : 0) +
+        nCrVenc +
+        nCpVenc +
+        (prods?.length || 0) +
+        pendentes.length +
+        minhas.length +
+        (resolvidas?.length || 0) +
+        naoLidosComentarios
       setNotificacoes(total)
     } catch (err) {
       console.error('Assistente: erro ao carregar dados', err)
     }
+  }
+
+  async function enviarComentario(solicitacaoId, mensagem) {
+    setEnviandoComentario(true)
+    try {
+      const resultado = await window.api.comentarios.enviar(solicitacaoId, nomeUsuarioAtual, mensagem)
+      if (!resultado.sucesso) throw new Error(resultado.erro)
+      const lista = await window.api.comentarios.listar(solicitacaoId)
+      setComentariosPorSolicitacao((prev) => ({ ...prev, [solicitacaoId]: lista }))
+    } catch (err) {
+      console.error('Erro ao enviar comentário:', err)
+      await window.api.dialog.alert(`Não foi possível enviar a mensagem: ${err.message}`)
+    } finally {
+      setEnviandoComentario(false)
+    }
+  }
+
+  async function alternarThread(solicitacaoId) {
+    const abrindo = threadAberta !== solicitacaoId
+    setThreadAberta(abrindo ? solicitacaoId : null)
+    if (!abrindo) return
+    try {
+      await window.api.comentarios.marcarVisto(solicitacaoId, nomeUsuarioAtual)
+      setComentariosPorSolicitacao((prev) => {
+        const lista = prev[solicitacaoId] || []
+        return {
+          ...prev,
+          [solicitacaoId]: lista.map((c) =>
+            c.usuario === nomeUsuarioAtual
+              ? c
+              : { ...c, visualizado_por: [...new Set([...(c.visualizado_por || []), nomeUsuarioAtual])] },
+          ),
+        }
+      })
+    } catch (err) {
+      console.error('Erro ao marcar comentários como vistos:', err)
+    }
+  }
+
+  function blocoConversar(solicitacaoId) {
+    const lista = comentariosPorSolicitacao[solicitacaoId] || []
+    const naoLidos = contarNaoLidos(lista, nomeUsuarioAtual)
+    const aberta = threadAberta === solicitacaoId
+    return (
+      <>
+        <button
+          onClick={() => alternarThread(solicitacaoId)}
+          style={{
+            marginTop: 6,
+            padding: '4px 9px',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: 600,
+            background: 'rgba(255,255,255,0.6)',
+            color: 'inherit',
+            border: '1px solid currentColor',
+            cursor: 'pointer',
+          }}
+        >
+          💬 {aberta ? 'Fechar conversa' : 'Conversar'}
+          {!aberta && naoLidos > 0 ? ` (${naoLidos})` : ''}
+        </button>
+        {aberta && (
+          <ThreadComentarios
+            comentarios={lista}
+            usuarioAtual={nomeUsuarioAtual}
+            enviando={enviandoComentario}
+            onEnviar={(msg) => enviarComentario(solicitacaoId, msg)}
+          />
+        )}
+      </>
+    )
   }
 
   function gerarResposta(pergunta) {
@@ -341,9 +549,9 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
     )
   }
 
-  const corAlerta = { danger: '#C53030', warning: '#B7791F', info: '#185FA5', aprovacao: '#6B21A8', resultado_aprovacao: '#185FA5' }
-  const bgAlerta = { danger: '#FFF0F0', warning: '#FFF8E6', info: '#EBF3FC', aprovacao: '#F5F0FF', resultado_aprovacao: '#EBF3FC' }
-  const bdAlerta = { danger: '#FECACA', warning: '#FFE8A3', info: '#C5DEFA', aprovacao: '#DDD1F7', resultado_aprovacao: '#C5DEFA' }
+  const corAlerta = { danger: '#C53030', warning: '#B7791F', info: '#185FA5', aprovacao: '#6B21A8', minha_pendente: '#6B21A8', resultado_aprovacao: '#185FA5' }
+  const bgAlerta = { danger: '#FFF0F0', warning: '#FFF8E6', info: '#EBF3FC', aprovacao: '#F5F0FF', minha_pendente: '#F5F0FF', resultado_aprovacao: '#EBF3FC' }
+  const bdAlerta = { danger: '#FECACA', warning: '#FFE8A3', info: '#C5DEFA', aprovacao: '#DDD1F7', minha_pendente: '#DDD1F7', resultado_aprovacao: '#C5DEFA' }
 
   return (
     <>
@@ -579,28 +787,43 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
                         border: `1px solid ${a.solicitacao.situacao === 'APROVADO' ? '#9AE6B4' : '#FECACA'}`,
                         borderRadius: 8,
                         padding: '6px 8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
                       }}
                     >
-                      <div style={{ flex: 1 }}>{a.texto}</div>
-                      <button
-                        onClick={() => dispensarResultadoAprovacao(a.solicitacao)}
-                        style={{
-                          padding: '3px 9px',
-                          borderRadius: 6,
-                          fontSize: 11,
-                          fontWeight: 600,
-                          background: 'rgba(255,255,255,0.6)',
-                          color: 'inherit',
-                          border: '1px solid currentColor',
-                          cursor: 'pointer',
-                          flexShrink: 0,
-                        }}
-                      >
-                        OK
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ flex: 1 }}>{a.texto}</div>
+                        <button
+                          onClick={() => dispensarResultadoAprovacao(a.solicitacao)}
+                          style={{
+                            padding: '3px 9px',
+                            borderRadius: 6,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            background: 'rgba(255,255,255,0.6)',
+                            color: 'inherit',
+                            border: '1px solid currentColor',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                          }}
+                        >
+                          OK
+                        </button>
+                      </div>
+                      {blocoConversar(a.solicitacao.id)}
+                    </div>
+                  ) : a.tipo === 'minha_pendente' ? (
+                    <div
+                      key={i}
+                      style={{
+                        fontSize: 11,
+                        color: corAlerta.minha_pendente,
+                        background: bgAlerta.minha_pendente,
+                        border: `1px solid ${bdAlerta.minha_pendente}`,
+                        borderRadius: 8,
+                        padding: '6px 8px',
+                      }}
+                    >
+                      <div>{a.texto}</div>
+                      {blocoConversar(a.solicitacao.id)}
                     </div>
                   ) : a.tipo === 'aprovacao' ? (
                     <div
@@ -653,6 +876,7 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
                           Rejeitar
                         </button>
                       </div>
+                      {blocoConversar(a.solicitacao.id)}
                     </div>
                   ) : (
                     <div
