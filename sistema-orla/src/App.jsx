@@ -248,8 +248,8 @@ export default function App() {
     'config-sistema':     250,
     'manutencao':         250,
     'importacao':         250,
-    'lucro-real':         250,
     // Gerente apenas
+    'lucro-real':           2,
     'caixas-fechados':      2,
     'devolucao':            2,
     'haver':                2,
