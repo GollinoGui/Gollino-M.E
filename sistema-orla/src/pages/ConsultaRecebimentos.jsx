@@ -19,10 +19,16 @@ export default function ConsultaRecebimentos() {
   const [dados, setDados] = useState([])
   const [loading, setLoading] = useState(true)
 
+  // Lê o histórico por tranche (contas_receber_pagamentos), não a tabela de
+  // documentos — assim uma baixa parcial já aparece aqui (antes só listava
+  // situacao='P', então dinheiro recebido de uma conta ainda em aberto não
+  // aparecia) e cada tranche carrega sua própria forma/data (antes, se uma
+  // conta fosse quitada em 2 tranches com formas diferentes, só a forma da
+  // última tranche sobrevivia no relatório).
   async function carregar() {
     setLoading(true)
     try {
-      const result = await window.api.contasReceber.listar({ situacao: 'P' })
+      const result = await window.api.contasReceber.listarPagamentos({})
       setDados(result || [])
     } catch (e) {
       console.error('Erro ao carregar recebimentos:', e)

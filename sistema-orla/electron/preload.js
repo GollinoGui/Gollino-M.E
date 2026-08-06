@@ -97,6 +97,7 @@ contextBridge.exposeInMainWorld('api', {
     receber: (dados) => ipcRenderer.invoke('contasReceber:receber', dados),
     totalAberto: () => ipcRenderer.invoke('contasReceber:totalAberto'),
     baixarPrejuizo: (dados) => ipcRenderer.invoke('contasReceber:baixarPrejuizo', dados),
+    listarPagamentos: (filtros) => ipcRenderer.invoke('contasReceber:listarPagamentos', filtros),
   },
 
   // CONTAS A PAGAR

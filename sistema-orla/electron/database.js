@@ -479,6 +479,26 @@ const contasReceber = {
     return { sucesso: true }
   },
 
+  // Histórico de recebimentos por tranche (contas_receber_pagamentos) — ao
+  // contrário de listar({situacao:'P'}), inclui baixas parciais e preserva a
+  // forma/data de cada tranche mesmo quando uma conta recebe 2+ pagamentos.
+  // contas_receber_id tem FK de verdade pra contas_receber, então o embed
+  // automático do PostgREST funciona (diferente de codigo_cliente).
+  async listarPagamentos(filtros = {}) {
+    let q = supabase
+      .from('contas_receber_pagamentos')
+      .select('*, contas_receber(nro_docto, seq_docto, codigo_cliente, data_vencimento, valor_docto)')
+    if (filtros.dataInicio) q = q.gte('data_pagamento', filtros.dataInicio)
+    if (filtros.dataFim) q = q.lte('data_pagamento', filtros.dataFim)
+    const { data, error } = await q.order('data_pagamento', { ascending: false }).limit(500)
+    if (error) throw new Error(error.message)
+    const achatado = (data || []).map((r) => {
+      const { contas_receber, ...tranche } = r
+      return { ...tranche, ...contas_receber }
+    })
+    return anexarNomeCliente(achatado)
+  },
+
   // Baixa por prejuízo (dívida incobrável): nível >= 2 pode chamar direto; nível
   // 1 passa por solicitacoes_aprovacao (tipo BAIXA_PREJUIZO_CR) — ver `aprovacoes.aprovar`.
   async baixarPrejuizo(dados) {

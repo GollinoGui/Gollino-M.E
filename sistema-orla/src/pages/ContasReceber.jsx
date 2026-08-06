@@ -3,6 +3,8 @@ import { Search, Filter, DollarSign, RefreshCw, Trash2 } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
 import { BotoesRelatorio } from '../components/BotoesRelatorio'
 import ModalBaixarPrejuizo from '../components/ModalBaixarPrejuizo'
+import StatusBadge from '../components/StatusBadge'
+import { STATUS_CFG, getSituacao, isCartaoAutomatico } from '../utils/statusContas'
 import { useOrdenacao } from '../utils/ordenacao'
 import {
   exportarCSV,
@@ -20,52 +22,6 @@ const fmt = (v) =>
 const fmtDate = (d) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-'
 
-const STATUS_CFG = {
-  ABERTO: { bg: '#EBF3FC', color: '#185FA5', label: 'Aberto' },
-  BAIXADO: { bg: '#EAF6EE', color: '#22863A', label: 'Baixado' },
-  VENCIDO: { bg: '#FFF0F0', color: '#C53030', label: 'Vencido' },
-  CANCELADO: { bg: '#F7F7F7', color: 'var(--text-muted)', label: 'Cancelado' },
-  CARTAO: { bg: '#F3EEFC', color: '#6B3FA0', label: 'Cartão (auto)' },
-  PREJUIZO: { bg: '#3A3A3A', color: '#fff', label: 'Prejuízo' },
-}
-
-// Conta gerada automaticamente por venda no cartão de crédito: o repasse é
-// automático da operadora, então não precisa (nem pode) ser confirmada na mão.
-function isCartaoAutomatico(c) {
-  return c.tipo_docto === 'CC' && c.situacao_docto === 'A'
-}
-
-// Calcula situação real com base na data de vencimento
-function getSituacao(c) {
-  if (c.situacao_docto === 'P') return 'BAIXADO'
-  if (c.situacao_docto === 'C') return 'CANCELADO'
-  if (c.situacao_docto === 'X') return 'PREJUIZO'
-  if (isCartaoAutomatico(c)) return 'CARTAO'
-  const hoje = new Date().toISOString().slice(0, 10)
-  if (c.data_vencimento && c.data_vencimento < hoje) return 'VENCIDO'
-  return 'ABERTO'
-}
-
-function StatusBadge({ status }) {
-  const s = STATUS_CFG[status] || STATUS_CFG.ABERTO
-  return (
-    <span
-      style={{
-        background: s.bg,
-        color: s.color,
-        padding: '2px 9px',
-        borderRadius: 10,
-        fontSize: 11,
-        fontWeight: 500,
-        whiteSpace: 'nowrap',
-        display: 'inline-block',
-      }}
-    >
-      {s.label}
-    </span>
-  )
-}
-
 // Confirmação de recebimento — cobre tanto uma conta única (onde ainda dá pra
 // ajustar o valor recebido, ex: recebimento parcial) quanto um lote de várias
 // contas selecionadas (cada uma quitada pelo próprio valor em aberto). É a
@@ -75,22 +31,40 @@ function ModalConfirmarRecebimento({ contas, onClose, onConfirm }) {
   const unico = contas.length === 1
   const emAberto = (c) => c.valor_docto - (c.valor_pagamento || 0)
   const totalEmAberto = contas.reduce((s, c) => s + emAberto(c), 0)
+  // Quita a dívida mais antiga primeiro — é como o valor informado é
+  // distribuído quando o cliente paga menos que o total das contas
+  // selecionadas (ex: 2 contas de R$399,10 e R$240,10, cliente paga só
+  // R$600 — a mais antiga quita inteira, a outra fica parcial).
+  const contasOrdenadas = [...contas].sort((a, b) =>
+    (a.data_vencimento || '9999-99-99').localeCompare(b.data_vencimento || '9999-99-99'),
+  )
   const [forma, setForma] = useState(null)
-  const [valorUnico, setValorUnico] = useState(unico ? emAberto(contas[0]).toFixed(2) : '')
+  const [valorInformado, setValorInformado] = useState(totalEmAberto.toFixed(2))
   const [data, setData] = useState(new Date().toISOString().slice(0, 10))
   const [salvando, setSalvando] = useState(false)
 
-  const valorFinal = unico ? parseFloat(valorUnico) || 0 : totalEmAberto
-  const valorValido = unico ? parseFloat(valorUnico) > 0 : true
+  const valorFinal = parseFloat(valorInformado) || 0
+  // Mesma tolerância de 0,01 que a RPC contas_receber_receber já usa pra
+  // não rejeitar no front algo que o backend aceitaria (arredondamento).
+  const excedeSaldo = parseFloat(valorInformado) > totalEmAberto + 0.01
+  const valorValido = parseFloat(valorInformado) > 0 && !excedeSaldo
   const podeConfirmar = !!forma && valorValido
+
+  let restante = valorFinal
+  const alocacoes = contasOrdenadas.map((c) => {
+    const aberto = emAberto(c)
+    const aplicado = Math.max(0, Math.min(restante, aberto))
+    restante = Math.max(0, restante - aplicado)
+    return { conta: c, aberto, aplicado, falta: aberto - aplicado }
+  })
+  const falta = Math.max(totalEmAberto - valorFinal, 0)
 
   async function handleConfirm() {
     if (!podeConfirmar) return
     setSalvando(true)
-    const pagamentos = contas.map((c) => ({
-      id: c.id,
-      valor_pagamento: unico ? valorFinal : emAberto(c),
-    }))
+    const pagamentos = alocacoes
+      .filter((a) => a.aplicado > 0)
+      .map((a) => ({ id: a.conta.id, valor_pagamento: a.aplicado }))
     await onConfirm(pagamentos, forma, data)
     setSalvando(false)
   }
@@ -155,15 +129,15 @@ function ModalConfirmarRecebimento({ contas, onClose, onConfirm }) {
               marginBottom: 16,
             }}
           >
-            {contas.map((c, i) => (
+            {alocacoes.map((a, i) => (
               <div
-                key={c.id}
+                key={a.conta.id}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   gap: 8,
                   padding: '8px 12px',
-                  borderBottom: i < contas.length - 1 ? '1px solid var(--border)' : 'none',
+                  borderBottom: i < alocacoes.length - 1 ? '1px solid var(--border)' : 'none',
                   fontSize: 12.5,
                 }}
               >
@@ -177,15 +151,22 @@ function ModalConfirmarRecebimento({ contas, onClose, onConfirm }) {
                       textOverflow: 'ellipsis',
                     }}
                   >
-                    {c.nome_cliente || c.codigo_cliente}
+                    {a.conta.nome_cliente || a.conta.codigo_cliente}
                   </div>
                   <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>
-                    Venc. {fmtDate(c.data_vencimento)}
-                    {c.nro_docto ? ` · Doc: ${c.nro_docto}` : ''}
+                    Venc. {fmtDate(a.conta.data_vencimento)}
+                    {a.conta.nro_docto ? ` · Doc: ${a.conta.nro_docto}` : ''}
                   </div>
                 </div>
-                <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                  {fmt(emAberto(c))}
+                <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontWeight: 600, color: a.aplicado > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                    {a.aplicado > 0 ? fmt(a.aplicado) : 'não recebe agora'}
+                  </div>
+                  {a.falta > 0.01 && (
+                    <div style={{ fontSize: 10.5, color: '#B7791F' }}>
+                      de {fmt(a.aberto)} · falta {fmt(a.falta)}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -232,67 +213,48 @@ function ModalConfirmarRecebimento({ contas, onClose, onConfirm }) {
               marginBottom: 16,
             }}
           >
-            {unico ? (
-              <div>
-                <label
-                  style={{
-                    fontSize: 11,
-                    color: 'var(--text-muted)',
-                    display: 'block',
-                    marginBottom: 4,
-                  }}
-                >
-                  Valor recebido
-                </label>
-                <input
-                  value={valorUnico}
-                  onChange={(e) => setValorUnico(e.target.value)}
-                  type='number'
-                  step='0.01'
-                  style={{
-                    width: '100%',
-                    height: 36,
-                    padding: '0 10px',
-                    borderRadius: 8,
-                    border: '1px solid var(--border-md)',
-                  }}
-                  autoFocus
-                />
-                {valorUnico !== '' && !valorValido && (
-                  <div style={{ fontSize: 11, color: '#C53030', marginTop: 4 }}>
-                    Informe um valor maior que zero.
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div>
-                <label
-                  style={{
-                    fontSize: 11,
-                    color: 'var(--text-muted)',
-                    display: 'block',
-                    marginBottom: 4,
-                  }}
-                >
-                  Total a receber
-                </label>
-                <div
-                  style={{
-                    height: 36,
-                    padding: '0 10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    background: '#F7F7F7',
-                    border: '1px solid var(--border-md)',
-                    borderRadius: 8,
-                    fontWeight: 600,
-                    fontSize: 13,
-                  }}
-                >
-                  {fmt(totalEmAberto)}
+            <div>
+              <label
+                style={{
+                  fontSize: 11,
+                  color: 'var(--text-muted)',
+                  display: 'block',
+                  marginBottom: 4,
+                }}
+              >
+                {unico ? 'Valor recebido' : 'Total a receber agora'}
+              </label>
+              <input
+                value={valorInformado}
+                onChange={(e) => setValorInformado(e.target.value)}
+                type='number'
+                step='0.01'
+                style={{
+                  width: '100%',
+                  height: 36,
+                  padding: '0 10px',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-md)',
+                }}
+                autoFocus
+              />
+              {valorInformado !== '' && excedeSaldo && (
+                <div style={{ fontSize: 11, color: '#C53030', marginTop: 4 }}>
+                  Valor não pode ser maior que o saldo em aberto ({fmt(totalEmAberto)}).
                 </div>
-              </div>
-            )}
+              )}
+              {valorInformado !== '' && !excedeSaldo && parseFloat(valorInformado) <= 0 && (
+                <div style={{ fontSize: 11, color: '#C53030', marginTop: 4 }}>
+                  Informe um valor maior que zero.
+                </div>
+              )}
+              {valorValido && falta > 0.01 && (
+                <div style={{ fontSize: 11, color: '#B7791F', marginTop: 4 }}>
+                  Pagamento parcial — vai ficar faltando {fmt(falta)}
+                  {!unico ? ` (veja o detalhe de cada conta acima)` : ''}.
+                </div>
+              )}
+            </div>
             <div>
               <label
                 style={{
@@ -412,6 +374,10 @@ export default function ContasReceber({ usuario }) {
     .filter((c) => c.situacao_docto !== 'C')
     .reduce((s, c) => s + (c.valor_docto || 0), 0)
 
+  // "Pago" de todas as linhas filtradas (inclui parciais), pros relatórios —
+  // diferente de totalPago acima, que é só o que já foi 100% baixado.
+  const totalPagoFiltrados = filtrados.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
+
   const { ordenados, coluna, direcao, alternar } = useOrdenacao(filtrados, {
     acessores: {
       nome_cliente: (c) => c.nome_cliente || c.codigo_cliente || '',
@@ -431,17 +397,20 @@ export default function ContasReceber({ usuario }) {
           Cliente: g.nome,
           Vencimento: fmtDate(c.data_vencimento),
           'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
+          'Pago (R$)': (c.valor_pagamento || 0).toFixed(2).replace('.', ','),
           'Em Aberto (R$)': (c.valor_docto - (c.valor_pagamento || 0)).toFixed(2).replace('.', ','),
           Situação: STATUS_CFG[getSituacao(c)].label,
         })
       }
       const subDocto = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+      const subPago = g.itens.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
       const subAberto = g.itens.reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
       linhas.push({
         Documento: '',
         Cliente: `SUBTOTAL — ${g.nome}`,
         Vencimento: '',
         'Valor (R$)': subDocto.toFixed(2).replace('.', ','),
+        'Pago (R$)': subPago.toFixed(2).replace('.', ','),
         'Em Aberto (R$)': subAberto.toFixed(2).replace('.', ','),
         Situação: '',
       })
@@ -451,6 +420,7 @@ export default function ContasReceber({ usuario }) {
       Cliente: 'TOTAL GERAL',
       Vencimento: '',
       'Valor (R$)': totalDocto.toFixed(2).replace('.', ','),
+      'Pago (R$)': totalPagoFiltrados.toFixed(2).replace('.', ','),
       'Em Aberto (R$)': totalEmAberto.toFixed(2).replace('.', ','),
       Situação: '',
     })
@@ -464,6 +434,7 @@ export default function ContasReceber({ usuario }) {
       { label: 'Documento' },
       { label: 'Vencimento' },
       { label: 'Valor', num: true },
+      { label: 'Pago', num: true },
       { label: 'Em Aberto', num: true },
       { label: 'Situação' },
     ]
@@ -475,15 +446,16 @@ export default function ContasReceber({ usuario }) {
       grupos,
       montarLinha: (c) => {
         const emAberto = c.valor_docto - (c.valor_pagamento || 0)
-        return `<tr><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${STATUS_CFG[getSituacao(c)].label}</td></tr>`
+        return `<tr><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(c.valor_pagamento || 0)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${STATUS_CFG[getSituacao(c)].label}</td></tr>`
       },
       montarSubtotal: (g) => {
         const subDocto = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+        const subPago = g.itens.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
         const subAberto = g.itens.reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
-        return `<td colspan="2">Subtotal</td><td class="num">${fmtMoedaBR(subDocto)}</td><td class="num">${fmtMoedaBR(subAberto)}</td><td></td>`
+        return `<td colspan="2">Subtotal</td><td class="num">${fmtMoedaBR(subDocto)}</td><td class="num">${fmtMoedaBR(subPago)}</td><td class="num">${fmtMoedaBR(subAberto)}</td><td></td>`
       },
       montarTotalGeral: () =>
-        `<td colspan="2">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDocto)}</td><td class="num">${fmtMoedaBR(totalEmAberto)}</td><td></td>`,
+        `<td colspan="2">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDocto)}</td><td class="num">${fmtMoedaBR(totalPagoFiltrados)}</td><td class="num">${fmtMoedaBR(totalEmAberto)}</td><td></td>`,
     })
     await gerarPdfRelatorio(html, `contas_receber_${new Date().toISOString().slice(0, 10)}`)
   }
@@ -859,6 +831,7 @@ export default function ContasReceber({ usuario }) {
               <col />
               <col style={{ width: 90 }} />
               <col style={{ width: 90 }} />
+              <col style={{ width: 85 }} />
               <col style={{ width: 95 }} />
               <col style={{ width: 95 }} />
               <col style={{ width: 85 }} />
@@ -873,6 +846,7 @@ export default function ContasReceber({ usuario }) {
                   { label: 'Data', chave: 'data_docto' },
                   { label: 'Vencimento', chave: 'data_vencimento' },
                   { label: 'Valor doc.', chave: 'valor_docto' },
+                  { label: 'Pago', chave: 'valor_pagamento' },
                   { label: 'Em aberto', chave: 'em_aberto' },
                   { label: 'Situação', chave: 'situacao' },
                 ].map((h) => (
@@ -986,6 +960,14 @@ export default function ContasReceber({ usuario }) {
                       {fmtDate(c.data_vencimento)}
                     </td>
                     <td style={tdStyle}>{fmt(c.valor_docto)}</td>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        color: c.valor_pagamento > 0 ? '#22863A' : 'var(--text-muted)',
+                      }}
+                    >
+                      {c.valor_pagamento > 0 ? fmt(c.valor_pagamento) : '-'}
+                    </td>
                     <td
                       style={{
                         ...tdStyle,

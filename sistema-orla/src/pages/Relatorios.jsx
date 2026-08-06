@@ -17,6 +17,8 @@ import {
 } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
 import { BotaoGerarRelatorio } from '../components/BotoesRelatorio'
+import StatusBadge from '../components/StatusBadge'
+import { getSituacao as getSituacaoConta, STATUS_CFG } from '../utils/statusContas'
 import { useOrdenacao } from '../utils/ordenacao'
 import {
   exportarCSV,
@@ -1089,13 +1091,7 @@ function RelContasReceber() {
   }, {})
   const maxCliente = Math.max(...Object.values(porCliente), 1)
 
-  function situacaoDe(c) {
-    if (c.situacao_docto === 'P') return 'Baixado'
-    if (c.situacao_docto === 'X') return 'Prejuízo'
-    if (c.situacao_docto === 'C') return 'Cancelado'
-    if (c.situacao_docto === 'A' && c.data_vencimento < hoje) return 'Vencido'
-    return 'Aberto'
-  }
+  const situacaoDe = (c) => STATUS_CFG[getSituacaoConta(c)].label
 
   const { ordenados, coluna, direcao, alternar } = useOrdenacao(contas, {
     acessores: {
@@ -1116,23 +1112,28 @@ function RelContasReceber() {
           Cliente: g.nome,
           Vencimento: fmtDate(c.data_vencimento),
           'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
+          'Pago (R$)': (c.valor_pagamento || 0).toFixed(2).replace('.', ','),
           'Em Aberto (R$)': ((c.valor_docto || 0) - (c.valor_pagamento || 0)).toFixed(2).replace('.', ','),
           Situação: situacaoDe(c),
         })
       }
       const subDocto = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+      const subPago = g.itens.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
       const subAberto = g.itens.reduce((s, c) => s + ((c.valor_docto || 0) - (c.valor_pagamento || 0)), 0)
       linhas.push({
         Documento: '', Seq: '', Cliente: `SUBTOTAL — ${g.nome}`, Vencimento: '',
         'Valor (R$)': subDocto.toFixed(2).replace('.', ','),
+        'Pago (R$)': subPago.toFixed(2).replace('.', ','),
         'Em Aberto (R$)': subAberto.toFixed(2).replace('.', ','),
         Situação: '',
       })
     }
     const totalDocto = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
+    const totalPagoLinhas = contas.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
     linhas.push({
       Documento: '', Seq: '', Cliente: 'TOTAL GERAL', Vencimento: '',
       'Valor (R$)': totalDocto.toFixed(2).replace('.', ','),
+      'Pago (R$)': totalPagoLinhas.toFixed(2).replace('.', ','),
       'Em Aberto (R$)': totalAberto.toFixed(2).replace('.', ','),
       Situação: '',
     })
@@ -1143,10 +1144,12 @@ function RelContasReceber() {
     const empresa = await buscarEmpresa()
     const grupos = agruparPorPessoa(contas, { codigoKey: 'codigo_cliente', nomeKey: 'nome_cliente' })
     const totalDocto = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
+    const totalPagoLinhas = contas.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
     const colunas = [
       { label: 'Documento' },
       { label: 'Vencimento' },
       { label: 'Valor', num: true },
+      { label: 'Pago', num: true },
       { label: 'Em Aberto', num: true },
       { label: 'Situação' },
     ]
@@ -1158,15 +1161,16 @@ function RelContasReceber() {
       grupos,
       montarLinha: (c) => {
         const emAberto = (c.valor_docto || 0) - (c.valor_pagamento || 0)
-        return `<tr><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${situacaoDe(c)}</td></tr>`
+        return `<tr><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(c.valor_pagamento || 0)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${situacaoDe(c)}</td></tr>`
       },
       montarSubtotal: (g) => {
         const subDocto = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+        const subPago = g.itens.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
         const subAberto = g.itens.reduce((s, c) => s + ((c.valor_docto || 0) - (c.valor_pagamento || 0)), 0)
-        return `<td colspan="2">Subtotal</td><td class="num">${fmtMoedaBR(subDocto)}</td><td class="num">${fmtMoedaBR(subAberto)}</td><td></td>`
+        return `<td colspan="2">Subtotal</td><td class="num">${fmtMoedaBR(subDocto)}</td><td class="num">${fmtMoedaBR(subPago)}</td><td class="num">${fmtMoedaBR(subAberto)}</td><td></td>`
       },
       montarTotalGeral: () =>
-        `<td colspan="2">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDocto)}</td><td class="num">${fmtMoedaBR(totalAberto)}</td><td></td>`,
+        `<td colspan="2">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDocto)}</td><td class="num">${fmtMoedaBR(totalPagoLinhas)}</td><td class="num">${fmtMoedaBR(totalAberto)}</td><td></td>`,
     })
     await gerarPdfRelatorio(html, 'contas_receber')
   }
@@ -1331,6 +1335,7 @@ function RelContasReceber() {
                     { label: 'Cliente', chave: 'nome_cliente' },
                     { label: 'Vencimento', chave: 'data_vencimento' },
                     { label: 'Valor', chave: 'valor_docto' },
+                    { label: 'Pago', chave: 'valor_pagamento' },
                     { label: 'Em aberto', chave: 'em_aberto' },
                     { label: 'Situação', chave: 'situacao' },
                   ].map((h) => (
@@ -1358,7 +1363,6 @@ function RelContasReceber() {
                 {ordenados.map((c) => {
                   const vencido =
                     c.situacao_docto === 'A' && c.data_vencimento < hoje
-                  const pago = c.situacao_docto === 'P'
                   const emAberto = (c.valor_docto || 0) - (c.valor_pagamento || 0)
                   return (
                     <tr
@@ -1433,6 +1437,16 @@ function RelContasReceber() {
                         style={{
                           padding: '9px 14px',
                           fontSize: 13,
+                          borderBottom: '1px solid var(--border)',
+                          color: c.valor_pagamento > 0 ? 'var(--green-700)' : 'var(--text-muted)',
+                        }}
+                      >
+                        {c.valor_pagamento > 0 ? fmt(c.valor_pagamento) : '-'}
+                      </td>
+                      <td
+                        style={{
+                          padding: '9px 14px',
+                          fontSize: 13,
                           fontWeight: 600,
                           borderBottom: '1px solid var(--border)',
                           color:
@@ -1449,34 +1463,7 @@ function RelContasReceber() {
                           borderBottom: '1px solid var(--border)',
                         }}
                       >
-                        <span
-                          style={{
-                            background: c.situacao_docto === 'X'
-                              ? '#3A3A3A'
-                              : pago
-                                ? 'var(--green-50)'
-                                : c.situacao_docto === 'C'
-                                  ? 'var(--gray-100)'
-                                  : vencido
-                                    ? 'var(--red-50)'
-                                    : 'var(--blue-50)',
-                            color: c.situacao_docto === 'X'
-                              ? '#fff'
-                              : pago
-                                ? 'var(--green-700)'
-                                : c.situacao_docto === 'C'
-                                  ? 'var(--text-muted)'
-                                  : vencido
-                                    ? 'var(--red-500)'
-                                    : 'var(--blue-800)',
-                            padding: '2px 9px',
-                            borderRadius: 10,
-                            fontSize: 11,
-                            fontWeight: 500,
-                          }}
-                        >
-                          {situacaoDe(c)}
-                        </span>
+                        <StatusBadge status={getSituacaoConta(c)} />
                       </td>
                     </tr>
                   )
@@ -2028,6 +2015,13 @@ function RelFinanceiro() {
     (s, v) => s + (v.valor_pago_pix || 0),
     0,
   )
+  // Venda em convênio zera todos os valor_pago_* (o valor inteiro vira conta
+  // a receber) — por isso não aparece em nenhuma forma de pagamento acima,
+  // mesmo já estando contado em "Total de vendas". Calculado à parte pra
+  // deixar claro que esse dinheiro ainda não entrou no caixa.
+  const totalConvenio = vendas
+    .filter((v) => v.codigo_forma_pagamento1 === 'Convênio')
+    .reduce((s, v) => s + (v.valor_total || 0), 0)
 
   const resumoLinhas = [
     { item: 'Total de vendas (período)', valor: totalVendas },
@@ -2043,6 +2037,7 @@ function RelFinanceiro() {
     { item: 'Cartão Débito', valor: totalCartaoD },
     { item: 'Cheque', valor: totalCheque },
     { item: 'PIX', valor: totalPix },
+    { item: 'Convênio vendido no período (já em "Total de vendas" — ainda NÃO em "Recebido", entra só quando o convênio pagar)', valor: totalConvenio },
   ]
 
   function exportarExcel() {
@@ -2256,9 +2251,37 @@ function RelFinanceiro() {
                     </span>
                   </div>
                 ))}
-              {totalDinheiro + totalCartaoC + totalCartaoD + totalCheque === 0 && (
+              {totalDinheiro + totalCartaoC + totalCartaoD + totalCheque + totalPix + totalConvenio === 0 && (
                 <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                   Nenhuma venda no período.
+                </div>
+              )}
+              {totalConvenio > 0 && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    paddingTop: 10,
+                    borderTop: '1px dashed var(--border)',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'baseline',
+                    }}
+                  >
+                    <span style={{ fontSize: 13, color: '#7C3AED' }}>
+                      Convênio (vendido no período)
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#7C3AED' }}>
+                      {fmt(totalConvenio)}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                    Já contado em "Total de vendas" acima, mas esse dinheiro ainda não entrou —
+                    só soma em "Recebido" quando a baixa do convênio for feita.
+                  </div>
                 </div>
               )}
             </div>

@@ -9,6 +9,8 @@ import {
   Save,
   X,
 } from 'lucide-react'
+import StatusBadge from '../components/StatusBadge'
+import { getSituacao } from '../utils/statusContas'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -671,6 +673,7 @@ export default function DetalhesCliente({ cliente, onVoltar }) {
                       'Seq',
                       'Vencimento',
                       'Valor',
+                      'Pago',
                       'Em aberto',
                       'Situação',
                     ].map((h) => (
@@ -693,9 +696,8 @@ export default function DetalhesCliente({ cliente, onVoltar }) {
                 </thead>
                 <tbody>
                   {contasCliente.map((c) => {
-                    const vencido =
-                      c.situacao === 'ABERTO' &&
-                      new Date(c.vencimento) < new Date()
+                    const sit = getSituacao(c)
+                    const vencido = sit === 'VENCIDO'
                     return (
                       <tr
                         key={c.id}
@@ -713,7 +715,7 @@ export default function DetalhesCliente({ cliente, onVoltar }) {
                             borderBottom: '1px solid var(--border)',
                           }}
                         >
-                          {c.documento}
+                          {c.nro_docto}
                         </td>
                         <td
                           style={{
@@ -724,7 +726,7 @@ export default function DetalhesCliente({ cliente, onVoltar }) {
                             borderBottom: '1px solid var(--border)',
                           }}
                         >
-                          {c.seq}
+                          {c.seq_docto}
                         </td>
                         <td
                           style={{
@@ -735,7 +737,7 @@ export default function DetalhesCliente({ cliente, onVoltar }) {
                             fontWeight: vencido ? 500 : 400,
                           }}
                         >
-                          {fmtDate(c.vencimento)}
+                          {fmtDate(c.data_vencimento)}
                         </td>
                         <td
                           style={{
@@ -750,15 +752,25 @@ export default function DetalhesCliente({ cliente, onVoltar }) {
                           style={{
                             padding: '10px 16px',
                             fontSize: 13,
+                            color: c.valor_pagamento > 0 ? 'var(--green-700)' : 'var(--text-muted)',
+                            borderBottom: '1px solid var(--border)',
+                          }}
+                        >
+                          {c.valor_pagamento > 0 ? fmt(c.valor_pagamento) : '-'}
+                        </td>
+                        <td
+                          style={{
+                            padding: '10px 16px',
+                            fontSize: 13,
                             fontWeight: 600,
                             color:
-                              c.em_aberto > 0
+                              c.valor_em_aberto > 0
                                 ? 'var(--blue-700)'
                                 : 'var(--text-muted)',
                             borderBottom: '1px solid var(--border)',
                           }}
                         >
-                          {fmt(c.em_aberto)}
+                          {fmt(c.valor_em_aberto)}
                         </td>
                         <td
                           style={{
@@ -766,33 +778,7 @@ export default function DetalhesCliente({ cliente, onVoltar }) {
                             borderBottom: '1px solid var(--border)',
                           }}
                         >
-                          <span
-                            style={{
-                              background:
-                                c.situacao === 'BAIXADO'
-                                  ? 'var(--green-50)'
-                                  : vencido
-                                    ? 'var(--red-50)'
-                                    : 'var(--blue-50)',
-                              color:
-                                c.situacao === 'BAIXADO'
-                                  ? 'var(--green-700)'
-                                  : vencido
-                                    ? 'var(--red-500)'
-                                    : 'var(--blue-800)',
-                              padding: '2px 9px',
-                              borderRadius: 10,
-                              fontSize: 11,
-                              fontWeight: 500,
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {c.situacao === 'BAIXADO'
-                              ? 'Baixado'
-                              : vencido
-                                ? 'Vencido'
-                                : 'Aberto'}
-                          </span>
+                          <StatusBadge status={sit} />
                         </td>
                       </tr>
                     )

@@ -248,6 +248,7 @@ handle('contasReceber:listar', (_, filtros) => db.contasReceber.listar(filtros))
 handle('contasReceber:receber', (_, dados) => db.contasReceber.receber(dados))
 handle('contasReceber:totalAberto', () => db.contasReceber.totalAberto())
 handle('contasReceber:baixarPrejuizo', (_, dados) => db.contasReceber.baixarPrejuizo(dados))
+handle('contasReceber:listarPagamentos', (_, filtros) => db.contasReceber.listarPagamentos(filtros))
 
 // --- CONTAS A PAGAR ---
 handle('contasPagar:listar', (_, filtros) => db.contasPagar.listar(filtros))
