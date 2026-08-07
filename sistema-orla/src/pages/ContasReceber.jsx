@@ -316,6 +316,106 @@ function ModalConfirmarRecebimento({ contas, onClose, onConfirm }) {
   )
 }
 
+// Depois de confirmar um recebimento, pergunta o que entra no PDF em vez de
+// gerar sempre as mesmas 3 seções (recebido + aberto geral + vencido geral) —
+// no dia a dia o que importa é mostrar pro cliente o que ele ainda deve, não
+// a carteira inteira da loja.
+function ModalOpcoesRelatorioBaixa({ recebidas, onFechar, onGerar }) {
+  const [emAbertoCliente, setEmAbertoCliente] = useState(true)
+  const [emAbertoGeral, setEmAbertoGeral] = useState(false)
+  const [vencidasGeral, setVencidasGeral] = useState(false)
+
+  const nomesClientes = [
+    ...new Set(recebidas.map((r) => r.conta?.nome_cliente || r.conta?.codigo_cliente).filter(Boolean)),
+  ]
+
+  const opcoes = [
+    {
+      chave: 'emAbertoCliente',
+      valor: emAbertoCliente,
+      set: setEmAbertoCliente,
+      label: `Em aberto — ${nomesClientes.length === 1 ? nomesClientes[0] : 'cliente(s) atendido(s)'}`,
+      desc: 'O que esse(s) cliente(s) ainda deve, pra mostrar junto do recibo.',
+    },
+    {
+      chave: 'emAbertoGeral',
+      valor: emAbertoGeral,
+      set: setEmAbertoGeral,
+      label: 'Em aberto — todos os clientes',
+      desc: 'Carteira inteira em aberto, dentro do prazo.',
+    },
+    {
+      chave: 'vencidasGeral',
+      valor: vencidasGeral,
+      set: setVencidasGeral,
+      label: 'Vencidas — todos os clientes',
+      desc: 'Carteira inteira já vencida.',
+    },
+  ]
+
+  return (
+    <div
+      style={{
+        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 250,
+      }}
+    >
+      <div
+        style={{
+          background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border-md)',
+          width: 400, padding: 22, boxShadow: '0 16px 40px rgba(0,0,0,0.14)',
+        }}
+      >
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Gerar relatório?</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+          Recebimento confirmado. Escolha o que entra no PDF.
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
+          {opcoes.map((o) => (
+            <label
+              key={o.chave}
+              style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}
+            >
+              <input
+                type='checkbox'
+                checked={o.valor}
+                onChange={(e) => o.set(e.target.checked)}
+                style={{ width: 15, height: 15, marginTop: 2, flexShrink: 0 }}
+              />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{o.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{o.desc}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button
+            onClick={onFechar}
+            style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-muted)' }}
+          >
+            Pular
+          </button>
+          <button
+            onClick={() => onGerar({ emAbertoCliente, emAbertoGeral, vencidasGeral })}
+            disabled={!emAbertoCliente && !emAbertoGeral && !vencidasGeral}
+            style={{
+              padding: '8px 20px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 600,
+              background: (emAbertoCliente || emAbertoGeral || vencidasGeral) ? '#185FA5' : 'var(--border-md)',
+              color: (emAbertoCliente || emAbertoGeral || vencidasGeral) ? '#fff' : 'var(--text-muted)',
+              cursor: (emAbertoCliente || emAbertoGeral || vencidasGeral) ? 'pointer' : 'not-allowed',
+            }}
+          >
+            Gerar PDF
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ContasReceber({ usuario }) {
   const [dados, setDados] = useState([])
   const [loading, setLoading] = useState(true)
@@ -326,6 +426,7 @@ export default function ContasReceber({ usuario }) {
   const [sucesso, setSucesso] = useState('')
   const [modalPrejuizo, setModalPrejuizo] = useState(false)
   const [aguardandoAprovacao, setAguardandoAprovacao] = useState(false)
+  const [opcoesRelatorioBaixa, setOpcoesRelatorioBaixa] = useState(null) // recebidas | null
 
   // ── Carrega do banco ─────────────────────────────────────────
   async function carregar() {
@@ -514,26 +615,16 @@ export default function ContasReceber({ usuario }) {
     if (recebidas.length > 0) {
       setSucesso(`✅ ${recebidas.length} conta(s) recebida(s)!`)
       setTimeout(() => setSucesso(''), 2500)
-      try {
-        await gerarRelatorioRecebimento(recebidas)
-      } catch (err) {
-        console.error('Erro ao gerar relatório de recebimento:', err)
-      }
+      setOpcoesRelatorioBaixa(recebidas)
     }
   }
 
-  // Relatório em três seções: o que acabou de ser recebido nesta operação,
-  // o que ainda está em aberto (dentro do prazo) e o que já está vencido —
-  // não só o que está filtrado na tela no momento, é a conferência completa
-  // que a secretária leva pro Elter.
-  async function gerarRelatorioRecebimento(recebidas) {
-    const abertas = (await window.api.contasReceber.listar({ situacao: 'A' })).filter(
-      (c) => !isCartaoAutomatico(c),
-    )
-    const hoje = new Date().toISOString().slice(0, 10)
-    const emAbertoList = abertas.filter((c) => !c.data_vencimento || c.data_vencimento >= hoje)
-    const vencidasList = abertas.filter((c) => c.data_vencimento && c.data_vencimento < hoje)
-
+  // Relatório em seções escolhidas pela secretária no ModalOpcoesRelatorioBaixa
+  // — "recebidas nesta operação" sempre entra; "em aberto do cliente atendido",
+  // "em aberto geral" e "vencidas geral" são opcionais, pra não imprimir a
+  // carteira inteira da loja quando só interessa o que aquele cliente deve.
+  async function gerarRelatorioRecebimento(recebidas, opcoes) {
+    const codigosClientes = new Set(recebidas.map((r) => r.conta?.codigo_cliente).filter(Boolean))
     const empresa = await buscarEmpresa()
     const colunas = [
       { label: 'Cliente' },
@@ -547,38 +638,62 @@ export default function ContasReceber({ usuario }) {
     }
     const montarLinhaRecebida = (r) =>
       `<tr><td>${r.conta?.nome_cliente || r.conta?.codigo_cliente || '?'}</td><td>${r.conta?.nro_docto || '—'}</td><td>${fmtDate(r.conta?.data_vencimento)}</td><td class="num">${fmtMoedaBR(r.valor)}</td></tr>`
+    const totalPorLista = (lista) => lista.reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
 
     const totalRecebido = recebidas.reduce((s, r) => s + r.valor, 0)
-    const totalAberto = emAbertoList.reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
-    const totalVencido = vencidasList.reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
+    const secoes = [
+      {
+        titulo: 'Recebidas nesta operação',
+        colunas,
+        linhas: recebidas,
+        montarLinha: montarLinhaRecebida,
+        montarTotal: () => `<td colspan="3">Total recebido</td><td class="num">${fmtMoedaBR(totalRecebido)}</td>`,
+      },
+    ]
+
+    if (opcoes.emAbertoCliente || opcoes.emAbertoGeral || opcoes.vencidasGeral) {
+      const abertas = (await window.api.contasReceber.listar({ situacao: 'A' })).filter(
+        (c) => !isCartaoAutomatico(c),
+      )
+      const hoje = new Date().toISOString().slice(0, 10)
+
+      if (opcoes.emAbertoCliente) {
+        const doCliente = abertas.filter((c) => codigosClientes.has(c.codigo_cliente))
+        secoes.push({
+          titulo: 'Em aberto — cliente(s) atendido(s)',
+          colunas,
+          linhas: doCliente,
+          montarLinha: montarLinhaConta,
+          montarTotal: () => `<td colspan="3">Total em aberto</td><td class="num">${fmtMoedaBR(totalPorLista(doCliente))}</td>`,
+        })
+      }
+      if (opcoes.emAbertoGeral) {
+        const emAbertoList = abertas.filter((c) => !c.data_vencimento || c.data_vencimento >= hoje)
+        secoes.push({
+          titulo: 'Em aberto — todos os clientes',
+          colunas,
+          linhas: emAbertoList,
+          montarLinha: montarLinhaConta,
+          montarTotal: () => `<td colspan="3">Total em aberto</td><td class="num">${fmtMoedaBR(totalPorLista(emAbertoList))}</td>`,
+        })
+      }
+      if (opcoes.vencidasGeral) {
+        const vencidasList = abertas.filter((c) => c.data_vencimento && c.data_vencimento < hoje)
+        secoes.push({
+          titulo: 'Vencidas — todos os clientes',
+          colunas,
+          linhas: vencidasList,
+          montarLinha: montarLinhaConta,
+          montarTotal: () => `<td colspan="3">Total vencido</td><td class="num">${fmtMoedaBR(totalPorLista(vencidasList))}</td>`,
+        })
+      }
+    }
 
     const html = gerarHtmlSecoes({
       empresa,
       titulo: 'Recebimento de Contas',
       subtitulo: `Gerado em ${fmtDate(new Date().toISOString().slice(0, 10))}`,
-      secoes: [
-        {
-          titulo: 'Recebidas nesta operação',
-          colunas,
-          linhas: recebidas,
-          montarLinha: montarLinhaRecebida,
-          montarTotal: () => `<td colspan="3">Total recebido</td><td class="num">${fmtMoedaBR(totalRecebido)}</td>`,
-        },
-        {
-          titulo: 'Em aberto',
-          colunas,
-          linhas: emAbertoList,
-          montarLinha: montarLinhaConta,
-          montarTotal: () => `<td colspan="3">Total em aberto</td><td class="num">${fmtMoedaBR(totalAberto)}</td>`,
-        },
-        {
-          titulo: 'Vencidas',
-          colunas,
-          linhas: vencidasList,
-          montarLinha: montarLinhaConta,
-          montarTotal: () => `<td colspan="3">Total vencido</td><td class="num">${fmtMoedaBR(totalVencido)}</td>`,
-        },
-      ],
+      secoes,
     })
     await gerarPdfRelatorio(html, `recebimento_contas_${new Date().toISOString().slice(0, 10)}`)
   }
@@ -691,6 +806,22 @@ export default function ContasReceber({ usuario }) {
           podeExcluirDireto={podeExcluirDireto}
           onFechar={() => setModalPrejuizo(false)}
           onConfirmar={confirmarBaixaPrejuizo}
+        />
+      )}
+
+      {opcoesRelatorioBaixa && (
+        <ModalOpcoesRelatorioBaixa
+          recebidas={opcoesRelatorioBaixa}
+          onFechar={() => setOpcoesRelatorioBaixa(null)}
+          onGerar={async (opcoes) => {
+            const recebidas = opcoesRelatorioBaixa
+            setOpcoesRelatorioBaixa(null)
+            try {
+              await gerarRelatorioRecebimento(recebidas, opcoes)
+            } catch (err) {
+              console.error('Erro ao gerar relatório de recebimento:', err)
+            }
+          }}
         />
       )}
 

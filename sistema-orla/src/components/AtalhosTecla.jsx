@@ -45,7 +45,7 @@ export default function AtalhosTecla() {
         title='Atalhos de teclado (F1)'
         style={{
           position: 'fixed',
-          bottom: 84,
+          bottom: 24,
           left: 24,
           zIndex: 998,
           width: 40,
@@ -70,7 +70,7 @@ export default function AtalhosTecla() {
         <div
           style={{
             position: 'fixed',
-            bottom: 134,
+            bottom: 74,
             left: 24,
             zIndex: 999,
             background: '#fff',
