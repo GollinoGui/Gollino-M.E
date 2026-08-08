@@ -11,6 +11,7 @@ const fmtDate = (d) => new Date(d).toLocaleDateString('pt-BR')
 
 const abasEstoque = [
   { id: 'movimentos', label: 'Movimentos', pronto: true },
+  { id: 'entrada-mercadoria', label: 'Entradas de mercadoria', pronto: true },
   { id: 'posicao', label: 'Posição de estoque', pronto: true },
   { id: 'pedido-compra', label: 'Pedido de compra', pronto: true },
   { id: 'saida-mercadoria', label: 'Saída de mercadoria', pronto: true },
@@ -91,227 +92,451 @@ function ProdutoDropdown({ value, onChange, produtos, placeholder = 'Pesquisar p
   )
 }
 
-function ModalEntrada({ onClose, onSalvar }) {
-  const [form, setForm] = useState({
-    produto_id: '',
-    produto: '',
-    quantidade: '',
-    valor_unitario: '',
-    fornecedor: '',
-    obs: '',
-    data: new Date().toISOString().split('T')[0],
-    data_vencimento: new Date().toISOString().split('T')[0],
-  })
+// Dropdown de busca genérico — mesma interação do ProdutoDropdown acima,
+// reaproveitado pra Fornecedor/Plano de Contas/Histórico (que não têm
+// "estoque" pra mostrar ao lado do nome, só um rótulo + um subtítulo opcional).
+function BuscaDropdown({ onChange, itens, campoBusca, campoLabel, campoSub, placeholder = 'Pesquisar...' }) {
   const [busca, setBusca] = useState('')
-  const [dropdown, setDropdown] = useState(false)
-  const [prodsBusca, setProdsBusca] = useState([])
-  const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }))
+  const [open, setOpen] = useState(false)
 
-  useEffect(() => {
-    window.api.produtos.listar({ situacao: 'A' }).then(setProdsBusca).catch(console.error)
-  }, [])
-
-  const prodsFiltrados = prodsBusca.filter(
-    (p) =>
-      p.descricao.toLowerCase().includes(busca.toLowerCase()) ||
-      p.codigo.includes(busca),
-  )
-  const total =
-    (parseFloat(form.quantidade) || 0) * (parseFloat(form.valor_unitario) || 0)
-  const valido =
-    form.produto_id &&
-    parseFloat(form.quantidade) > 0 &&
-    parseFloat(form.valor_unitario) > 0 &&
-    form.fornecedor
+  const filtrados = itens
+    .filter((it) => (it[campoBusca] || '').toLowerCase().includes(busca.toLowerCase()))
+    .slice(0, 30)
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        background: 'rgba(0,0,0,0.35)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 200,
-      }}
-    >
-      <div
-        style={{
-          background: 'var(--surface)',
-          borderRadius: 'var(--radius-lg)',
-          border: '1px solid var(--border-md)',
-          width: 500,
-          padding: 24,
-          boxShadow: '0 16px 40px rgba(0,0,0,0.14)',
-          animation: 'fadeIn 0.15s ease both',
+    <div style={{ position: 'relative' }}>
+      <input
+        value={busca}
+        onChange={(e) => {
+          setBusca(e.target.value)
+          onChange(null)
+          setOpen(true)
         }}
-      >
+        onFocus={() => setOpen(true)}
+        placeholder={placeholder}
+        style={{ width: '100%', height: 36, padding: '0 10px' }}
+      />
+      {open && filtrados.length > 0 && (
         <div
           style={{
-            fontSize: 15,
-            fontWeight: 500,
-            marginBottom: 18,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            zIndex: 60,
+            background: 'var(--surface)',
+            border: '1px solid var(--border-md)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.1)',
+            maxHeight: 180,
+            overflowY: 'auto',
           }}
         >
-          <ArrowDownCircle size={18} style={{ color: 'var(--green-500)' }} />{' '}
-          Entrada de mercadoria
-        </div>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: 12,
-            marginBottom: 16,
-          }}
-        >
-          <div style={{ gridColumn: '1 / -1', position: 'relative' }}>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-              Produto *
-            </label>
-            <input
-              value={form.produto || busca}
-              onChange={(e) => {
-                setBusca(e.target.value)
-                setForm((p) => ({ ...p, produto: e.target.value, produto_id: '' }))
-                setDropdown(true)
+          {filtrados.map((it) => (
+            <button
+              key={it.codigo}
+              onClick={() => {
+                setBusca(it[campoLabel])
+                onChange(it)
+                setOpen(false)
               }}
-              onFocus={() => setDropdown(true)}
-              placeholder='Pesquisar produto...'
-              style={{ width: '100%', height: 36, padding: '0 10px' }}
-              autoFocus
-            />
-            {dropdown && prodsFiltrados.length > 0 && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  right: 0,
-                  zIndex: 50,
-                  background: 'var(--surface)',
-                  border: '1px solid var(--border-md)',
-                  borderRadius: 'var(--radius-md)',
-                  boxShadow: '0 6px 20px rgba(0,0,0,0.1)',
-                  maxHeight: 180,
-                  overflowY: 'auto',
-                }}
-              >
-                {prodsFiltrados.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => {
-                      setForm((prev) => ({
-                        ...prev,
-                        produto_id: p.codigo,
-                        produto: p.descricao,
-                        valor_unitario: (p.preco_venda_vista || 0).toFixed(2),
-                      }))
-                      setBusca('')
-                      setDropdown(false)
-                    }}
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '8px 12px',
-                      fontSize: 13,
-                      borderBottom: '1px solid var(--border)',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    <span style={{ fontWeight: 500 }}>{p.descricao}</span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                      Estoque: {p.estoque_atual ?? 0}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-              Quantidade *
-            </label>
-            <input value={form.quantidade} onChange={f('quantidade')} type='number' min='0' style={{ width: '100%', height: 36, padding: '0 10px' }} />
-          </div>
-          <div>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-              Valor unitário (R$) *
-            </label>
-            <input value={form.valor_unitario} onChange={f('valor_unitario')} type='number' min='0' style={{ width: '100%', height: 36, padding: '0 10px' }} />
-          </div>
-          <div>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-              Fornecedor *
-            </label>
-            <input value={form.fornecedor} onChange={f('fornecedor')} style={{ width: '100%', height: 36, padding: '0 10px' }} placeholder='Nome do fornecedor' />
-          </div>
-          <div>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-              Data
-            </label>
-            <input value={form.data} onChange={f('data')} type='date' style={{ width: '100%', height: 36, padding: '0 10px' }} />
-          </div>
-          <div>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-              Vencimento (conta a pagar)
-            </label>
-            <input value={form.data_vencimento} onChange={f('data_vencimento')} type='date' style={{ width: '100%', height: 36, padding: '0 10px' }} />
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-              Observação (NF, etc)
-            </label>
-            <input value={form.obs} onChange={f('obs')} style={{ width: '100%', height: 36, padding: '0 10px' }} placeholder='Ex: NF 00123' />
-          </div>
-          {total > 0 && (
-            <div
               style={{
-                gridColumn: '1 / -1',
-                background: 'var(--green-50)',
-                border: '1px solid var(--green-100)',
-                borderRadius: 'var(--radius-md)',
-                padding: '10px 14px',
+                width: '100%',
+                textAlign: 'left',
+                padding: '8px 12px',
+                fontSize: 13,
+                borderBottom: '1px solid var(--border)',
                 display: 'flex',
                 justifyContent: 'space-between',
-                alignItems: 'center',
               }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
-              <span style={{ fontSize: 12, color: 'var(--green-700)' }}>Total da entrada</span>
-              <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--green-700)' }}>{fmt(total)}</span>
+              <span style={{ fontWeight: 500 }}>{it[campoLabel]}</span>
+              {campoSub && it[campoSub] && (
+                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{it[campoSub]}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const lbl = { fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }
+const inp = { width: '100%', height: 34, padding: '0 8px', fontSize: 13 }
+
+// Entrada de mercadoria: cabeçalho da nota + N itens (cada um atualiza
+// estoque/custo médio/preço de venda do produto) + N faturas (cada uma vira
+// uma conta a pagar já classificada por plano de contas/histórico). Tudo
+// confirmado numa RPC só (entrada_mercadoria_confirmar) — ver plano.
+function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
+  const [dataEmissao, setDataEmissao] = useState(new Date().toISOString().split('T')[0])
+  const [chaveNfe, setChaveNfe] = useState('')
+  const [dataEntrada, setDataEntrada] = useState(new Date().toISOString().split('T')[0])
+  const [numeroNota, setNumeroNota] = useState('')
+  const [fornecedor, setFornecedor] = useState(null)
+  const [observacao, setObservacao] = useState('')
+
+  const [produtos, setProdutos] = useState([])
+  const [fornecedores, setFornecedores] = useState([])
+  const [planoContas, setPlanoContas] = useState([])
+  const [historicos, setHistoricos] = useState([])
+
+  const [itens, setItens] = useState([])
+  const [faturas, setFaturas] = useState([])
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState('')
+
+  // Mini-formulário "adicionar item"
+  const [prodBusca, setProdBusca] = useState(null)
+  const [itemKey, setItemKey] = useState(0)
+  const [tipo, setTipo] = useState('Revenda')
+  const [qtde, setQtde] = useState('')
+  const [precoCusto, setPrecoCusto] = useState('')
+  const [precoVista, setPrecoVista] = useState('')
+  const [precoPrazo, setPrecoPrazo] = useState('')
+  const [rateio, setRateio] = useState('')
+
+  // Mini-formulário "adicionar fatura"
+  const [contaSel, setContaSel] = useState(null)
+  const [historicoSel, setHistoricoSel] = useState(null)
+  const [faturaKey, setFaturaKey] = useState(0)
+  const [nroDocto, setNroDocto] = useState('')
+  const [vencimento, setVencimento] = useState('')
+  const [valorFatura, setValorFatura] = useState('')
+
+  useEffect(() => {
+    window.api.produtos.listar({ situacao: 'A' }).then(setProdutos).catch(console.error)
+    window.api.fornecedores.listar({ situacao: 'A' }).then(setFornecedores).catch(console.error)
+    window.api.planoContas.listar({ situacao: 'A' }).then(setPlanoContas).catch(console.error)
+    window.api.historicos.listar({ situacao: 'A' }).then(setHistoricos).catch(console.error)
+  }, [])
+
+  // Só as contas-folha (nível 4) classificam um lançamento — mesmo critério
+  // já usado em ContasPagar.jsx. O nível 3 vira o "grupo" exibido ao lado.
+  const gruposPorNumero = Object.fromEntries(
+    planoContas.filter((c) => c.nivel === 3).map((c) => [c.numero_conta, c.descricao]),
+  )
+  const contasFolha = planoContas
+    .filter((c) => c.nivel === 4)
+    .map((c) => ({ ...c, grupo: gruposPorNumero[c.numero_conta.split('.').slice(0, -1).join('.')] || '' }))
+
+  function selecionarProduto(p) {
+    setProdBusca(p)
+    if (p) {
+      setTipo(p.revenda_consumo === 'C' ? 'Uso e Consumo' : 'Revenda')
+      setPrecoCusto((p.preco_custo_atual || 0).toFixed(2))
+      setPrecoVista((p.preco_venda_vista || 0).toFixed(2))
+      setPrecoPrazo((p.preco_venda_prazo || 0).toFixed(2))
+    }
+  }
+
+  function limparFormItem() {
+    setProdBusca(null)
+    setQtde('')
+    setPrecoCusto('')
+    setPrecoVista('')
+    setPrecoPrazo('')
+    setRateio('')
+    setItemKey((k) => k + 1)
+  }
+
+  function addItem() {
+    const q = parseFloat(qtde)
+    if (!prodBusca || !(q > 0)) return
+    const custo = parseFloat(precoCusto) || 0
+    const vista = parseFloat(precoVista) || 0
+    const prazo = parseFloat(precoPrazo) || 0
+    setItens((prev) => [
+      ...prev,
+      {
+        codigo_produto: prodBusca.codigo,
+        descricao: prodBusca.descricao,
+        tipo,
+        quantidade: q,
+        rateio_despesas: parseFloat(rateio) || 0,
+        preco_custo: custo,
+        preco_venda_vista: vista,
+        preco_venda_prazo: prazo,
+        margem_vista: vista > 0 ? (vista - custo) / vista : 0,
+        margem_prazo: prazo > 0 ? (prazo - custo) / prazo : 0,
+      },
+    ])
+    limparFormItem()
+  }
+
+  function removerItem(i) {
+    setItens((prev) => prev.filter((_, j) => j !== i))
+  }
+
+  function limparFormFatura() {
+    setContaSel(null)
+    setHistoricoSel(null)
+    setNroDocto('')
+    setVencimento('')
+    setValorFatura('')
+    setFaturaKey((k) => k + 1)
+  }
+
+  function addFatura() {
+    const v = parseFloat(valorFatura)
+    if (!(v > 0) || !vencimento) return
+    setFaturas((prev) => [
+      ...prev,
+      {
+        codigo_plano_conta: contaSel?.codigo || null,
+        conta_label: contaSel?.descricao || '',
+        codigo_historico: historicoSel?.codigo || null,
+        historico_label: historicoSel?.nome || '',
+        nro_docto: nroDocto,
+        data_vencimento: vencimento,
+        valor_docto: v,
+      },
+    ])
+    limparFormFatura()
+  }
+
+  function removerFatura(i) {
+    setFaturas((prev) => prev.filter((_, j) => j !== i))
+  }
+
+  const totalItens = itens.reduce((s, i) => s + i.quantidade * i.preco_custo + i.rateio_despesas, 0)
+  const totalFaturas = faturas.reduce((s, f) => s + f.valor_docto, 0)
+  const previsaoLucro = itens.reduce((s, i) => s + (i.preco_venda_vista - i.preco_custo) * i.quantidade, 0)
+  const faturasBatem = faturas.length === 0 || Math.abs(totalItens - totalFaturas) <= 0.01
+  const valido = fornecedor && dataEntrada && itens.length > 0 && faturasBatem
+
+  async function confirmar() {
+    if (!valido) return
+    setSalvando(true)
+    setErro('')
+    const cabecalho = {
+      numero,
+      data_emissao: dataEmissao || null,
+      data_entrada: dataEntrada,
+      chave_nfe: chaveNfe || null,
+      numero_nota: numeroNota || null,
+      codigo_fornecedor: fornecedor.codigo,
+      observacao: observacao || null,
+      usuario: usuario?.nome || usuario?.usuario || 'sistema',
+    }
+    const itensPayload = itens.map(({ conta_label, historico_label, ...i }) => i)
+    const faturasPayload = faturas.map(({ conta_label, historico_label, ...f }) => ({
+      ...f,
+      observacao: [conta_label, historico_label].filter(Boolean).join(' — ') || null,
+    }))
+    const resultado = await onSalvar({ cabecalho, itens: itensPayload, faturas: faturasPayload })
+    setSalvando(false)
+    if (resultado && !resultado.sucesso) setErro(resultado.erro || 'Não foi possível confirmar a entrada.')
+  }
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+      <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-md)', width: 700, maxHeight: '88vh', display: 'flex', flexDirection: 'column', padding: 24, boxShadow: '0 16px 40px rgba(0,0,0,0.14)', animation: 'fadeIn 0.15s ease both' }}>
+        <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <ArrowDownCircle size={18} style={{ color: 'var(--green-500)' }} />
+          Nova entrada de mercadoria
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)' }}>#{numero}</span>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4 }}>
+          {/* Identificação */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
+            <div>
+              <label style={lbl}>Data emissão</label>
+              <input value={dataEmissao} onChange={(e) => setDataEmissao(e.target.value)} type='date' style={inp} />
             </div>
+            <div>
+              <label style={lbl}>Data entrada *</label>
+              <input value={dataEntrada} onChange={(e) => setDataEntrada(e.target.value)} type='date' style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Número nota</label>
+              <input value={numeroNota} onChange={(e) => setNumeroNota(e.target.value)} style={inp} placeholder='Ex: 12345' />
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={lbl}>Fornecedor *</label>
+              <BuscaDropdown
+                key={fornecedor?.codigo || 'forn'}
+                onChange={setFornecedor}
+                itens={fornecedores}
+                campoBusca='nome'
+                campoLabel='nome'
+                campoSub='codigo'
+                placeholder='Pesquisar fornecedor...'
+              />
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={lbl}>Chave NFe</label>
+              <input value={chaveNfe} onChange={(e) => setChaveNfe(e.target.value)} style={inp} placeholder='Opcional' />
+            </div>
+          </div>
+
+          {/* Itens */}
+          <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>ADICIONAR ITEM</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 70px 90px 90px 90px', gap: 8, marginBottom: 8 }}>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Produto</label>
+                <ProdutoDropdown key={itemKey} value='' onChange={selecionarProduto} produtos={produtos} placeholder='Buscar...' />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Tipo</label>
+                <select value={tipo} onChange={(e) => setTipo(e.target.value)} style={{ ...inp, borderRadius: 'var(--radius-md)' }}>
+                  <option value='Revenda'>Revenda</option>
+                  <option value='Uso e Consumo'>Uso e Consumo</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Qtde</label>
+                <input value={qtde} onChange={(e) => setQtde(e.target.value)} type='number' min='0' style={inp} />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Custo (R$)</label>
+                <input value={precoCusto} onChange={(e) => setPrecoCusto(e.target.value)} type='number' min='0' style={inp} />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Preço à vista</label>
+                <input value={precoVista} onChange={(e) => setPrecoVista(e.target.value)} type='number' min='0' style={inp} />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Preço a prazo</label>
+                <input value={precoPrazo} onChange={(e) => setPrecoPrazo(e.target.value)} type='number' min='0' style={inp} />
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Outras despesas rateadas (R$)</label>
+                <input value={rateio} onChange={(e) => setRateio(e.target.value)} type='number' min='0' style={inp} placeholder='Frete/despesas deste item' />
+              </div>
+              <button onClick={addItem} disabled={!prodBusca || !(parseFloat(qtde) > 0)} style={{ height: 34, padding: '0 14px', background: 'var(--blue-600)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, opacity: prodBusca && parseFloat(qtde) > 0 ? 1 : 0.4 }}>
+                + Adicionar item
+              </button>
+            </div>
+          </div>
+
+          {itens.length > 0 && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
+              <thead>
+                <tr>
+                  {['Produto', 'Qtde', 'Custo', 'Preço vista', 'Margem', 'Total', ''].map((h) => (
+                    <th key={h} style={{ padding: '6px 8px', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {itens.map((i, idx) => (
+                  <tr key={idx}>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{i.descricao}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{i.quantidade}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmt(i.preco_custo)}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{i.preco_venda_vista > 0 ? fmt(i.preco_venda_vista) : '-'}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right', color: i.margem_vista >= 0 ? 'var(--green-500)' : '#EF4444' }}>{i.preco_venda_vista > 0 ? `${(i.margem_vista * 100).toFixed(1)}%` : '-'}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, fontWeight: 600, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmt(i.quantidade * i.preco_custo + i.rateio_despesas)}</td>
+                    <td style={{ padding: '7px 8px', borderBottom: '1px solid var(--border)' }}>
+                      <button onClick={() => removerItem(idx)} style={{ color: 'var(--red-500)', fontSize: 12, padding: '2px 6px' }}>✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
-          {total > 0 && (
-            <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--text-muted)', marginTop: -6 }}>
-              Vai gerar uma conta a pagar em aberto pra "{form.fornecedor || 'fornecedor'}".
+
+          {/* Faturas */}
+          <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>ADICIONAR FATURA</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 100px 110px 100px auto', gap: 8, alignItems: 'end' }}>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Plano de contas</label>
+                <BuscaDropdown key={`conta-${faturaKey}`} onChange={setContaSel} itens={contasFolha} campoBusca='descricao' campoLabel='descricao' campoSub='grupo' placeholder='Buscar...' />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Histórico</label>
+                <BuscaDropdown key={`hist-${faturaKey}`} onChange={setHistoricoSel} itens={historicos} campoBusca='nome' campoLabel='nome' placeholder='Buscar...' />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Nº Docto</label>
+                <input value={nroDocto} onChange={(e) => setNroDocto(e.target.value)} style={inp} />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Vencimento</label>
+                <input value={vencimento} onChange={(e) => setVencimento(e.target.value)} type='date' style={inp} />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Valor (R$)</label>
+                <input value={valorFatura} onChange={(e) => setValorFatura(e.target.value)} type='number' min='0' style={inp} />
+              </div>
+              <button onClick={addFatura} disabled={!(parseFloat(valorFatura) > 0) || !vencimento} style={{ height: 34, padding: '0 12px', background: 'var(--blue-600)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, opacity: parseFloat(valorFatura) > 0 && vencimento ? 1 : 0.4 }}>
+                + Add
+              </button>
             </div>
+          </div>
+
+          {faturas.length > 0 && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
+              <thead>
+                <tr>
+                  {['Plano de contas', 'Histórico', 'Nº Docto', 'Vencimento', 'Valor', ''].map((h) => (
+                    <th key={h} style={{ padding: '6px 8px', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {faturas.map((f, idx) => (
+                  <tr key={idx}>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{f.conta_label || '-'}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{f.historico_label || '-'}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{f.nro_docto || '-'}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{fmtDate(f.data_vencimento)}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, fontWeight: 600, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmt(f.valor_docto)}</td>
+                    <td style={{ padding: '7px 8px', borderBottom: '1px solid var(--border)' }}>
+                      <button onClick={() => removerFatura(idx)} style={{ color: 'var(--red-500)', fontSize: 12, padding: '2px 6px' }}>✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>
-            Cancelar
-          </button>
-          <button
-            disabled={!valido}
-            onClick={() => onSalvar({ ...form, total, tipo: 'ENTRADA' })}
-            style={{
-              padding: '8px 20px',
-              borderRadius: 'var(--radius-md)',
-              background: valido ? 'var(--green-500)' : 'var(--gray-200)',
-              color: valido ? 'var(--surface)' : 'var(--text-muted)',
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: valido ? 'pointer' : 'not-allowed',
-            }}
-          >
-            Confirmar entrada
-          </button>
+
+        {/* Rodapé com totais */}
+        <div style={{ flexShrink: 0 }}>
+          {itens.length > 0 && (
+            <div style={{ background: 'var(--blue-50)', border: '1px solid var(--blue-100)', borderRadius: 'var(--radius-md)', padding: '8px 14px', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10, fontSize: 13 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--blue-700)' }}>Total dos itens</span>
+                <strong style={{ color: 'var(--blue-700)' }}>{fmt(totalItens)}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--blue-700)' }}>Total das faturas</span>
+                <strong style={{ color: faturasBatem ? 'var(--blue-700)' : '#C53030' }}>{fmt(totalFaturas)}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--blue-700)' }}>Previsão de lucro (venda à vista)</span>
+                <strong style={{ color: previsaoLucro >= 0 ? 'var(--green-500)' : '#C53030' }}>{fmt(previsaoLucro)}</strong>
+              </div>
+              {!faturasBatem && (
+                <div style={{ fontSize: 11, color: '#C53030' }}>
+                  O total das faturas precisa bater com o total dos itens antes de confirmar.
+                </div>
+              )}
+            </div>
+          )}
+          {erro && (
+            <div style={{ fontSize: 12, color: '#C53030', marginBottom: 8 }}>{erro}</div>
+          )}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
+            <button
+              disabled={!valido || salvando}
+              onClick={confirmar}
+              style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: valido ? 'var(--green-500)' : 'var(--gray-200)', color: valido ? 'var(--surface)' : 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: valido && !salvando ? 'pointer' : 'not-allowed' }}
+            >
+              {salvando ? 'Confirmando...' : 'Confirmar entrada'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -613,7 +838,6 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   const [produtos, setProdutos] = useState([])
   const [busca, setBusca] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('todos')
-  const [modalEntrada, setModalEntrada] = useState(false)
   const [modalSaida, setModalSaida] = useState(false)
   const [modalAcerto, setModalAcerto] = useState(false)
   const [modalPedido, setModalPedido] = useState(false)
@@ -622,6 +846,11 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   const [acessoNegado, setAcessoNegado] = useState(null)
   const [aguardandoAprovacao, setAguardandoAprovacao] = useState(false)
   const [pedidoParaCancelar, setPedidoParaCancelar] = useState(null)
+
+  // Entradas de mercadoria
+  const [modalEntradaMercadoria, setModalEntradaMercadoria] = useState(false)
+  const [entradasMercadoria, setEntradasMercadoria] = useState([])
+  const [proximoNumEntrada, setProximoNumEntrada] = useState('000001')
 
   // Posição de estoque — filtro de situação e seleção para pedido de compra
   const [filtroSituacaoEstoque, setFiltroSituacaoEstoque] = useState('todos')
@@ -666,6 +895,14 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
       if (window.api.reajustesPreco) {
         window.api.reajustesPreco.listar({}).then(setReajustes).catch(console.error)
       }
+      if (window.api.entradasMercadoria) {
+        const [ents, numEnt] = await Promise.all([
+          window.api.entradasMercadoria.listar({}),
+          window.api.entradasMercadoria.proximoNumero(),
+        ])
+        setEntradasMercadoria(ents)
+        setProximoNumEntrada(numEnt.numero)
+      }
     } catch (err) {
       console.error('Erro ao carregar dados de estoque:', err)
     }
@@ -674,6 +911,24 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   function mostrarSucesso(msg) {
     setSucesso(msg)
     setTimeout(() => setSucesso(''), 2500)
+  }
+
+  // Confirma a entrada via RPC atômica (estoque/custo/preço + faturas em
+  // contas_pagar) — ver entrada_mercadoria_confirmar. Repassa o retorno pro
+  // modal decidir o que mostrar (erro de validação não deve fechar o modal).
+  async function confirmarEntradaMercadoria(payload) {
+    try {
+      const resultado = await window.api.entradasMercadoria.confirmar(payload)
+      if (resultado?.sucesso) {
+        await carregarDados()
+        setModalEntradaMercadoria(false)
+        mostrarSucesso('Entrada de mercadoria confirmada!')
+      }
+      return resultado
+    } catch (err) {
+      console.error('Erro ao confirmar entrada de mercadoria:', err)
+      return { sucesso: false, erro: err.message }
+    }
   }
 
   const movFiltrados = movimentos.filter((m) => {
@@ -698,10 +953,9 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
       if (!window.api.movimentosEstoque) return
       await window.api.movimentosEstoque.salvar({ ...form, usuario: usuario?.nome || usuario?.usuario || 'sistema' })
       await carregarDados()
-      setModalEntrada(false)
       setModalSaida(false)
       setModalAcerto(false)
-      mostrarSucesso(form.tipo === 'ENTRADA' ? 'Entrada registrada!' : form.tipo === 'SAIDA' ? 'Saída registrada!' : 'Acerto aplicado!')
+      mostrarSucesso(form.tipo === 'SAIDA' ? 'Saída registrada!' : 'Acerto aplicado!')
     } catch (err) {
       console.error('Erro ao salvar movimento:', err)
     }
@@ -873,7 +1127,14 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
           {sucesso}
         </div>
       )}
-      {modalEntrada && <ModalEntrada onClose={() => setModalEntrada(false)} onSalvar={salvarMovimento} />}
+      {modalEntradaMercadoria && (
+        <ModalEntradaMercadoria
+          onClose={() => setModalEntradaMercadoria(false)}
+          onSalvar={confirmarEntradaMercadoria}
+          numero={proximoNumEntrada}
+          usuario={usuario}
+        />
+      )}
       {modalSaida && <ModalSaida onClose={() => setModalSaida(false)} onSalvar={salvarMovimento} produtos={produtos} />}
       {modalAcerto && <ModalAcerto onClose={() => setModalAcerto(false)} onSalvar={salvarMovimento} produtos={produtos} />}
       {modalPedido && (
@@ -952,9 +1213,9 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
           ))}
         </div>
         <div style={{ display: 'flex', gap: 8, padding: '8px 0' }}>
-          {aba === 'movimentos' && (
-            <button onClick={() => setModalEntrada(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px', background: 'var(--green-500)', color: 'var(--surface)', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500, flexShrink: 0 }}>
-              <ArrowDownCircle size={14} /> Entrada
+          {aba === 'entrada-mercadoria' && (
+            <button onClick={() => setModalEntradaMercadoria(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px', background: 'var(--green-500)', color: 'var(--surface)', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500, flexShrink: 0 }}>
+              <ArrowDownCircle size={14} /> Nova mercadoria
             </button>
           )}
           {aba === 'saida-mercadoria' && (
@@ -994,6 +1255,47 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
               <option value='SAIDA'>Saídas</option>
               <option value='ACERTO'>Acertos</option>
             </select>
+          )}
+        </div>
+      )}
+
+      {/* ── ABA ENTRADAS DE MERCADORIA ── */}
+      {aba === 'entrada-mercadoria' && (
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {entradasMercadoria.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>
+              Nenhuma entrada registrada ainda.
+            </div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: 90 }} />
+                <col style={{ width: 100 }} />
+                <col />
+                <col style={{ width: 100 }} />
+                <col style={{ width: 120 }} />
+                <col style={{ width: 120 }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  {['Id', 'Data entrada', 'Fornecedor', 'Nº Nota', 'Total itens', 'Previsão lucro'].map((h) => (
+                    <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', textAlign: 'left', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {entradasMercadoria.map((e) => (
+                  <tr key={e.id} style={{ borderLeft: '3px solid #22C55E' }}>
+                    <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)', fontFamily: 'monospace' }}>#{e.numero}</td>
+                    <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{fmtDate(e.data_entrada)}</td>
+                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.nome_fornecedor || e.codigo_fornecedor}</td>
+                    <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{e.numero_nota || '-'}</td>
+                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, borderBottom: '1px solid var(--border)' }}>{fmt(e.valor_total_itens || 0)}</td>
+                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, borderBottom: '1px solid var(--border)', color: (e.previsao_lucro || 0) >= 0 ? 'var(--green-500)' : '#EF4444' }}>{fmt(e.previsao_lucro || 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       )}

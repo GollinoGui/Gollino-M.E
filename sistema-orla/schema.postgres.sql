@@ -566,6 +566,45 @@ CREATE TABLE IF NOT EXISTS pedidos_compra_itens (
 );
 
 -- ============================================================
+-- TABELA: entradas_mercadoria — cabeçalho da nota de entrada (fornecedor,
+-- NFe, datas). Itens em entradas_mercadoria_itens; as faturas/parcelas da
+-- nota viram linhas em contas_pagar (tipo_origem = 'ENTRADA_MERCADORIA'),
+-- sem tabela própria — ver RPC entrada_mercadoria_confirmar no Supabase.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS entradas_mercadoria (
+  id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  numero TEXT UNIQUE NOT NULL,
+  data_emissao TEXT,
+  data_entrada TEXT NOT NULL,
+  chave_nfe TEXT,
+  numero_nota TEXT,
+  codigo_fornecedor TEXT NOT NULL,
+  valor_total_itens DOUBLE PRECISION DEFAULT 0,
+  valor_total_faturas DOUBLE PRECISION DEFAULT 0,
+  previsao_lucro DOUBLE PRECISION DEFAULT 0,
+  observacao TEXT,
+  usuario TEXT,
+  data_atualizacao TEXT,
+  hora_atualizacao TEXT
+);
+
+CREATE TABLE IF NOT EXISTS entradas_mercadoria_itens (
+  id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  numero TEXT NOT NULL,
+  codigo_produto TEXT NOT NULL,
+  descricao TEXT,
+  tipo TEXT,
+  quantidade DOUBLE PRECISION NOT NULL,
+  rateio_despesas DOUBLE PRECISION DEFAULT 0,
+  preco_custo DOUBLE PRECISION DEFAULT 0,
+  preco_venda_vista DOUBLE PRECISION DEFAULT 0,
+  preco_venda_prazo DOUBLE PRECISION DEFAULT 0,
+  margem_vista DOUBLE PRECISION DEFAULT 0,
+  margem_prazo DOUBLE PRECISION DEFAULT 0,
+  valor_total DOUBLE PRECISION DEFAULT 0
+);
+
+-- ============================================================
 -- TABELA: cheques
 -- ============================================================
 CREATE TABLE IF NOT EXISTS cheques (

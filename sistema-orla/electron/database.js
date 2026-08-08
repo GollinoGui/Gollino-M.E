@@ -1006,6 +1006,45 @@ const pedidosCompra = {
 }
 
 // ============================================================
+// ENTRADAS DE MERCADORIA — cabeçalho + itens + faturas confirmados
+// atomicamente via RPC (custo médio, estoque, contas a pagar); ver
+// entrada_mercadoria_confirmar no Supabase.
+// ============================================================
+const entradasMercadoria = {
+  async proximoNumero() {
+    const valor = await proximoNumeroAtomico('entradas_mercadoria')
+    return { numero: String(valor).padStart(6, '0') }
+  },
+
+  async listar(filtros = {}) {
+    let q = supabase.from('entradas_mercadoria').select('*')
+    if (filtros.busca) {
+      const b = orValue(`%${filtros.busca}%`)
+      q = q.or(`numero.like.${b},numero_nota.like.${b}`)
+    }
+    const { data, error } = await q.order('id', { ascending: false }).limit(200)
+    if (error) throw new Error(error.message)
+    return anexarNomeFornecedor(data)
+  },
+
+  async itens(numero) {
+    const { data, error } = await supabase.from('entradas_mercadoria_itens').select('*').eq('numero', numero)
+    if (error) throw new Error(error.message)
+    return data
+  },
+
+  async confirmar({ cabecalho, itens, faturas }) {
+    const { error } = await supabase.rpc('entrada_mercadoria_confirmar', {
+      p_cabecalho: cabecalho,
+      p_itens: itens || [],
+      p_faturas: faturas || [],
+    })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true, numero: cabecalho.numero }
+  },
+}
+
+// ============================================================
 // CHEQUES
 // ============================================================
 const cheques = {
@@ -1391,6 +1430,7 @@ module.exports = {
   log,
   nfe,
   pedidosCompra,
+  entradasMercadoria,
   cheques,
   lancamentosExtras,
   reajustesPreco,

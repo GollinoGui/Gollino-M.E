@@ -286,6 +286,11 @@ handle('pedidosCompra:cancelar', (_, { numero, usuario }) => db.pedidosCompra.ca
 handle('pedidosCompra:receber', (_, { numero, usuario }) => db.pedidosCompra.receber(numero, usuario))
 handle('pedidosCompra:proximoNumero', () => db.pedidosCompra.proximoNumero())
 
+handle('entradasMercadoria:listar', (_, filtros) => db.entradasMercadoria.listar(filtros))
+handle('entradasMercadoria:itens', (_, numero) => db.entradasMercadoria.itens(numero))
+handle('entradasMercadoria:proximoNumero', () => db.entradasMercadoria.proximoNumero())
+handle('entradasMercadoria:confirmar', (_, dados) => db.entradasMercadoria.confirmar(dados))
+
 // --- CHEQUES ---
 handle('cheques:listar', (_, filtros) => db.cheques.listar(filtros))
 handle('cheques:salvar', (_, dados) => db.cheques.salvar(dados))

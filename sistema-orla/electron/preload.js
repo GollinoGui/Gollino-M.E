@@ -212,6 +212,14 @@ contextBridge.exposeInMainWorld('api', {
     proximoNumero: () => ipcRenderer.invoke('pedidosCompra:proximoNumero'),
   },
 
+  // ENTRADAS DE MERCADORIA
+  entradasMercadoria: {
+    listar: (filtros) => ipcRenderer.invoke('entradasMercadoria:listar', filtros),
+    itens: (numero) => ipcRenderer.invoke('entradasMercadoria:itens', numero),
+    proximoNumero: () => ipcRenderer.invoke('entradasMercadoria:proximoNumero'),
+    confirmar: (dados) => ipcRenderer.invoke('entradasMercadoria:confirmar', dados),
+  },
+
   // CHEQUES
   cheques: {
     listar: (filtros) => ipcRenderer.invoke('cheques:listar', filtros),

@@ -325,6 +325,7 @@ export default function App() {
 
       // Estoque
       case 'entrada-mercadoria':
+        return <Estoque abaInicial='entrada-mercadoria' usuario={usuario} />
       case 'movimento-produto':
       case 'estoque-consulta':
         return <Estoque abaInicial='movimentos' usuario={usuario} />
