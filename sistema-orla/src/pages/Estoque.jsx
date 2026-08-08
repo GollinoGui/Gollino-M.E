@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Search, ArrowDownCircle, ArrowUpCircle, Package, RefreshCw, ShoppingCart, ClipboardList, TrendingUp } from 'lucide-react'
 import ModalAcessoNegado from '../components/ModalAcessoNegado'
 import ModalAviso from '../components/ModalAviso'
@@ -20,9 +21,82 @@ const abasEstoque = [
   { id: 'reajustes', label: 'Reajuste de preços', pronto: true },
 ]
 
+// Estado/posicionamento comum aos dropdowns de busca abaixo. O menu é
+// renderizado num portal (document.body) em position:fixed pra não ficar
+// preso/cortado pelo overflow:auto do modal — sem isso, campos perto do
+// rodapé do modal (ex: Plano de contas) mostravam a lista cortada e só
+// dava pra ler rolando o modal inteiro. Reabre pra cima quando não cabe embaixo.
+function useMenuFlutuante() {
+  const inputRef = useRef(null)
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState(null)
+
+  function atualizarPos() {
+    const rect = inputRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const espacoAbaixo = window.innerHeight - rect.bottom
+    const cima = espacoAbaixo < 200 && rect.top > espacoAbaixo
+    setPos({
+      left: rect.left,
+      width: rect.width,
+      cima,
+      top: cima ? undefined : rect.bottom + 4,
+      bottom: cima ? window.innerHeight - rect.top + 4 : undefined,
+    })
+  }
+
+  function abrir() {
+    atualizarPos()
+    setOpen(true)
+  }
+
+  function fechar() {
+    setTimeout(() => setOpen(false), 150)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    window.addEventListener('scroll', atualizarPos, true)
+    window.addEventListener('resize', atualizarPos)
+    return () => {
+      window.removeEventListener('scroll', atualizarPos, true)
+      window.removeEventListener('resize', atualizarPos)
+    }
+  }, [open])
+
+  return { inputRef, open, pos, abrir, fechar, setOpen }
+}
+
+const menuFlutuanteStyle = (pos) => ({
+  position: 'fixed',
+  ...(pos.cima ? { bottom: pos.bottom } : { top: pos.top }),
+  left: pos.left,
+  minWidth: pos.width,
+  width: 'max-content',
+  maxWidth: 320,
+  zIndex: 500,
+  background: 'var(--surface)',
+  border: '1px solid var(--border-md)',
+  borderRadius: 'var(--radius-md)',
+  boxShadow: '0 6px 20px rgba(0,0,0,0.1)',
+  maxHeight: 220,
+  overflowY: 'auto',
+})
+
+const itemFlutuanteStyle = {
+  width: '100%',
+  textAlign: 'left',
+  padding: '8px 12px',
+  fontSize: 13,
+  borderBottom: '1px solid var(--border)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+}
+
 function ProdutoDropdown({ value, onChange, produtos, placeholder = 'Pesquisar produto...' }) {
   const [busca, setBusca] = useState(value || '')
-  const [open, setOpen] = useState(false)
+  const { inputRef, open, pos, abrir, fechar, setOpen } = useMenuFlutuante()
 
   const filtrados = produtos.filter(
     (p) =>
@@ -33,33 +107,21 @@ function ProdutoDropdown({ value, onChange, produtos, placeholder = 'Pesquisar p
   return (
     <div style={{ position: 'relative' }}>
       <input
+        ref={inputRef}
         value={busca}
         onChange={(e) => {
           setBusca(e.target.value)
           onChange(null)
-          setOpen(true)
+          abrir()
         }}
-        onFocus={() => setOpen(true)}
+        onClick={abrir}
+        onBlur={fechar}
         placeholder={placeholder}
         style={{ width: '100%', height: 36, padding: '0 10px' }}
         autoFocus
       />
-      {open && filtrados.length > 0 && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            zIndex: 50,
-            background: 'var(--surface)',
-            border: '1px solid var(--border-md)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: '0 6px 20px rgba(0,0,0,0.1)',
-            maxHeight: 180,
-            overflowY: 'auto',
-          }}
-        >
+      {open && filtrados.length > 0 && pos && createPortal(
+        <div style={menuFlutuanteStyle(pos)}>
           {filtrados.map((p) => (
             <button
               key={p.id}
@@ -68,25 +130,18 @@ function ProdutoDropdown({ value, onChange, produtos, placeholder = 'Pesquisar p
                 onChange(p)
                 setOpen(false)
               }}
-              style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '8px 12px',
-                fontSize: 13,
-                borderBottom: '1px solid var(--border)',
-                display: 'flex',
-                justifyContent: 'space-between',
-              }}
+              style={itemFlutuanteStyle}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
               <span style={{ fontWeight: 500 }}>{p.descricao}</span>
-              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
                 Estoque: {p.estoque_atual ?? 0}
               </span>
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
@@ -97,7 +152,7 @@ function ProdutoDropdown({ value, onChange, produtos, placeholder = 'Pesquisar p
 // "estoque" pra mostrar ao lado do nome, só um rótulo + um subtítulo opcional).
 function BuscaDropdown({ onChange, itens, campoBusca, campoLabel, campoSub, placeholder = 'Pesquisar...' }) {
   const [busca, setBusca] = useState('')
-  const [open, setOpen] = useState(false)
+  const { inputRef, open, pos, abrir, fechar, setOpen } = useMenuFlutuante()
 
   const filtrados = itens
     .filter((it) => (it[campoBusca] || '').toLowerCase().includes(busca.toLowerCase()))
@@ -106,32 +161,20 @@ function BuscaDropdown({ onChange, itens, campoBusca, campoLabel, campoSub, plac
   return (
     <div style={{ position: 'relative' }}>
       <input
+        ref={inputRef}
         value={busca}
         onChange={(e) => {
           setBusca(e.target.value)
           onChange(null)
-          setOpen(true)
+          abrir()
         }}
-        onFocus={() => setOpen(true)}
+        onClick={abrir}
+        onBlur={fechar}
         placeholder={placeholder}
         style={{ width: '100%', height: 36, padding: '0 10px' }}
       />
-      {open && filtrados.length > 0 && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            zIndex: 60,
-            background: 'var(--surface)',
-            border: '1px solid var(--border-md)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: '0 6px 20px rgba(0,0,0,0.1)',
-            maxHeight: 180,
-            overflowY: 'auto',
-          }}
-        >
+      {open && filtrados.length > 0 && pos && createPortal(
+        <div style={menuFlutuanteStyle(pos)}>
           {filtrados.map((it) => (
             <button
               key={it.codigo}
@@ -140,25 +183,18 @@ function BuscaDropdown({ onChange, itens, campoBusca, campoLabel, campoSub, plac
                 onChange(it)
                 setOpen(false)
               }}
-              style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '8px 12px',
-                fontSize: 13,
-                borderBottom: '1px solid var(--border)',
-                display: 'flex',
-                justifyContent: 'space-between',
-              }}
+              style={itemFlutuanteStyle}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
               <span style={{ fontWeight: 500 }}>{it[campoLabel]}</span>
               {campoSub && it[campoSub] && (
-                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{it[campoSub]}</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{it[campoSub]}</span>
               )}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
