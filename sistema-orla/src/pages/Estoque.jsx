@@ -126,7 +126,8 @@ function ProdutoDropdown({ value, onChange, produtos, placeholder = 'Pesquisar p
           {filtrados.map((p) => (
             <button
               key={p.id}
-              onClick={() => {
+              onMouseDown={(e) => {
+                e.preventDefault()
                 setBusca(p.descricao)
                 onChange(p)
                 setOpen(false)
@@ -179,7 +180,8 @@ function BuscaDropdown({ onChange, itens, campoBusca, campoLabel, campoSub, plac
           {filtrados.map((it) => (
             <button
               key={it.codigo}
-              onClick={() => {
+              onMouseDown={(e) => {
+                e.preventDefault()
                 setBusca(it[campoLabel])
                 onChange(it)
                 setOpen(false)
