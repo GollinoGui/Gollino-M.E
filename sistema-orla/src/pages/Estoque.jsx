@@ -399,7 +399,6 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={lbl}>Fornecedor *</label>
               <BuscaDropdown
-                key={fornecedor?.codigo || 'forn'}
                 onChange={setFornecedor}
                 itens={fornecedores}
                 campoBusca='nome'

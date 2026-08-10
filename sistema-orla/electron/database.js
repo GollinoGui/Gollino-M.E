@@ -362,7 +362,7 @@ const vendas = {
     if (filtros.situacao) q = q.eq('situacao', filtros.situacao)
     if (filtros.caixaSessaoId) q = q.eq('caixa_sessao_id', filtros.caixaSessaoId)
     if (filtros.cliente) {
-      const { data: porNome } = await supabase.from('clientes').select('codigo').like('nome', `%${filtros.cliente}%`)
+      const { data: porNome } = await supabase.from('clientes').select('codigo').ilike('nome', `%${filtros.cliente}%`)
       const codigos = new Set((porNome || []).map((c) => c.codigo))
       codigos.add(filtros.cliente)
       q = q.in('codigo_cliente', [...codigos])
@@ -452,7 +452,7 @@ const contasReceber = {
     if (filtros.dataInicio) q = q.gte('data_vencimento', filtros.dataInicio)
     if (filtros.dataFim) q = q.lte('data_vencimento', filtros.dataFim)
     if (filtros.cliente) {
-      const { data: porNome } = await supabase.from('clientes').select('codigo').like('nome', `%${filtros.cliente}%`)
+      const { data: porNome } = await supabase.from('clientes').select('codigo').ilike('nome', `%${filtros.cliente}%`)
       const codigos = new Set((porNome || []).map((c) => c.codigo))
       codigos.add(filtros.cliente)
       q = q.in('codigo_cliente', [...codigos])
@@ -801,7 +801,7 @@ const preVendas = {
 const movimentosEstoque = {
   async listar(filtros = {}) {
     let q = supabase.from('movimentos_estoque').select('*')
-    if (filtros.busca) q = q.like('produto', `%${filtros.busca}%`)
+    if (filtros.busca) q = q.ilike('produto', `%${filtros.busca}%`)
     if (filtros.tipo && filtros.tipo !== 'todos') q = q.eq('tipo', filtros.tipo)
     const { data, error } = await q.order('id', { ascending: false }).limit(500)
     if (error) throw new Error(error.message)
@@ -1169,7 +1169,7 @@ const reajustesPreco = {
     let q = supabase.from('reajustes_preco').select('*')
     if (filtros.dataInicio) q = q.gte('data', filtros.dataInicio)
     if (filtros.dataFim) q = q.lte('data', filtros.dataFim)
-    if (filtros.busca) q = q.like('produto', `%${filtros.busca}%`)
+    if (filtros.busca) q = q.ilike('produto', `%${filtros.busca}%`)
     const { data, error } = await q.order('id', { ascending: false }).limit(500)
     if (error) throw new Error(error.message)
     return data
