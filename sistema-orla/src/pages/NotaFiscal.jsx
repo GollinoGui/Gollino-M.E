@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Search, FileText, CheckCircle, Clock, ExternalLink, Copy, Check } from 'lucide-react'
+import { fmtQtd } from '../utils/formatQtd'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -27,7 +28,7 @@ function montarResumoTexto(v, detalhes) {
   if (c?.email) linhas.push(`E-mail: ${c.email}`)
   linhas.push('', 'ITENS')
   for (const it of detalhes?.itens || []) {
-    linhas.push(`${it.quantidade}x ${it.descricao} — ${fmt(it.preco_unitario)} = ${fmt(it.valor_total)}`)
+    linhas.push(`${fmtQtd(it.quantidade, it.unidade)}x ${it.descricao} — ${fmt(it.preco_unitario)} = ${fmt(it.valor_total)}`)
   }
   linhas.push('', `Valor total: ${fmt(v.valor_total)}`)
   return linhas.join('\n')
@@ -216,7 +217,7 @@ export default function NotaFiscal() {
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>Itens</div>
                       {detalhes.itens.map(it => (
                         <div key={it.id} style={{ fontSize: 12, padding: '3px 0', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.quantidade}x {it.descricao}</span>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtQtd(it.quantidade, it.unidade)}x {it.descricao}</span>
                           <span style={{ flexShrink: 0, fontWeight: 500 }}>{fmt(it.valor_total)}</span>
                         </div>
                       ))}

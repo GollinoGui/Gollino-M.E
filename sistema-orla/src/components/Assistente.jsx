@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { MessageCircle, X, Send, Bot, ChevronDown, Check, Ban } from 'lucide-react'
 import ModalConfirmacao from './ModalConfirmacao'
+import { fmtQtd } from '../utils/formatQtd'
 
 const hora = new Date().getHours()
 const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
@@ -161,7 +162,13 @@ function formatarTexto(texto) {
   })
 }
 
-export default function Assistente({ caixaAberto, onNavigate, usuario }) {
+export default function Assistente({ caixaAberto, onNavigate, usuario, pagina }) {
+  // Nas telas de relatório os valores (totais, resumos) ficam quase sempre
+  // alinhados à direita — exatamente onde o botão flutuante mora por padrão.
+  // Só subir o botão não resolve porque a altura do conteúdo varia; em vez
+  // disso ele muda de lado pra esquerda, onde não há números pra cobrir.
+  const emRelatorio = !!pagina?.startsWith('rel-')
+  const fabSide = emRelatorio ? { left: 24 } : { right: 24 }
   // Abre sozinho só na primeira vez (login) — depois disso, fechar o chat
   // significa fechar mesmo: alertas viram só o badge/balão no canto, nunca
   // reabrem o painel grande sozinhos.
@@ -230,7 +237,7 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
     })),
     ...dados.produtosBaixo.slice(0, 2).map((pr) => ({
       tipo: 'info',
-      texto: `${pr.descricao} com estoque baixo (${pr.estoque_atual} un.)`,
+      texto: `${pr.descricao} com estoque baixo (${fmtQtd(pr.estoque_atual, pr.unidade)})`,
       nav: 'estoque-posicao',
     })),
   ].filter(Boolean)
@@ -430,7 +437,7 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
       if (produtosBaixo.length === 0) return `Todos os produtos estão com estoque normal. ✅`
       const lista = produtosBaixo
         .slice(0, 5)
-        .map((pr) => `• **${pr.descricao}** — ${pr.estoque_atual} un. (mínimo: ${pr.estoque_minimo})`)
+        .map((pr) => `• **${pr.descricao}** — ${fmtQtd(pr.estoque_atual, pr.unidade)} (mínimo: ${fmtQtd(pr.estoque_minimo, pr.unidade)})`)
         .join('\n')
       return `Há **${produtosBaixo.length} produto${produtosBaixo.length !== 1 ? 's' : ''} com estoque baixo**:\n\n${lista}\n\nDeseja registrar uma entrada de mercadoria?`
     }
@@ -601,7 +608,7 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
           style={{
             position: 'fixed',
             bottom: 96,
-            right: 24,
+            ...fabSide,
             zIndex: 998,
             background: '#fff',
             border: '1px solid #E2EAF4',
@@ -685,7 +692,7 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
           style={{
             position: 'fixed',
             bottom: 84,
-            right: 24,
+            ...fabSide,
             zIndex: 999,
             width: 360,
             height: 520,
@@ -1133,7 +1140,7 @@ export default function Assistente({ caixaAberto, onNavigate, usuario }) {
         style={{
           position: 'fixed',
           bottom: 24,
-          right: 24,
+          ...fabSide,
           zIndex: 999,
           width: 52,
           height: 52,

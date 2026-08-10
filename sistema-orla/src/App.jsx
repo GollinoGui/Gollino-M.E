@@ -350,7 +350,7 @@ export default function App() {
       case 'rel-contas-pagar':
       case 'rel-contas-receber':
       case 'rel-financeiro':
-        return <Relatorios paginaAtiva={pagina} />
+        return <Relatorios paginaAtiva={pagina} usuario={usuario} />
 
       //Configurações
       case 'config-empresa':
@@ -493,7 +493,7 @@ export default function App() {
           onClose={() => setBuscaAberta(false)}
         />
       )}
-      <Assistente caixaAberto={caixaAberto} onNavigate={setPagina} usuario={usuario} />
+      <Assistente caixaAberto={caixaAberto} onNavigate={setPagina} usuario={usuario} pagina={pagina} />
       <AtalhosTecla />
       {modaisGlobais}
     </div>

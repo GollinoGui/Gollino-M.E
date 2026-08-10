@@ -9,7 +9,10 @@ import {
   Trash2,
   Eye,
   X,
+  RefreshCw,
 } from 'lucide-react'
+import { fmtQtd } from '../utils/formatQtd'
+import ModalConfirmacao from '../components/ModalConfirmacao'
 
 const fmt = (v) =>
   (parseFloat(v) || 0).toLocaleString('pt-BR', {
@@ -28,7 +31,7 @@ function maskDecimal(v) {
   return v.replace(/[^0-9,\.]/g, '')
 }
 
-function EstoqueBadge({ qtd, minimo }) {
+function EstoqueBadge({ qtd, minimo, unidade }) {
   const q = parseFloat(qtd) || 0
   const m = parseFloat(minimo) || 0
   const style = {
@@ -48,12 +51,12 @@ function EstoqueBadge({ qtd, minimo }) {
   if (q <= m)
     return (
       <span style={{ ...style, background: '#fffbeb', color: '#d97706' }}>
-        Baixo: {q}
+        Baixo: {fmtQtd(q, unidade)}
       </span>
     )
   return (
     <span style={{ ...style, background: '#f0fdf4', color: '#16a34a' }}>
-      {q} un.
+      {fmtQtd(q, unidade)}
     </span>
   )
 }
@@ -72,6 +75,8 @@ export default function Produtos({ usuario }) {
   const [senhaExcluir, setSenhaExcluir] = useState('')
   const [erroSenha, setErroSenha] = useState('')
   const [excluindo, setExcluindo] = useState(false)
+  const [modalRecalcularMinimo, setModalRecalcularMinimo] = useState(false)
+  const [recalculandoMinimo, setRecalculandoMinimo] = useState(false)
 
   const formVazio = {
     codigo: '',
@@ -119,6 +124,24 @@ export default function Produtos({ usuario }) {
     const timer = setTimeout(carregar, 300)
     return () => clearTimeout(timer)
   }, [carregar])
+
+  async function recalcularEstoqueMinimo() {
+    setModalRecalcularMinimo(false)
+    setRecalculandoMinimo(true)
+    try {
+      const r = await window.api.produtos.recalcularEstoqueMinimo()
+      if (r?.sucesso) {
+        alert(`Estoque mínimo recalculado em ${r.atualizados} produto(s), com base nas vendas de ${r.periodo.inicio} a ${r.periodo.fim}.`)
+        await carregar()
+      } else {
+        alert('Erro ao recalcular: ' + (r?.erro || 'desconhecido'))
+      }
+    } catch (e) {
+      alert('Erro ao recalcular: ' + e.message)
+    } finally {
+      setRecalculandoMinimo(false)
+    }
+  }
 
   async function proximoCodigo() {
     const todos = await window.api.produtos.listar({})
@@ -671,6 +694,28 @@ export default function Produtos({ usuario }) {
             />
           </div>
           <button
+            onClick={() => setModalRecalcularMinimo(true)}
+            disabled={recalculandoMinimo}
+            title='Recalcula o estoque mínimo de todo o catálogo como 30% da quantidade vendida no mês anterior'
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              height: 34,
+              padding: '0 14px',
+              background: 'var(--surface)',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--border-md)',
+              borderRadius: 'var(--radius-md)',
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: recalculandoMinimo ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <RefreshCw size={14} style={recalculandoMinimo ? { animation: 'spin 1s linear infinite' } : undefined} />
+            {recalculandoMinimo ? 'Recalculando...' : 'Recalcular estoque mínimo'}
+          </button>
+          <button
             onClick={abrirNovo}
             style={{
               display: 'flex',
@@ -688,6 +733,18 @@ export default function Produtos({ usuario }) {
             <Plus size={14} /> Novo (Ctrl+N)
           </button>
         </div>
+        {modalRecalcularMinimo && (
+          <ModalConfirmacao
+            titulo='Recalcular estoque mínimo?'
+            mensagem='Vai substituir o estoque mínimo de todos os produtos vendidos no mês anterior por 30% da quantidade vendida naquele mês. Produtos sem venda no período não são alterados. Se você tiver ajustado algum produto manualmente por um motivo específico, pode editar de novo depois.'
+            icone={RefreshCw}
+            botoes={[
+              { label: 'Cancelar', variante: 'secundaria', onClick: () => setModalRecalcularMinimo(false) },
+              { label: 'Recalcular', variante: 'primaria', onClick: recalcularEstoqueMinimo, autoFocus: true },
+            ]}
+            onFechar={() => setModalRecalcularMinimo(false)}
+          />
+        )}
 
         {erro && (
           <div
@@ -900,6 +957,7 @@ export default function Produtos({ usuario }) {
                         <EstoqueBadge
                           qtd={p.estoque_atual}
                           minimo={p.estoque_minimo}
+                          unidade={p.unidade}
                         />
                       </td>
                       <td
@@ -1264,7 +1322,7 @@ function FormularioProduto({
               ESTOQUE
             </div>
           </div>
-          <C label='Estoque Atual' col={1}>
+          <C label={`Estoque Atual (${form.unidade || 'UN'})`} col={1}>
             <input
               value={form.estoque_atual || ''}
               placeholder='0'
@@ -1274,7 +1332,7 @@ function FormularioProduto({
               style={{ width: '100%', height: 34, padding: '0 10px' }}
             />
           </C>
-          <C label='Estoque Mínimo' col={1}>
+          <C label={`Estoque Mínimo (${form.unidade || 'UN'})`} col={1}>
             <input
               value={form.estoque_minimo || ''}
               placeholder='0'

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Search, ArrowLeft, AlertTriangle, CheckCircle } from 'lucide-react'
+import { fmtQtd } from '../utils/formatQtd'
 
 const fmt = (v) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-'
@@ -158,18 +159,21 @@ export default function Devolucao({ usuario }) {
                       onMouseLeave={e => { e.currentTarget.style.background = qtdDev > 0 ? 'var(--amber-50)' : 'transparent' }}>
                       <td style={{ padding: '8px 10px', fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', borderBottom: '1px solid var(--border)' }}>{item.codigo_produto}</td>
                       <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{item.descricao}</td>
-                      <td style={{ padding: '8px 10px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'center' }}>{item.quantidade}</td>
-                      <td style={{ padding: '8px 10px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'center', color: item.quantidade_devolvida > 0 ? 'var(--amber-600)' : 'var(--text-muted)' }}>{item.quantidade_devolvida || 0}</td>
+                      <td style={{ padding: '8px 10px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'center' }}>{fmtQtd(item.quantidade, item.unidade)}</td>
+                      <td style={{ padding: '8px 10px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'center', color: item.quantidade_devolvida > 0 ? 'var(--amber-600)' : 'var(--text-muted)' }}>{fmtQtd(item.quantidade_devolvida || 0, item.unidade)}</td>
                       <td style={{ padding: '8px 10px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{fmt(item.preco_unitario)}</td>
                       <td style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
-                        <input
-                          type='number' min='0' max={disponivel} step='1'
-                          value={qtdDev || ''}
-                          onChange={e => setQtd(item.codigo_produto, e.target.value)}
-                          placeholder='0'
-                          disabled={disponivel === 0}
-                          style={{ width: 70, height: 30, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border-md)', fontSize: 13, textAlign: 'center', background: disponivel === 0 ? 'var(--gray-50)' : 'var(--surface)' }}
-                        />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input
+                            type='number' min='0' max={disponivel} step='1'
+                            value={qtdDev || ''}
+                            onChange={e => setQtd(item.codigo_produto, e.target.value)}
+                            placeholder='0'
+                            disabled={disponivel === 0}
+                            style={{ width: 70, height: 30, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border-md)', fontSize: 13, textAlign: 'center', background: disponivel === 0 ? 'var(--gray-50)' : 'var(--surface)' }}
+                          />
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.unidade}</span>
+                        </div>
                       </td>
                       <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 600, color: qtdDev > 0 ? 'var(--amber-600)' : 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
                         {qtdDev > 0 ? fmt(valorItem) : '—'}

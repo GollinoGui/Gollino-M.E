@@ -324,6 +324,31 @@ const produtos = {
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
+
+  // Estoque mínimo dinâmico: 30% da quantidade vendida no mês anterior
+  // completo (evita recalcular com base num mês ainda em andamento, que
+  // subestimaria o mínimo pros produtos vendidos no início do mês).
+  async recalcularEstoqueMinimo() {
+    const hojeData = new Date()
+    const inicioMesAnterior = new Date(hojeData.getFullYear(), hojeData.getMonth() - 1, 1)
+    const fimMesAnterior = new Date(hojeData.getFullYear(), hojeData.getMonth(), 0)
+    const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+    const { data: vendidos, error } = await supabase.rpc('relatorio_itens_vendidos', {
+      p_data_inicio: fmt(inicioMesAnterior), p_data_fim: fmt(fimMesAnterior),
+    })
+    if (error) throw new Error(error.message)
+
+    const atualizacoes = (vendidos || [])
+      .map((v) => ({ codigo: v.codigo, novoMinimo: Math.ceil((v.quantidade || 0) * 0.3) }))
+      .filter((a) => a.codigo && a.novoMinimo > 0)
+
+    await Promise.all(
+      atualizacoes.map((a) => supabase.from('produtos').update({ estoque_minimo: a.novoMinimo }).eq('codigo', a.codigo)),
+    )
+
+    return { sucesso: true, atualizados: atualizacoes.length, periodo: { inicio: fmt(inicioMesAnterior), fim: fmt(fimMesAnterior) } }
+  },
 }
 
 // ============================================================
@@ -1403,6 +1428,83 @@ const relatorios = {
   },
 }
 
+// ============================================================
+// LUCRO REAL (confronto patrimonial): estoque a custo + a receber +
+// caixa/banco − a pagar, comparado entre fechamentos mensais.
+// ============================================================
+const patrimonio = {
+  // Fotografia do patrimônio na data de referência (padrão: hoje), sem
+  // gravar nada — usada tanto pra pré-visualizar antes de fechar o mês
+  // quanto pelo próprio fechar().
+  async snapshotAtual(dataReferencia) {
+    const data = dataReferencia || hoje()
+    const [{ data: prods, error: eProd }, receberRes, pagarRes, { data: saldoInicialExtrato, error: eSaldoIni }, { data: movimentosExtrato, error: eMov }] = await Promise.all([
+      supabase.from('produtos').select('estoque_atual, preco_custo_atual').limit(10000),
+      supabase.rpc('contas_receber_total_aberto'),
+      supabase.rpc('contas_pagar_total_aberto'),
+      supabase.rpc('relatorio_extrato_saldo_inicial', { p_data_inicio: '2000-01-01' }),
+      supabase.rpc('relatorio_extrato_movimentos', { p_data_inicio: '2000-01-01', p_data_fim: data }),
+    ])
+    if (eProd) throw new Error(eProd.message)
+    if (receberRes.error) throw new Error(receberRes.error.message)
+    if (pagarRes.error) throw new Error(pagarRes.error.message)
+    if (eSaldoIni) throw new Error(eSaldoIni.message)
+    if (eMov) throw new Error(eMov.message)
+
+    const estoqueCusto = (prods || []).reduce((s, p) => s + (p.estoque_atual || 0) * (p.preco_custo_atual || 0), 0)
+    const receberAberto = receberRes.data || 0
+    const pagarAberto = pagarRes.data || 0
+    const totalCred = (movimentosExtrato || []).reduce((s, m) => s + (m.credito || 0), 0)
+    const totalDeb = (movimentosExtrato || []).reduce((s, m) => s + (m.debito || 0), 0)
+    const caixaBanco = (saldoInicialExtrato || 0) + totalCred - totalDeb
+    const patrimonioTotal = estoqueCusto + receberAberto + caixaBanco - pagarAberto
+
+    return { data, estoqueCusto, receberAberto, pagarAberto, caixaBanco, patrimonio: patrimonioTotal }
+  },
+
+  async listar() {
+    const { data, error } = await supabase.from('fechamentos_patrimoniais').select('*').order('data_fechamento')
+    if (error) throw new Error(error.message)
+    return data
+  },
+
+  // Trava um fechamento na data informada (padrão: hoje). Busca o
+  // fechamento anterior mais recente e calcula o lucro real do período
+  // como a diferença simples de patrimônio entre os dois.
+  async fechar(dados = {}) {
+    const dataFechamento = dados.dataFechamento || hoje()
+
+    const { data: anteriores, error: eAnt } = await supabase
+      .from('fechamentos_patrimoniais').select('*')
+      .lt('data_fechamento', dataFechamento)
+      .order('data_fechamento', { ascending: false }).limit(1)
+    if (eAnt) throw new Error(eAnt.message)
+    const anterior = anteriores?.[0] || null
+
+    const snap = await this.snapshotAtual(dataFechamento)
+
+    const lucroPeriodo = anterior
+      ? (snap.patrimonio - anterior.patrimonio)
+      : null
+
+    const { error } = await supabase.from('fechamentos_patrimoniais').insert({
+      data_fechamento: dataFechamento,
+      estoque_custo: snap.estoqueCusto,
+      contas_receber_aberto: snap.receberAberto,
+      contas_pagar_aberto: snap.pagarAberto,
+      caixa_banco: snap.caixaBanco,
+      patrimonio: snap.patrimonio,
+      lucro_periodo: lucroPeriodo,
+      observacao: dados.observacao || null,
+      usuario: dados.usuario || null,
+      criado_em: hoje(),
+      criado_hora: agora(),
+    })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true, lucroPeriodo }
+  },
+}
+
 module.exports = {
   init,
   login,
@@ -1437,4 +1539,5 @@ module.exports = {
   relatorios,
   aprovacoes,
   comentarios,
+  patrimonio,
 }

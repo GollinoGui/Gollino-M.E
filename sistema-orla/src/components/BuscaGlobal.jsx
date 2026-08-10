@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Command,
 } from 'lucide-react'
+import { fmtQtd } from '../utils/formatQtd'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -138,7 +139,7 @@ export default function BuscaGlobal({ onNavigate, onClose }) {
             tipo: 'produto',
             id: 'produtos',
             label: p.descricao,
-            desc: `${fmt(p.preco_venda_vista)} · Estoque: ${p.estoque_atual ?? 0}`,
+            desc: `${fmt(p.preco_venda_vista)} · Estoque: ${fmtQtd(p.estoque_atual ?? 0, p.unidade)}`,
             icon: Package,
             categoria: 'Produtos',
             dados: p,

@@ -637,6 +637,7 @@ CREATE TABLE IF NOT EXISTS lancamentos_extras (
   data TEXT NOT NULL,
   nome_pessoa TEXT,
   forma_pagamento TEXT,
+  categoria TEXT,
   situacao TEXT DEFAULT 'A',
   data_pagamento TEXT,
   observacao TEXT,
@@ -657,6 +658,26 @@ CREATE TABLE IF NOT EXISTS reajustes_preco (
   percentual DOUBLE PRECISION DEFAULT 0,
   data TEXT NOT NULL,
   usuario TEXT
+);
+
+-- ============================================================
+-- TABELA: fechamentos_patrimoniais (lucro real por confronto patrimonial)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS fechamentos_patrimoniais (
+  id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  data_fechamento TEXT NOT NULL UNIQUE,
+  estoque_custo DOUBLE PRECISION DEFAULT 0,
+  contas_receber_aberto DOUBLE PRECISION DEFAULT 0,
+  contas_pagar_aberto DOUBLE PRECISION DEFAULT 0,
+  caixa_banco DOUBLE PRECISION DEFAULT 0,
+  patrimonio DOUBLE PRECISION DEFAULT 0,
+  retiradas_socio DOUBLE PRECISION DEFAULT 0,
+  aportes_socio DOUBLE PRECISION DEFAULT 0,
+  lucro_periodo DOUBLE PRECISION,
+  observacao TEXT,
+  usuario TEXT,
+  criado_em TEXT,
+  criado_hora TEXT
 );
 
 -- ============================================================

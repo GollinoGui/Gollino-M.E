@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Search, Plus, Trash2, Package, FileText, Printer } from 'lucide-react'
+import { fmtQtd } from '../utils/formatQtd'
 
 const fmt = v => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = d => new Date(d).toLocaleDateString('pt-BR')
@@ -36,7 +37,7 @@ function ModalItem({ produto, onConfirm, onClose }) {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
           <div>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Quantidade</label>
+            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Quantidade ({produto.unidade || 'UN'})</label>
             <input value={qty} onChange={e => setQty(e.target.value)} type="number" min="0.001" step="0.001" style={{ width: '100%', height: 36, padding: '0 10px' }} autoFocus />
           </div>
           <div>
@@ -194,7 +195,7 @@ export default function PreVendas({ usuario }) {
         itens[existing] = { ...itens[existing], qty: itens[existing].qty + item.qty, total: itens[existing].total + item.total }
         return { ...prev, itens }
       }
-      return { ...prev, itens: [...prev.itens, { id: item.id, codigo: item.codigo, descricao: item.descricao, qty: item.qty, preco_unitario: item.preco_vista || item.preco_venda_vista || 0, total: item.total }] }
+      return { ...prev, itens: [...prev.itens, { id: item.id, codigo: item.codigo, descricao: item.descricao, unidade: item.unidade, qty: item.qty, preco_unitario: item.preco_vista || item.preco_venda_vista || 0, total: item.total }] }
     })
     setItemModal(null)
   }
@@ -327,7 +328,7 @@ export default function PreVendas({ usuario }) {
             <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', marginBottom: 5, background: 'var(--surface)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.descricao}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.qty} × {fmt(item.preco_unitario)}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{fmtQtd(item.qty, item.unidade)} × {fmt(item.preco_unitario)}</div>
               </div>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--blue-700)' }}>{fmt(item.total)}</div>
               <button onClick={() => removeItem(item.id)} style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}
@@ -379,7 +380,7 @@ export default function PreVendas({ usuario }) {
                   <td style={{ padding: '9px 10px', fontSize: 13, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{fmt(p.preco_venda_prazo)}</td>
                   <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{p.unidade}</td>
                   <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)' }}>
-                    <span style={{ background: (p.estoque_atual ?? 0) === 0 ? 'var(--red-50)' : (p.estoque_atual ?? 0) <= 5 ? 'var(--amber-50)' : 'var(--green-50)', color: (p.estoque_atual ?? 0) === 0 ? 'var(--red-500)' : (p.estoque_atual ?? 0) <= 5 ? 'var(--amber-500)' : 'var(--green-500)', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>{(p.estoque_atual ?? 0) === 0 ? 'Sem estoque' : p.estoque_atual}</span>
+                    <span style={{ background: (p.estoque_atual ?? 0) === 0 ? 'var(--red-50)' : (p.estoque_atual ?? 0) <= 5 ? 'var(--amber-50)' : 'var(--green-50)', color: (p.estoque_atual ?? 0) === 0 ? 'var(--red-500)' : (p.estoque_atual ?? 0) <= 5 ? 'var(--amber-500)' : 'var(--green-500)', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>{(p.estoque_atual ?? 0) === 0 ? 'Sem estoque' : fmtQtd(p.estoque_atual, p.unidade)}</span>
                   </td>
                 </tr>
               ))}

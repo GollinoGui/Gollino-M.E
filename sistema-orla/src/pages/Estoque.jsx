@@ -5,6 +5,7 @@ import ModalAcessoNegado from '../components/ModalAcessoNegado'
 import ModalAviso from '../components/ModalAviso'
 import ModalConfirmacao from '../components/ModalConfirmacao'
 import { Ban } from 'lucide-react'
+import { fmtQtd } from '../utils/formatQtd'
 
 const fmt = (v) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -136,7 +137,7 @@ function ProdutoDropdown({ value, onChange, produtos, placeholder = 'Pesquisar p
             >
               <span style={{ fontWeight: 500 }}>{p.descricao}</span>
               <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
-                Estoque: {p.estoque_atual ?? 0}
+                Estoque: {fmtQtd(p.estoque_atual ?? 0, p.unidade)}
               </span>
             </button>
           ))}
@@ -290,6 +291,7 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
       {
         codigo_produto: prodBusca.codigo,
         descricao: prodBusca.descricao,
+        unidade: prodBusca.unidade,
         tipo,
         quantidade: q,
         rateio_despesas: parseFloat(rateio) || 0,
@@ -426,7 +428,7 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Qtde</label>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Qtde{prodBusca ? ` (${prodBusca.unidade || 'UN'})` : ''}</label>
                 <input value={qtde} onChange={(e) => setQtde(e.target.value)} type='number' min='0' style={inp} />
               </div>
               <div>
@@ -466,7 +468,7 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
                 {itens.map((i, idx) => (
                   <tr key={idx}>
                     <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{i.descricao}</td>
-                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{i.quantidade}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmtQtd(i.quantidade, i.unidade)}</td>
                     <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmt(i.preco_custo)}</td>
                     <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{i.preco_venda_vista > 0 ? fmt(i.preco_venda_vista) : '-'}</td>
                     <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right', color: i.margem_vista >= 0 ? 'var(--green-500)' : '#EF4444' }}>{i.preco_venda_vista > 0 ? `${(i.margem_vista * 100).toFixed(1)}%` : '-'}</td>
@@ -605,11 +607,11 @@ function ModalSaida({ onClose, onSalvar, produtos }) {
           {produto && (
             <div style={{ gridColumn: '1 / -1', background: '#FFF5F5', border: '1px solid #FCA5A5', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13 }}>
               <span style={{ color: 'var(--text-secondary)' }}>Estoque atual: </span>
-              <strong style={{ color: '#B91C1C' }}>{produto.estoque_atual ?? 0}</strong>
+              <strong style={{ color: '#B91C1C' }}>{fmtQtd(produto.estoque_atual ?? 0, produto.unidade)}</strong>
             </div>
           )}
           <div>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Quantidade *</label>
+            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Quantidade{produto ? ` (${produto.unidade || 'UN'})` : ''} *</label>
             <input value={form.quantidade} onChange={f('quantidade')} type='number' min='1' style={{ width: '100%', height: 36, padding: '0 10px' }} />
           </div>
           <div>
@@ -668,11 +670,11 @@ function ModalAcerto({ onClose, onSalvar, produtos }) {
           {produto && (
             <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 'var(--radius-md)', padding: '10px 14px', display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Estoque atual no sistema</span>
-              <strong style={{ fontSize: 15, color: '#1E40AF' }}>{produto.estoque_atual ?? 0}</strong>
+              <strong style={{ fontSize: 15, color: '#1E40AF' }}>{fmtQtd(produto.estoque_atual ?? 0, produto.unidade)}</strong>
             </div>
           )}
           <div>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Quantidade real (contada) *</label>
+            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Quantidade real (contada){produto ? ` (${produto.unidade || 'UN'})` : ''} *</label>
             <input
               value={novaQtde}
               onChange={(e) => setNovaQtde(e.target.value)}
@@ -732,6 +734,7 @@ function ModalPedidoCompra({ onClose, onSalvar, numero, itensIniciais }) {
     setItens((prev) => [...prev, {
       produto_id: prodBusca.codigo,
       produto: prodBusca.descricao,
+      unidade: prodBusca.unidade,
       quantidade: parseFloat(qtde),
       valor_unitario: parseFloat(vlUnit) || 0,
     }])
@@ -792,7 +795,7 @@ function ModalPedidoCompra({ onClose, onSalvar, numero, itensIniciais }) {
               <ProdutoDropdown key={buscaKey} value='' onChange={setProdBusca} produtos={produtos} placeholder='Buscar...' />
             </div>
             <div>
-              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Qtde</label>
+              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Qtde{prodBusca ? ` (${prodBusca.unidade || 'UN'})` : ''}</label>
               <input value={qtde} onChange={(e) => setQtde(e.target.value)} type='number' min='1' style={{ width: '100%', height: 34, padding: '0 8px', fontSize: 13 }} />
             </div>
             <div>
@@ -821,7 +824,7 @@ function ModalPedidoCompra({ onClose, onSalvar, numero, itensIniciais }) {
                 {itens.map((item, i) => (
                   <tr key={i}>
                     <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{item.produto}</td>
-                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{item.quantidade}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmtQtd(item.quantidade, item.unidade)}</td>
                     <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{item.valor_unitario > 0 ? fmt(item.valor_unitario) : '-'}</td>
                     <td style={{ padding: '7px 8px', fontSize: 13, fontWeight: 600, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{item.valor_unitario > 0 ? fmt(item.quantidade * item.valor_unitario) : '-'}</td>
                     <td style={{ padding: '7px 8px', borderBottom: '1px solid var(--border)' }}>
@@ -1148,6 +1151,10 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
     return { label: s, bg: 'var(--gray-50)', color: 'var(--text-secondary)', border: 'var(--border)' }
   }
 
+  // movimentos_estoque e pedidos_compra_itens não guardam a unidade do produto —
+  // cruza pelo código para poder exibi-la junto da quantidade nas listas abaixo.
+  const unidadeDoProduto = (codigo) => produtos.find((p) => p.codigo === codigo)?.unidade
+
   const pedidoCancelando = pedidos.find((p) => p.numero === pedidoParaCancelar)
   const itensQueFicariamNegativos = pedidoCancelando?.situacao === 'RECEBIDO'
     ? (pedidoCancelando.itens || []).filter((item) => {
@@ -1380,7 +1387,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                     </td>
                     <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.produto}</td>
                     <td style={{ padding: '9px 10px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 600, color: m.tipo === 'ENTRADA' ? 'var(--green-500)' : m.tipo === 'SAIDA' ? 'var(--red-500)' : 'var(--blue-600)' }}>
-                      {m.tipo === 'ENTRADA' ? '+' : m.tipo === 'SAIDA' ? '-' : ''}{m.quantidade}
+                      {m.tipo === 'ENTRADA' ? '+' : m.tipo === 'SAIDA' ? '-' : ''}{fmtQtd(m.quantidade, unidadeDoProduto(m.produto_id))}
                     </td>
                     <td style={{ padding: '9px 10px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{m.valor_unitario > 0 ? fmt(m.valor_unitario) : '-'}</td>
                     <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, borderBottom: '1px solid var(--border)', color: m.tipo === 'ENTRADA' ? '#15803D' : m.tipo === 'SAIDA' ? '#B91C1C' : 'var(--blue-600)' }}>{m.total > 0 ? fmt(m.total) : '-'}</td>
@@ -1474,10 +1481,10 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                   <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{p.unidade}</td>
                   <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
                     <span style={{ fontSize: 15, fontWeight: 700, color: (p.estoque_atual ?? 0) === 0 ? 'var(--red-500)' : (p.estoque_atual ?? 0) <= 5 ? 'var(--amber-500)' : 'var(--green-500)' }}>
-                      {p.estoque_atual ?? 0}
+                      {fmtQtd(p.estoque_atual ?? 0, p.unidade)}
                     </span>
                   </td>
-                  <td style={{ padding: '9px 10px', fontSize: 13, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>{p.estoque_minimo ?? 0}</td>
+                  <td style={{ padding: '9px 10px', fontSize: 13, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>{fmtQtd(p.estoque_minimo ?? 0, p.unidade)}</td>
                   <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)' }}>
                     {(p.estoque_atual ?? 0) === 0 ? (
                       <span style={{ background: 'var(--red-50)', color: 'var(--red-500)', padding: '2px 9px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>Sem estoque</span>
@@ -1515,7 +1522,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                   >
                     <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{fmtDate(m.data)}</td>
                     <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{m.produto}</td>
-                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, color: '#B91C1C', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>-{m.quantidade}</td>
+                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, color: '#B91C1C', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>-{fmtQtd(m.quantidade, unidadeDoProduto(m.produto_id))}</td>
                     <td style={{ padding: '9px 10px', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{m.fornecedor || '-'}</td>
                     <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{m.obs || '-'}</td>
                   </tr>
@@ -1546,7 +1553,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                   >
                     <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{fmtDate(m.data)}</td>
                     <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{m.produto}</td>
-                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, color: '#1E40AF', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>{m.quantidade}</td>
+                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, color: '#1E40AF', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>{fmtQtd(m.quantidade, unidadeDoProduto(m.produto_id))}</td>
                     <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{m.obs || '-'}</td>
                   </tr>
                 ))}
@@ -1592,7 +1599,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                         {p.itens.map((item, i) => (
                           <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: i < p.itens.length - 1 ? '1px solid var(--border)' : 'none' }}>
                             <span>{item.descricao}</span>
-                            <span style={{ color: 'var(--text-secondary)' }}>{item.quantidade}x {item.preco_unitario > 0 ? fmt(item.preco_unitario) : '-'}</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>{fmtQtd(item.quantidade, unidadeDoProduto(item.codigo_produto))}x {item.preco_unitario > 0 ? fmt(item.preco_unitario) : '-'}</span>
                           </div>
                         ))}
                       </div>
@@ -1629,7 +1636,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                   <tr key={p.id} style={{ background: alterado ? (diff > 0 ? '#F0FDF4' : '#FFF5F5') : 'transparent', transition: 'background 0.08s' }}>
                     <td style={{ padding: '8px 10px', fontSize: 11, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', fontFamily: 'monospace' }}>{p.codigo}</td>
                     <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{p.descricao}</td>
-                    <td style={{ padding: '8px 10px', fontSize: 14, fontWeight: 600, borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--text-secondary)' }}>{p.estoque_atual ?? 0}</td>
+                    <td style={{ padding: '8px 10px', fontSize: 14, fontWeight: 600, borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--text-secondary)' }}>{fmtQtd(p.estoque_atual ?? 0, p.unidade)}</td>
                     <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
                       <input
                         type='number'
@@ -1641,7 +1648,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                       />
                     </td>
                     <td style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 600, fontSize: 14, color: alterado ? (diff > 0 ? '#15803D' : '#B91C1C') : 'var(--text-muted)' }}>
-                      {alterado ? (diff > 0 ? `+${diff}` : diff) : '—'}
+                      {alterado ? (diff > 0 ? `+${fmtQtd(diff, p.unidade)}` : fmtQtd(diff, p.unidade)) : '—'}
                     </td>
                   </tr>
                 )

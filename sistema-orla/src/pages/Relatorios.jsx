@@ -14,12 +14,15 @@ import {
   Printer,
   Download,
   ListTree,
+  PiggyBank,
 } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
 import { BotaoGerarRelatorio } from '../components/BotoesRelatorio'
 import StatusBadge from '../components/StatusBadge'
+import ModalConfirmacao from '../components/ModalConfirmacao'
 import { getSituacao as getSituacaoConta, STATUS_CFG } from '../utils/statusContas'
 import { useOrdenacao } from '../utils/ordenacao'
+import { fmtQtd } from '../utils/formatQtd'
 import {
   exportarCSV,
   agruparPorPessoa,
@@ -54,6 +57,7 @@ const abas = [
   { id: 'rel-contas-pagar', label: 'Contas a pagar', icon: TrendingDown },
   { id: 'rel-financeiro', label: 'Financeiro', icon: DollarSign },
   { id: 'rel-plano-contas', label: 'Plano de Contas', icon: ListTree },
+  { id: 'rel-lucro-real', label: 'Lucro Real', icon: PiggyBank },
 ]
 
 function CardMetrica({ label, value, sub, color }) {
@@ -989,7 +993,7 @@ function RelProdutos() {
                             fontWeight: 500,
                           }}
                         >
-                          {est}
+                          {fmtQtd(est, p.unidade)}
                         </span>
                       </td>
                       <td
@@ -2980,6 +2984,170 @@ function RelExtrato() {
   )
 }
 
+// ── LUCRO REAL (confronto patrimonial) ───────────────────────────────────────
+// Lucro real = variação do patrimônio líquido (estoque a custo + a receber +
+// caixa/banco − a pagar) entre um fechamento e o anterior, ajustada por
+// retiradas/aportes de sócio (que não são resultado operacional). Cada
+// fechamento é um registro permanente — não é recalculado depois.
+function RelLucroReal({ usuario }) {
+  const [atual, setAtual] = useState(null)
+  const [historico, setHistorico] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [fechando, setFechando] = useState(false)
+  const [modalFechar, setModalFechar] = useState(false)
+  const [erro, setErro] = useState('')
+
+  async function carregar() {
+    setLoading(true)
+    setErro('')
+    try {
+      const [snap, hist] = await Promise.all([
+        window.api.patrimonio.snapshotAtual(),
+        window.api.patrimonio.listar(),
+      ])
+      setAtual(snap)
+      setHistorico(hist || [])
+    } catch (e) {
+      setErro('Erro ao carregar: ' + e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { carregar() }, [])
+
+  const hoje = new Date().toISOString().slice(0, 10)
+  const jaFechouHoje = historico.some((h) => h.data_fechamento === hoje)
+
+  async function fecharMes() {
+    setModalFechar(false)
+    setFechando(true)
+    setErro('')
+    try {
+      const r = await window.api.patrimonio.fechar({ usuario: usuario?.nome || usuario?.usuario || 'sistema' })
+      if (!r?.sucesso) setErro('Erro ao fechar: ' + (r?.erro || 'desconhecido'))
+      await carregar()
+    } catch (e) {
+      setErro('Erro ao fechar: ' + e.message)
+    } finally {
+      setFechando(false)
+    }
+  }
+
+  const comLucro = historico.filter((h) => h.lucro_periodo !== null && h.lucro_periodo !== undefined)
+  const melhor = comLucro.length ? comLucro.reduce((a, b) => (b.lucro_periodo > a.lucro_periodo ? b : a)) : null
+  const pior = comLucro.length ? comLucro.reduce((a, b) => (b.lucro_periodo < a.lucro_periodo ? b : a)) : null
+
+  if (loading) return <Carregando />
+
+  // Contas ainda não unificadas em um banco só (previsto pra setembro/2026) —
+  // até lá o Caixa/Banco calculado aqui fica incompleto, então o fechamento
+  // de agora não deve ser tratado como o marco zero real.
+  const antesDaUnificacao = new Date() < new Date('2026-09-01')
+
+  return (
+    <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
+      {antesDaUnificacao && (
+        <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 'var(--radius-md)', background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E', fontSize: 12.5, lineHeight: 1.5 }}>
+          <strong>Aguardando unificação da conta bancária (previsão: setembro).</strong> Até lá o Caixa/Banco
+          nesta tela fica incompleto, porque nem tudo passa por uma conta só ainda. Use só pra acompanhar —
+          o primeiro "Fechar o mês" que vale como marco zero é depois de pagar tudo e unificar a conta.
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 560, lineHeight: 1.5 }}>
+          Patrimônio = estoque a custo + contas a receber + caixa/banco − contas a pagar.
+          O lucro real de cada mês é a variação desse número em relação ao fechamento anterior.
+        </div>
+        <button
+          onClick={() => setModalFechar(true)}
+          disabled={fechando || jaFechouHoje}
+          title={jaFechouHoje ? 'Já existe um fechamento hoje' : 'Trava um registro permanente com os números de hoje'}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 16px',
+            background: jaFechouHoje ? 'var(--gray-200)' : 'var(--blue-700)',
+            color: jaFechouHoje ? 'var(--text-muted)' : '#fff',
+            border: 'none', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 600,
+            cursor: jaFechouHoje || fechando ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
+          }}
+        >
+          <PiggyBank size={14} /> {jaFechouHoje ? 'Já fechado hoje' : fechando ? 'Fechando...' : 'Fechar o mês'}
+        </button>
+      </div>
+
+      {erro && (
+        <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 'var(--radius-md)', background: '#fef2f2', border: '1px solid #fecaca', color: '#B91C1C', fontSize: 13 }}>
+          {erro}
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 20 }}>
+        <CardMetrica label='Estoque (a custo)' value={fmt(atual?.estoqueCusto)} color='var(--blue-700)' />
+        <CardMetrica label='Contas a receber' value={fmt(atual?.receberAberto)} color='#15803D' />
+        <CardMetrica label='Caixa / banco' value={fmt(atual?.caixaBanco)} color='#0D9488' />
+        <CardMetrica label='Contas a pagar' value={fmt(atual?.pagarAberto)} color='#B91C1C' />
+        <CardMetrica label='Patrimônio atual' value={fmt(atual?.patrimonio)} color='#7C3AED' />
+      </div>
+
+      {comLucro.length > 0 && (
+        <div style={{ display: 'flex', gap: 16, marginBottom: 16, fontSize: 12, flexWrap: 'wrap' }}>
+          <span style={{ color: 'var(--text-secondary)' }}>
+            Melhor mês: <strong style={{ color: '#15803D' }}>{fmtDate(melhor.data_fechamento)} ({fmt(melhor.lucro_periodo)})</strong>
+          </span>
+          <span style={{ color: 'var(--text-secondary)' }}>
+            Pior mês: <strong style={{ color: '#B91C1C' }}>{fmtDate(pior.data_fechamento)} ({fmt(pior.lucro_periodo)})</strong>
+          </span>
+        </div>
+      )}
+
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: 'var(--gray-50)', borderBottom: '2px solid var(--border)' }}>
+              {['FECHAMENTO', 'ESTOQUE', 'A RECEBER', 'A PAGAR', 'CAIXA/BANCO', 'PATRIMÔNIO', 'LUCRO DO PERÍODO'].map((h) => (
+                <th key={h} style={{ padding: '8px 12px', textAlign: h === 'FECHAMENTO' ? 'left' : 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {historico.length === 0 && (
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>Nenhum fechamento registrado ainda.</td></tr>
+            )}
+            {historico.map((h) => (
+              <tr key={h.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td style={{ padding: '7px 12px', fontWeight: 500 }}>{fmtDate(h.data_fechamento)}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right' }}>{fmt(h.estoque_custo)}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right' }}>{fmt(h.contas_receber_aberto)}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right' }}>{fmt(h.contas_pagar_aberto)}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right' }}>{fmt(h.caixa_banco)}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 600, color: '#7C3AED' }}>{fmt(h.patrimonio)}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 700, color: h.lucro_periodo == null ? 'var(--text-muted)' : h.lucro_periodo >= 0 ? '#15803D' : '#B91C1C' }}>
+                  {h.lucro_periodo == null ? '—' : fmt(h.lucro_periodo)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {modalFechar && (
+        <ModalConfirmacao
+          titulo='Fechar o mês?'
+          mensagem='Vai gravar um registro permanente com o estoque, a receber, a pagar e o caixa/banco de hoje, e calcular o lucro real do período em relação ao último fechamento. Não muda mais depois de gravado.'
+          icone={PiggyBank}
+          corIcone='#7C3AED'
+          corFundoIcone='#F3E8FF'
+          botoes={[
+            { label: 'Cancelar', variante: 'secundaria', onClick: () => setModalFechar(false) },
+            { label: 'Fechar o mês', variante: 'primaria', onClick: fecharMes, autoFocus: true },
+          ]}
+          onFechar={() => setModalFechar(false)}
+        />
+      )}
+    </div>
+  )
+}
+
 // ── PLANO DE CONTAS ──────────────────────────────────────────────────────────
 function RelPlanoContas() {
   const [contas, setContas] = useState([])
@@ -3085,7 +3253,7 @@ function RelPlanoContas() {
 }
 
 // ── COMPONENTE PRINCIPAL ──────────────────────────────────────────────────────
-export default function Relatorios({ paginaAtiva }) {
+export default function Relatorios({ paginaAtiva, usuario }) {
   const abaInicial = abas.find((a) => a.id === paginaAtiva)?.id || 'rel-vendas'
   const [abaAtiva, setAbaAtiva] = useState(abaInicial)
 
@@ -3177,6 +3345,8 @@ export default function Relatorios({ paginaAtiva }) {
         return <RelFinanceiro />
       case 'rel-plano-contas':
         return <RelPlanoContas />
+      case 'rel-lucro-real':
+        return <RelLucroReal usuario={usuario} />
       default:
         return (
           <div

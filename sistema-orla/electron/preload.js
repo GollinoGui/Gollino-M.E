@@ -79,6 +79,7 @@ contextBridge.exposeInMainWorld('api', {
     buscar: (codigo) => ipcRenderer.invoke('produtos:buscar', codigo),
     salvar: (dados) => ipcRenderer.invoke('produtos:salvar', dados),
     excluir: (codigo) => ipcRenderer.invoke('produtos:excluir', codigo),
+    recalcularEstoqueMinimo: () => ipcRenderer.invoke('produtos:recalcularEstoqueMinimo'),
   },
 
   // VENDAS
@@ -248,6 +249,13 @@ contextBridge.exposeInMainWorld('api', {
     itenisVendidos: (f) => ipcRenderer.invoke('relatorios:itenisVendidos', f),
     entradasMercadoria: (f) => ipcRenderer.invoke('relatorios:entradasMercadoria', f),
     extrato: (f) => ipcRenderer.invoke('relatorios:extrato', f),
+  },
+
+  // LUCRO REAL (patrimônio)
+  patrimonio: {
+    snapshotAtual: (dataReferencia) => ipcRenderer.invoke('patrimonio:snapshotAtual', dataReferencia),
+    listar: () => ipcRenderer.invoke('patrimonio:listar'),
+    fechar: (dados) => ipcRenderer.invoke('patrimonio:fechar', dados),
   },
 
   // APROVAÇÕES (contagem de estoque etc.)

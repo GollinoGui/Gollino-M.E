@@ -234,6 +234,7 @@ handle('produtos:listar', (_, filtros) => db.produtos.listar(filtros))
 handle('produtos:buscar', (_, codigo) => db.produtos.buscar(codigo))
 handle('produtos:salvar', (_, dados) => db.produtos.salvar(dados))
 handle('produtos:excluir', (_, codigo) => db.produtos.excluir(codigo))
+handle('produtos:recalcularEstoqueMinimo', () => db.produtos.recalcularEstoqueMinimo())
 
 // --- VENDAS ---
 handle('vendas:listar', (_, filtros) => db.vendas.listar(filtros))
@@ -734,3 +735,8 @@ handle('relatorios:inventario', () => db.relatorios.inventario())
 handle('relatorios:itenisVendidos', (_, f) => db.relatorios.itenisVendidos(f.dataInicio, f.dataFim))
 handle('relatorios:entradasMercadoria', (_, f) => db.relatorios.entradasMercadoria(f.dataInicio, f.dataFim))
 handle('relatorios:extrato', (_, f) => db.relatorios.extrato(f.dataInicio, f.dataFim))
+
+// --- LUCRO REAL (patrimônio) ---
+handle('patrimonio:snapshotAtual', (_, dataReferencia) => db.patrimonio.snapshotAtual(dataReferencia))
+handle('patrimonio:listar', () => db.patrimonio.listar())
+handle('patrimonio:fechar', (_, dados) => db.patrimonio.fechar(dados))

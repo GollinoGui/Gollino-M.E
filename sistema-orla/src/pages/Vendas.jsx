@@ -12,6 +12,7 @@ import {
 import ModalAcessoNegado from '../components/ModalAcessoNegado'
 import ModalAviso from '../components/ModalAviso'
 import ModalCancelarVenda from '../components/ModalCancelarVenda'
+import { fmtQtd } from '../utils/formatQtd'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -25,7 +26,7 @@ function parseQtd(v) {
   return parseFloat(String(v).replace(',', '.')) || 0
 }
 
-function EstoqueBadge({ qtd }) {
+function EstoqueBadge({ qtd, unidade }) {
   const style = {
     padding: '2px 8px',
     borderRadius: 10,
@@ -43,12 +44,12 @@ function EstoqueBadge({ qtd }) {
   if (qtd <= 5)
     return (
       <span style={{ ...style, background: '#FFF8E6', color: '#B7791F' }}>
-        {qtd}
+        {fmtQtd(qtd, unidade)}
       </span>
     )
   return (
     <span style={{ ...style, background: '#EAF6EE', color: '#22863A' }}>
-      {qtd}
+      {fmtQtd(qtd, unidade)}
     </span>
   )
 }
@@ -1198,7 +1199,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
                   {item.descricao}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
-                  {item.qty} ×{' '}
+                  {fmtQtd(item.qty, item.unidade)} ×{' '}
                   {fmt(item.preco_venda_vista || item.preco_vista || 0)}
                   {item.desconto > 0 && (
                     <span style={{ color: '#22863A', marginLeft: 4 }}>
@@ -1512,10 +1513,10 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
                       {p.unidade}
                     </td>
                     <td style={td}>
-                      <EstoqueBadge qtd={estoque} />
+                      <EstoqueBadge qtd={estoque} unidade={p.unidade} />
                     </td>
                     <td style={{ ...td, fontWeight: 500, textAlign: 'center' }}>
-                      {estoque - cond}
+                      {fmtQtd(estoque - cond, p.unidade)}
                     </td>
                   </tr>
                 )
