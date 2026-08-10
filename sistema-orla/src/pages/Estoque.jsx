@@ -152,9 +152,19 @@ function ProdutoDropdown({ value, onChange, produtos, placeholder = 'Pesquisar p
 // Dropdown de busca genérico — mesma interação do ProdutoDropdown acima,
 // reaproveitado pra Fornecedor/Plano de Contas/Histórico (que não têm
 // "estoque" pra mostrar ao lado do nome, só um rótulo + um subtítulo opcional).
-function BuscaDropdown({ onChange, itens, campoBusca, campoLabel, campoSub, placeholder = 'Pesquisar...' }) {
-  const [busca, setBusca] = useState('')
+function BuscaDropdown({ value, onChange, itens, campoBusca, campoLabel, campoSub, placeholder = 'Pesquisar...' }) {
+  const [busca, setBusca] = useState(value ? value[campoLabel] : '')
   const { inputRef, open, pos, abrir, fechar, setOpen } = useMenuFlutuante()
+
+  // Mantém o texto do campo sempre fiel ao item realmente selecionado no
+  // pai — sem isso, qualquer remontagem deste componente (ex: um `key`
+  // trocando, hot-reload) apaga o texto mesmo com o valor já escolhido
+  // corretamente no estado do pai. Só sincroniza quando HÁ seleção: durante
+  // a digitação o pai manda value=null (ver onChange do input abaixo) e aí
+  // quem manda é o que foi digitado, não isso aqui.
+  useEffect(() => {
+    if (value) setBusca(value[campoLabel])
+  }, [value, campoLabel])
 
   const filtrados = itens
     .filter((it) => (it[campoBusca] || '').toLowerCase().includes(busca.toLowerCase()))
@@ -399,6 +409,7 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={lbl}>Fornecedor *</label>
               <BuscaDropdown
+                value={fornecedor}
                 onChange={setFornecedor}
                 itens={fornecedores}
                 campoBusca='nome'
@@ -489,11 +500,11 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 100px 110px 100px auto', gap: 8, alignItems: 'end' }}>
               <div>
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Plano de contas</label>
-                <BuscaDropdown key={`conta-${faturaKey}`} onChange={setContaSel} itens={contasFolha} campoBusca='descricao' campoLabel='descricao' campoSub='grupo' placeholder='Buscar...' />
+                <BuscaDropdown key={`conta-${faturaKey}`} value={contaSel} onChange={setContaSel} itens={contasFolha} campoBusca='descricao' campoLabel='descricao' campoSub='grupo' placeholder='Buscar...' />
               </div>
               <div>
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Histórico</label>
-                <BuscaDropdown key={`hist-${faturaKey}`} onChange={setHistoricoSel} itens={historicos} campoBusca='nome' campoLabel='nome' placeholder='Buscar...' />
+                <BuscaDropdown key={`hist-${faturaKey}`} value={historicoSel} onChange={setHistoricoSel} itens={historicos} campoBusca='nome' campoLabel='nome' placeholder='Buscar...' />
               </div>
               <div>
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Nº Docto</label>

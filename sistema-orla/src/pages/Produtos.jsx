@@ -94,6 +94,8 @@ export default function Produtos({ usuario }) {
     estoque_atual: '',
     estoque_minimo: '',
     cfop_cfe: '5405',
+    csosn: '',
+    origem_mercadoria: '0',
     aliquota_icms: '',
     aliquota_pis: '',
     aliquota_cofins: '',
@@ -598,6 +600,8 @@ export default function Produtos({ usuario }) {
                   <DadoItem label='NCM' value={produtoDetalhes.ncm} />
                   <DadoItem label='CEST' value={produtoDetalhes.codigo_cest} />
                   <DadoItem label='CFOP' value={produtoDetalhes.cfop_cfe} />
+                  <DadoItem label='CSOSN' value={produtoDetalhes.csosn} />
+                  <DadoItem label='Origem' value={produtoDetalhes.origem_mercadoria} />
                   <DadoItem
                     label='ICMS %'
                     value={produtoDetalhes.aliquota_icms}
@@ -1397,6 +1401,38 @@ function FormularioProduto({
               style={{ width: '100%', height: 34, padding: '0 10px' }}
             />
           </C>
+          <C label='CSOSN' col={1}>
+            <select
+              value={form.csosn || ''}
+              onChange={(e) => campo('csosn', e.target.value)}
+              style={{ width: '100%', height: 34, padding: '0 10px' }}
+            >
+              <option value=''>Selecione</option>
+              <option value='102'>102 - Tributada sem permissão de crédito</option>
+              <option value='103'>103 - Isenção do ICMS na faixa de receita bruta</option>
+              <option value='300'>300 - Imune</option>
+              <option value='400'>400 - Não tributada</option>
+              <option value='500'>500 - ICMS cobrado por substituição tributária</option>
+              <option value='900'>900 - Outros</option>
+            </select>
+          </C>
+          <C label='Origem' col={1}>
+            <select
+              value={form.origem_mercadoria || '0'}
+              onChange={(e) => campo('origem_mercadoria', e.target.value)}
+              style={{ width: '100%', height: 34, padding: '0 10px' }}
+            >
+              <option value='0'>0 - Nacional</option>
+              <option value='1'>1 - Estrangeira - importação direta</option>
+              <option value='2'>2 - Estrangeira - adquirida no mercado interno</option>
+              <option value='3'>3 - Nacional - conteúdo importado &gt; 40%</option>
+              <option value='4'>4 - Nacional - produção conforme processos produtivos básicos</option>
+              <option value='5'>5 - Nacional - conteúdo importado ≤ 40%</option>
+              <option value='6'>6 - Estrangeira - importação direta, sem similar nacional</option>
+              <option value='7'>7 - Estrangeira - mercado interno, sem similar nacional</option>
+              <option value='8'>8 - Nacional - conteúdo importado &gt; 70%</option>
+            </select>
+          </C>
           <C label='ICMS %' col={1}>
             <input
               value={form.aliquota_icms || ''}
@@ -1427,6 +1463,16 @@ function FormularioProduto({
               style={{ width: '100%', height: 34, padding: '0 10px' }}
             />
           </C>
+          <div
+            style={{
+              gridColumn: '1 / -1',
+              fontSize: 11,
+              color: 'var(--text-muted)',
+              marginTop: -4,
+            }}
+          >
+            Confirme os códigos CSOSN com o contador antes de emitir notas — o valor errado aqui gera nota fiscal incorreta.
+          </div>
 
           <C label='Observação' col={2}>
             <textarea

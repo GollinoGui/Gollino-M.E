@@ -89,6 +89,9 @@ export default function Clientes({ usuario }) {
     endereco: '',
     numero: '',
     bairro: '',
+    complemento: '',
+    cidade: '',
+    uf: 'SP',
     cep: '',
     observacao: '',
     codigo_situacao_cliente: 'A',
@@ -534,6 +537,9 @@ export default function Clientes({ usuario }) {
                   />
                   <DadoItem label='Número' value={clienteDetalhes.numero} />
                   <DadoItem label='Bairro' value={clienteDetalhes.bairro} />
+                  <DadoItem label='Complemento' value={clienteDetalhes.complemento} />
+                  <DadoItem label='Cidade' value={clienteDetalhes.cidade} />
+                  <DadoItem label='UF' value={clienteDetalhes.uf} />
                 </Grade>
               </Secao>
 
@@ -1135,6 +1141,35 @@ function FormularioCliente({
               onChange={(e) => campo('bairro', e.target.value.toUpperCase())}
               style={{ width: '100%', height: 34, padding: '0 10px' }}
             />
+          </Campo>
+          <Campo label='Complemento' col={1}>
+            <input
+              value={form.complemento || ''}
+              onChange={(e) => campo('complemento', e.target.value.toUpperCase())}
+              style={{ width: '100%', height: 34, padding: '0 10px' }}
+            />
+          </Campo>
+          <Campo label='Cidade' col={1}>
+            <input
+              value={form.cidade || ''}
+              onChange={(e) => campo('cidade', e.target.value.toUpperCase())}
+              style={{ width: '100%', height: 34, padding: '0 10px' }}
+            />
+          </Campo>
+          <Campo label='UF' col={1}>
+            <select
+              value={form.uf || 'SP'}
+              onChange={(e) => campo('uf', e.target.value)}
+              style={{ width: '100%', height: 34, padding: '0 10px' }}
+            >
+              {[
+                'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
+                'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
+                'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+              ].map((uf) => (
+                <option key={uf}>{uf}</option>
+              ))}
+            </select>
           </Campo>
           <Campo label='Telefone' col={1}>
             <input

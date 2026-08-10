@@ -29,6 +29,8 @@ const dadosIniciais = {
   regime_tributario: 'simples',
   cnae: '',
   crt: '1',
+  inscricao_municipal: '',
+  codigo_ibge_municipio: '3534302',
   data_abertura: '04/03/1997',
   porte: 'ME',
   natureza_juridica: 'Empresário Individual (213-5)',
@@ -69,8 +71,11 @@ const secoes = [
   {
     titulo: 'Dados fiscais',
     campos: [
-      { key: 'cnae', label: 'CNAE', col: 1 },
+      { key: 'regime_tributario', label: 'Regime tributário', col: 1 },
       { key: 'crt', label: 'CRT', col: 1 },
+      { key: 'cnae', label: 'CNAE', col: 1 },
+      { key: 'inscricao_municipal', label: 'Inscrição municipal', col: 1 },
+      { key: 'codigo_ibge_municipio', label: 'Código IBGE do município', col: 1 },
       { key: 'portal_nfe_url', label: 'Link do portal de emissão de notas (prefeitura)', col: 2 },
     ],
   },
@@ -422,6 +427,20 @@ export default function Configuracoes() {
                           <option value='presumido'>Lucro Presumido</option>
                           <option value='real'>Lucro Real</option>
                           <option value='mei'>MEI</option>
+                        </select>
+                      ) : campo.key === 'crt' ? (
+                        <select
+                          value={form[campo.key]}
+                          onChange={f(campo.key)}
+                          style={{
+                            width: '100%',
+                            height: 36,
+                            padding: '0 10px',
+                          }}
+                        >
+                          <option value='1'>1 - Simples Nacional</option>
+                          <option value='2'>2 - Simples Nacional - excesso de sublimite</option>
+                          <option value='3'>3 - Regime Normal</option>
                         </select>
                       ) : campo.key === 'uf' ? (
                         <select
