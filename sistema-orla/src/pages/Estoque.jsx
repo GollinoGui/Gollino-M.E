@@ -22,6 +22,24 @@ const abasEstoque = [
   { id: 'reajustes', label: 'Reajuste de preços', pronto: true },
 ]
 
+// Busca tolerante a acento e ordem das palavras — "santos calhas" ou
+// "SANTOS CALHAS" acham "Calhas Santos Ltda ME" do mesmo jeito. Sem isso,
+// só um substring exato (incluindo acento) batia, e a lista sumia sem
+// aviso quando a pessoa digitava fora de ordem ou sem acento.
+function normalizar(s) {
+  return (s || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .trim()
+}
+function correspondeTermos(texto, busca) {
+  const termos = normalizar(busca).split(/\s+/).filter(Boolean)
+  const alvo = normalizar(texto)
+  return termos.every((t) => alvo.includes(t))
+}
+
 // Estado/posicionamento comum aos dropdowns de busca abaixo. O menu é
 // renderizado num portal (document.body) em position:fixed pra não ficar
 // preso/cortado pelo overflow:auto do modal — sem isso, campos perto do
@@ -100,9 +118,7 @@ function ProdutoDropdown({ value, onChange, produtos, placeholder = 'Pesquisar p
   const { inputRef, open, pos, abrir, fechar, setOpen } = useMenuFlutuante()
 
   const filtrados = produtos.filter(
-    (p) =>
-      p.descricao.toLowerCase().includes(busca.toLowerCase()) ||
-      p.codigo.includes(busca),
+    (p) => correspondeTermos(p.descricao, busca) || p.codigo.includes(busca),
   )
 
   return (
@@ -121,6 +137,12 @@ function ProdutoDropdown({ value, onChange, produtos, placeholder = 'Pesquisar p
         style={{ width: '100%', height: 36, padding: '0 10px' }}
         autoFocus
       />
+      {open && busca.trim() && filtrados.length === 0 && pos && createPortal(
+        <div style={menuFlutuanteStyle(pos)}>
+          <div style={{ padding: '10px 12px', fontSize: 12.5, color: 'var(--text-muted)' }}>Nenhum produto encontrado.</div>
+        </div>,
+        document.body,
+      )}
       {open && filtrados.length > 0 && pos && createPortal(
         <div style={menuFlutuanteStyle(pos)}>
           {filtrados.map((p) => (
@@ -167,7 +189,7 @@ function BuscaDropdown({ value, onChange, itens, campoBusca, campoLabel, campoSu
   }, [value, campoLabel])
 
   const filtrados = itens
-    .filter((it) => (it[campoBusca] || '').toLowerCase().includes(busca.toLowerCase()))
+    .filter((it) => correspondeTermos(it[campoBusca], busca))
     .slice(0, 30)
 
   return (
@@ -185,6 +207,12 @@ function BuscaDropdown({ value, onChange, itens, campoBusca, campoLabel, campoSu
         placeholder={placeholder}
         style={{ width: '100%', height: 36, padding: '0 10px' }}
       />
+      {open && busca.trim() && filtrados.length === 0 && pos && createPortal(
+        <div style={menuFlutuanteStyle(pos)}>
+          <div style={{ padding: '10px 12px', fontSize: 12.5, color: 'var(--text-muted)' }}>Nenhum resultado encontrado.</div>
+        </div>,
+        document.body,
+      )}
       {open && filtrados.length > 0 && pos && createPortal(
         <div style={menuFlutuanteStyle(pos)}>
           {filtrados.map((it) => (
@@ -215,6 +243,16 @@ function BuscaDropdown({ value, onChange, itens, campoBusca, campoLabel, campoSu
 
 const lbl = { fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }
 const inp = { width: '100%', height: 34, padding: '0 8px', fontSize: 13 }
+
+// Soma N meses a uma data 'YYYY-MM-DD', preservando o dia quando o mês de
+// destino tiver dias suficientes (senão cai no último dia daquele mês).
+function addMesesClamp(dataStr, n) {
+  const [y, m, d] = dataStr.split('-').map(Number)
+  const alvo = new Date(y, m - 1 + n, 1)
+  const ultimoDia = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate()
+  alvo.setDate(Math.min(d, ultimoDia))
+  return `${alvo.getFullYear()}-${String(alvo.getMonth() + 1).padStart(2, '0')}-${String(alvo.getDate()).padStart(2, '0')}`
+}
 
 // Entrada de mercadoria: cabeçalho da nota + N itens (cada um atualiza
 // estoque/custo médio/preço de venda do produto) + N faturas (cada uma vira
@@ -255,6 +293,7 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
   const [nroDocto, setNroDocto] = useState('')
   const [vencimento, setVencimento] = useState('')
   const [valorFatura, setValorFatura] = useState('')
+  const [numParcelas, setNumParcelas] = useState('')
 
   useEffect(() => {
     window.api.produtos.listar({ situacao: 'A' }).then(setProdutos).catch(console.error)
@@ -352,6 +391,37 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
     setFaturas((prev) => prev.filter((_, j) => j !== i))
   }
 
+  function atualizarFatura(i, campo, valor) {
+    setFaturas((prev) => prev.map((f, j) => (j === i ? { ...f, [campo]: valor } : f)))
+  }
+
+  // Divide o valor restante (itens - faturas já lançadas) em N parcelas
+  // mensais a partir do vencimento informado, repetindo plano de contas/
+  // histórico/nº docto já preenchidos no mini-formulário. A última parcela
+  // absorve o arredondamento pra bater centavo a centavo com o total.
+  function gerarParcelas() {
+    const n = parseInt(numParcelas)
+    const restante = totalItens - totalFaturas
+    if (!(n > 0) || !vencimento || !(restante > 0)) return
+    const restanteCentavos = Math.round(restante * 100)
+    const baseCentavos = Math.floor(restanteCentavos / n)
+    const novas = Array.from({ length: n }, (_, i) => {
+      const valorCentavos = i < n - 1 ? baseCentavos : restanteCentavos - baseCentavos * (n - 1)
+      return {
+        codigo_plano_conta: contaSel?.codigo || null,
+        conta_label: contaSel?.descricao || '',
+        codigo_historico: historicoSel?.codigo || null,
+        historico_label: historicoSel?.nome || '',
+        nro_docto: nroDocto,
+        data_vencimento: addMesesClamp(vencimento, i),
+        valor_docto: valorCentavos / 100,
+      }
+    })
+    setFaturas((prev) => [...prev, ...novas])
+    limparFormFatura()
+    setNumParcelas('')
+  }
+
   const totalItens = itens.reduce((s, i) => s + i.quantidade * i.preco_custo + i.rateio_despesas, 0)
   const totalFaturas = faturas.reduce((s, f) => s + f.valor_docto, 0)
   const previsaoLucro = itens.reduce((s, i) => s + (i.preco_venda_vista - i.preco_custo) * i.quantidade, 0)
@@ -384,7 +454,7 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
 
   return (
     <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
-      <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-md)', width: 700, maxHeight: '88vh', display: 'flex', flexDirection: 'column', padding: 24, boxShadow: '0 16px 40px rgba(0,0,0,0.14)', animation: 'fadeIn 0.15s ease both' }}>
+      <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-md)', width: 820, maxHeight: '88vh', display: 'flex', flexDirection: 'column', padding: 24, boxShadow: '0 16px 40px rgba(0,0,0,0.14)', animation: 'fadeIn 0.15s ease both' }}>
         <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <ArrowDownCircle size={18} style={{ color: 'var(--green-500)' }} />
           Nova entrada de mercadoria
@@ -427,7 +497,7 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
           {/* Itens */}
           <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>ADICIONAR ITEM</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 70px 90px 90px 90px', gap: 8, marginBottom: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 0.9fr 95px 105px 105px 105px', gap: 8, marginBottom: 8 }}>
               <div>
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Produto</label>
                 <ProdutoDropdown key={itemKey} value='' onChange={selecionarProduto} produtos={produtos} placeholder='Buscar...' />
@@ -497,7 +567,7 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
           {/* Faturas */}
           <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>ADICIONAR FATURA</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 100px 110px 100px auto', gap: 8, alignItems: 'end' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr 110px 150px 120px auto', gap: 8, alignItems: 'end' }}>
               <div>
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Plano de contas</label>
                 <BuscaDropdown key={`conta-${faturaKey}`} value={contaSel} onChange={setContaSel} itens={contasFolha} campoBusca='descricao' campoLabel='descricao' campoSub='grupo' placeholder='Buscar...' />
@@ -522,6 +592,26 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
                 + Add
               </button>
             </div>
+
+            {itens.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '140px auto 1fr', gap: 8, alignItems: 'end', marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
+                <div>
+                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Nº de parcelas</label>
+                  <input value={numParcelas} onChange={(e) => setNumParcelas(e.target.value)} type='number' min='2' style={inp} placeholder='Ex: 3' />
+                </div>
+                <button
+                  onClick={gerarParcelas}
+                  disabled={!(parseInt(numParcelas) > 0) || !vencimento || !(totalItens - totalFaturas > 0)}
+                  title='Usa o Plano de contas, Histórico, Nº Docto e Vencimento (1ª parcela) já preenchidos acima, dividindo o valor restante em parcelas mensais'
+                  style={{ height: 34, padding: '0 12px', background: 'var(--gray-700)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, whiteSpace: 'nowrap', opacity: parseInt(numParcelas) > 0 && vencimento && totalItens - totalFaturas > 0 ? 1 : 0.4 }}
+                >
+                  Gerar parcelas mensais
+                </button>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  Divide o valor restante ({fmt(totalItens - totalFaturas)}) em N parcelas iguais, uma por mês a partir do Vencimento acima — dá pra editar cada parcela depois de gerada.
+                </div>
+              </div>
+            )}
           </div>
 
           {faturas.length > 0 && (
@@ -538,9 +628,15 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
                   <tr key={idx}>
                     <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{f.conta_label || '-'}</td>
                     <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{f.historico_label || '-'}</td>
-                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{f.nro_docto || '-'}</td>
-                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{fmtDate(f.data_vencimento)}</td>
-                    <td style={{ padding: '7px 8px', fontSize: 13, fontWeight: 600, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmt(f.valor_docto)}</td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>
+                      <input value={f.nro_docto || ''} onChange={(e) => atualizarFatura(idx, 'nro_docto', e.target.value)} style={{ ...inp, height: 28 }} />
+                    </td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>
+                      <input value={f.data_vencimento || ''} onChange={(e) => atualizarFatura(idx, 'data_vencimento', e.target.value)} type='date' style={{ ...inp, height: 28, minWidth: 138 }} />
+                    </td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>
+                      <input value={f.valor_docto} onChange={(e) => atualizarFatura(idx, 'valor_docto', parseFloat(e.target.value) || 0)} type='number' min='0' style={{ ...inp, height: 28, textAlign: 'right', minWidth: 100 }} />
+                    </td>
                     <td style={{ padding: '7px 8px', borderBottom: '1px solid var(--border)' }}>
                       <button onClick={() => removerFatura(idx)} style={{ color: 'var(--red-500)', fontSize: 12, padding: '2px 6px' }}>✕</button>
                     </td>
@@ -572,6 +668,11 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
                   O total das faturas precisa bater com o total dos itens antes de confirmar.
                 </div>
               )}
+            </div>
+          )}
+          {itens.length > 0 && faturas.length === 0 && (
+            <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 'var(--radius-md)', padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#92400E' }}>
+              ⚠ Nenhuma fatura adicionada — esta entrada será confirmada sem gerar conta a pagar. Se o fornecedor precisa ser pago depois, adicione a fatura acima antes de confirmar.
             </div>
           )}
           {erro && (
