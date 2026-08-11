@@ -200,6 +200,11 @@ function RelVendas() {
       ? vendas
       : vendas.filter((v) => v.codigo_forma_pagamento1 === filtroForma)
 
+  const { ordenados, coluna, direcao, alternar } = useOrdenacao(filtradas, {
+    colunaInicial: 'orcamento',
+    direcaoInicial: 'asc',
+  })
+
   const totalVendas = filtradas.reduce((s, v) => s + (v.valor_total || 0), 0)
   const ticketMedio = filtradas.length > 0 ? totalVendas / filtradas.length : 0
 
@@ -221,7 +226,7 @@ function RelVendas() {
 
   function exportarExcel() {
     exportarCSV(
-      filtradas.map((v) => ({
+      ordenados.map((v) => ({
         'Nº Venda': v.orcamento,
         Data: fmtDate(v.data),
         Cliente: v.nome_cliente || '—',
@@ -246,7 +251,7 @@ function RelVendas() {
       titulo: 'Vendas',
       subtitulo: `Período de ${fmtDate(dataInicio)} a ${fmtDate(dataFim)} — ${filtradas.length} venda(s)`,
       colunas,
-      linhas: filtradas,
+      linhas: ordenados,
       montarLinha: (v) =>
         `<tr><td>${v.orcamento}</td><td>${fmtDate(v.data)}</td><td>${v.nome_cliente || '—'}</td><td>${v.codigo_forma_pagamento1 || '—'}</td><td class="num">${fmtMoedaBR(v.valor_total)}</td></tr>`,
       montarTotalGeral: () => `<td colspan="4">TOTAL DO PERÍODO</td><td class="num">${fmtMoedaBR(totalVendas)}</td>`,
@@ -475,9 +480,20 @@ function RelVendas() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Nº Venda', 'Data', 'Cliente', 'Forma', 'Total', 'Ação'].map((h) => (
-                    <th
-                      key={h}
+                  {[
+                    { label: 'Nº Venda', chave: 'orcamento' },
+                    { label: 'Data', chave: 'data' },
+                    { label: 'Cliente', chave: 'nome_cliente' },
+                    { label: 'Forma', chave: 'codigo_forma_pagamento1' },
+                    { label: 'Total', chave: 'valor_total' },
+                  ].map((h) => (
+                    <ThOrdenavel
+                      key={h.chave}
+                      label={h.label}
+                      chave={h.chave}
+                      colunaAtual={coluna}
+                      direcao={direcao}
+                      onOrdenar={alternar}
                       style={{
                         padding: '8px 14px',
                         fontSize: 11,
@@ -487,14 +503,25 @@ function RelVendas() {
                         background: 'var(--gray-50)',
                         borderBottom: '1px solid var(--border)',
                       }}
-                    >
-                      {h}
-                    </th>
+                    />
                   ))}
+                  <th
+                    style={{
+                      padding: '8px 14px',
+                      fontSize: 11,
+                      fontWeight: 500,
+                      color: 'var(--text-secondary)',
+                      textAlign: 'left',
+                      background: 'var(--gray-50)',
+                      borderBottom: '1px solid var(--border)',
+                    }}
+                  >
+                    Ação
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {filtradas.map((v) => (
+                {ordenados.map((v) => (
                   <tr
                     key={v.orcamento}
                     onMouseEnter={(e) =>
