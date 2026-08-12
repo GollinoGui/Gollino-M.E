@@ -150,7 +150,7 @@ export default function NotaFiscal() {
               Registrar NF-e
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
-              Venda #{modal.orcamento} — {modal.nome_cliente} — {fmt(modal.valor_total)}
+              Venda #{modal.orcamento} — {modal.nome_cliente}{modal.codigo_cliente ? ` (#${modal.codigo_cliente})` : ''} — {fmt(modal.valor_total)}
             </div>
 
             <button
@@ -217,7 +217,7 @@ export default function NotaFiscal() {
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>Itens</div>
                       {detalhes.itens.map(it => (
                         <div key={it.id} style={{ fontSize: 12, padding: '3px 0', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtQtd(it.quantidade, it.unidade)}x {it.descricao}</span>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtQtd(it.quantidade, it.unidade)}x <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>#{it.codigo_produto}</span> {it.descricao}</span>
                           <span style={{ flexShrink: 0, fontWeight: 500 }}>{fmt(it.valor_total)}</span>
                         </div>
                       ))}
@@ -364,7 +364,7 @@ export default function NotaFiscal() {
                   {fmtDate(v.data)}
                 </td>
                 <td style={{ padding: '9px 12px', fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {v.nome_cliente}
+                  {v.nome_cliente || '—'}{v.codigo_cliente ? ` (#${v.codigo_cliente})` : ''}
                 </td>
                 <td style={{ padding: '9px 12px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
                   {fmt(v.valor_total)}

@@ -21,7 +21,7 @@ function ModalAjuste({ cliente, onClose, onConfirm }) {
       <div style={{ background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border-md)', width: 400, boxShadow: '0 16px 40px rgba(0,0,0,0.15)', overflow: 'hidden' }}>
         <div style={{ background: 'var(--amber-500)', padding: '16px 20px' }}>
           <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, marginBottom: 2 }}>AJUSTE DE HAVER</div>
-          <div style={{ color: '#fff', fontSize: 16, fontWeight: 600 }}>{cliente.nome}</div>
+          <div style={{ color: '#fff', fontSize: 16, fontWeight: 600 }}>#{cliente.codigo} · {cliente.nome}</div>
           <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2 }}>
             Saldo atual: <strong>{fmt(cliente.haver)}</strong>
           </div>

@@ -112,7 +112,7 @@ function ModalConfirmarPagamento({ contas, onClose, onConfirm }) {
             }}
           >
             {unico
-              ? contas[0].nome_fornecedor || contas[0].codigo_fornecedor
+              ? `${contas[0].nome_fornecedor || '—'} (#${contas[0].codigo_fornecedor})`
               : `${contas.length} conta(s) selecionada(s)`}
           </div>
           <div style={{ color: 'var(--surface)', fontSize: 22, fontWeight: 600 }}>
@@ -164,7 +164,7 @@ function ModalConfirmarPagamento({ contas, onClose, onConfirm }) {
                       textOverflow: 'ellipsis',
                     }}
                   >
-                    {c.nome_fornecedor || c.codigo_fornecedor}
+                    {c.nome_fornecedor || '—'} (#{c.codigo_fornecedor})
                   </div>
                   <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>
                     Venc. {fmtDate(c.data_vencimento)}
@@ -334,6 +334,7 @@ function ModalConfirmarPagamento({ contas, onClose, onConfirm }) {
 function ModalNova({ onClose, onSalvar }) {
   const [form, setForm] = useState({
     codigo_fornecedor: '',
+    codigo_plano_conta: null,
     observacao: '',
     nro_docto: '',
     valor_docto: '',
@@ -344,12 +345,20 @@ function ModalNova({ onClose, onSalvar }) {
   const [planoContas, setPlanoContas] = useState([])
   const [contaAberta, setContaAberta] = useState(false)
   const contaRef = useRef(null)
+  const [fornecedoresLista, setFornecedoresLista] = useState([])
+  const [fornecedorSelecionado, setFornecedorSelecionado] = useState(null)
+  const [fornecedorAberta, setFornecedorAberta] = useState(false)
+  const fornecedorRef = useRef(null)
   const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }))
   const valido =
     form.codigo_fornecedor && parseFloat(form.valor_docto) > 0 && form.data_vencimento
 
   useEffect(() => {
     window.api.planoContas.listar({ situacao: 'A' }).then(setPlanoContas).catch(console.error)
+  }, [])
+
+  useEffect(() => {
+    window.api.fornecedores.listar({ situacao: 'A' }).then(setFornecedoresLista).catch(console.error)
   }, [])
 
   useEffect(() => {
@@ -360,6 +369,23 @@ function ModalNova({ onClose, onSalvar }) {
     document.addEventListener('mousedown', handleClickFora)
     return () => document.removeEventListener('mousedown', handleClickFora)
   }, [contaAberta])
+
+  useEffect(() => {
+    if (!fornecedorAberta) return
+    function handleClickFora(e) {
+      if (fornecedorRef.current && !fornecedorRef.current.contains(e.target)) setFornecedorAberta(false)
+    }
+    document.addEventListener('mousedown', handleClickFora)
+    return () => document.removeEventListener('mousedown', handleClickFora)
+  }, [fornecedorAberta])
+
+  // Sem seleção confirmada, o campo continua texto livre (mesmo
+  // comportamento de sempre — cobre pagamento avulso a quem não tem
+  // fornecedor cadastrado). Só filtra a lista pelo que já foi digitado.
+  const buscaFornecedor = form.codigo_fornecedor.trim().toLowerCase()
+  const fornecedoresFiltrados = (
+    buscaFornecedor ? fornecedoresLista.filter((fo) => fo.nome.toLowerCase().includes(buscaFornecedor)) : fornecedoresLista
+  ).slice(0, 30)
 
   // Só as contas-folha (nível 4) servem pra classificar um lançamento — os
   // níveis 2/3 são só agrupadores. O grupo (nível 3) vira o "breadcrumb" pra
@@ -422,7 +448,7 @@ function ModalNova({ onClose, onSalvar }) {
             marginBottom: 16,
           }}
         >
-          <div style={{ gridColumn: '1 / -1' }}>
+          <div style={{ gridColumn: '1 / -1', position: 'relative' }} ref={fornecedorRef}>
             <label
               style={{
                 fontSize: 11,
@@ -434,8 +460,13 @@ function ModalNova({ onClose, onSalvar }) {
               Fornecedor / Descrição *
             </label>
             <input
-              value={form.codigo_fornecedor}
-              onChange={f('codigo_fornecedor')}
+              value={fornecedorSelecionado ? fornecedorSelecionado.nome : form.codigo_fornecedor}
+              onChange={(e) => {
+                setFornecedorSelecionado(null)
+                setForm((p) => ({ ...p, codigo_fornecedor: e.target.value }))
+                setFornecedorAberta(true)
+              }}
+              onFocus={() => setFornecedorAberta(true)}
               style={{
                 width: '100%',
                 height: 36,
@@ -446,6 +477,54 @@ function ModalNova({ onClose, onSalvar }) {
               autoFocus
               placeholder='Nome do fornecedor ou descrição'
             />
+            {fornecedorAberta && buscaFornecedor && fornecedoresFiltrados.length > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  zIndex: 50,
+                  marginTop: 2,
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border-md)',
+                  borderRadius: 8,
+                  boxShadow: '0 6px 20px rgba(0,0,0,0.12)',
+                  maxHeight: 180,
+                  overflowY: 'auto',
+                }}
+              >
+                {fornecedoresFiltrados.map((fo) => (
+                  <button
+                    key={fo.codigo}
+                    onClick={() => {
+                      setFornecedorSelecionado(fo)
+                      setForm((p) => ({ ...p, codigo_fornecedor: fo.codigo }))
+                      setFornecedorAberta(false)
+                    }}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '7px 12px',
+                      fontSize: 12.5,
+                      border: 'none',
+                      borderBottom: '1px solid var(--border)',
+                      background: 'transparent',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>
+                      #{fo.codigo}
+                    </span>{' '}
+                    · {fo.nome}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div style={{ gridColumn: '1 / -1', position: 'relative' }} ref={contaRef}>
             <label
@@ -460,7 +539,13 @@ function ModalNova({ onClose, onSalvar }) {
             </label>
             <input
               value={form.observacao}
-              onChange={f('observacao')}
+              onChange={(e) => {
+                // Digitar por cima de uma sugestão já escolhida desfaz o
+                // match — só fica gravado codigo_plano_conta quando a
+                // pessoa realmente clica numa opção da lista.
+                setForm((p) => ({ ...p, observacao: e.target.value, codigo_plano_conta: null }))
+                setContaAberta(true)
+              }}
               onFocus={() => setContaAberta(true)}
               style={{
                 width: '100%',
@@ -492,7 +577,7 @@ function ModalNova({ onClose, onSalvar }) {
                   <button
                     key={c.codigo}
                     onClick={() => {
-                      setForm((p) => ({ ...p, observacao: c.descricao }))
+                      setForm((p) => ({ ...p, observacao: c.descricao, codigo_plano_conta: c.codigo }))
                       setContaAberta(false)
                     }}
                     style={{
@@ -731,7 +816,7 @@ export default function ContasPagar({ usuario }) {
       for (const c of g.itens) {
         linhas.push({
           Documento: c.nro_docto || '—',
-          Fornecedor: g.nome,
+          Fornecedor: g.codigo ? `${g.nome} (#${g.codigo})` : g.nome,
           Vencimento: fmtDate(c.data_vencimento),
           'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
           Situação: STATUS_CFG[getSituacao(c)].label,
@@ -740,7 +825,7 @@ export default function ContasPagar({ usuario }) {
       const subtotal = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
       linhas.push({
         Documento: '',
-        Fornecedor: `SUBTOTAL — ${g.nome}`,
+        Fornecedor: `SUBTOTAL — ${g.codigo ? `${g.nome} (#${g.codigo})` : g.nome}`,
         Vencimento: '',
         'Valor (R$)': subtotal.toFixed(2).replace('.', ','),
         Situação: '',
@@ -830,7 +915,7 @@ export default function ContasPagar({ usuario }) {
       await window.api.dialog.alert(
         `${pagas.length} conta(s) paga(s) com sucesso.\n${falhas.length} falharam:\n` +
           falhas
-            .map((f) => `• ${f.conta?.nome_fornecedor || f.conta?.codigo_fornecedor || '?'}: ${f.erro}`)
+            .map((f) => `• ${f.conta?.nome_fornecedor || '—'} (#${f.conta?.codigo_fornecedor || '?'}): ${f.erro}`)
             .join('\n'),
       )
     }
@@ -859,7 +944,7 @@ export default function ContasPagar({ usuario }) {
       { label: 'Valor', num: true },
     ]
     const montarLinha = (c) =>
-      `<tr><td>${c.nome_fornecedor || c.codigo_fornecedor}</td><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td></tr>`
+      `<tr><td>${c.nome_fornecedor || '—'} (#${c.codigo_fornecedor})</td><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td></tr>`
     const totalPagas = pagas.reduce((s, c) => s + (c.valor_docto || 0), 0)
     const totalAbertas = abertas.reduce((s, c) => s + (c.valor_docto || 0), 0)
     const html = gerarHtmlSecoes({
@@ -890,6 +975,7 @@ export default function ContasPagar({ usuario }) {
     try {
       await window.api.contasPagar.salvar({
         codigo_fornecedor: form.codigo_fornecedor,
+        codigo_plano_conta: form.codigo_plano_conta || null,
         observacao: form.observacao,
         nro_docto: form.nro_docto,
         valor_docto: parseFloat(form.valor_docto),
@@ -1189,7 +1275,7 @@ export default function ContasPagar({ usuario }) {
                         textOverflow: 'ellipsis',
                       }}
                     >
-                      {c.nome_fornecedor || c.codigo_fornecedor}
+                      {c.nome_fornecedor || '—'} (#{c.codigo_fornecedor})
                       {c.observacao && (
                         <span
                           style={{

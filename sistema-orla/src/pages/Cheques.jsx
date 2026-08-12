@@ -189,7 +189,7 @@ export default function Cheques({ tipo = 'R' }) {
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{c.nome_pessoa || '-'}</td>
+                  <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{c.nome_pessoa || '-'}{c.codigo_pessoa ? ` (#${c.codigo_pessoa})` : ''}</td>
                   <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)', fontFamily: 'monospace' }}>{c.numero || '-'}</td>
                   <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{c.banco || '-'}</td>
                   <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, borderBottom: '1px solid var(--border)', color: tipo === 'R' ? '#15803D' : '#B91C1C' }}>{fmt(c.valor)}</td>

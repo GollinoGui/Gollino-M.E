@@ -1274,7 +1274,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                           color: 'var(--text-primary)',
                         }}
                       >
-                        {v.nome_cliente || 'Consumidor'}
+                        {v.nome_cliente ? `${v.nome_cliente} (#${v.codigo_cliente})` : 'Consumidor'}
                       </div>
                       <div
                         style={{
@@ -1688,7 +1688,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                           textOverflow: 'ellipsis',
                         }}
                       >
-                        {c.nome_cliente || c.codigo_cliente}
+                        {c.nome_cliente ? `${c.nome_cliente} (#${c.codigo_cliente})` : `#${c.codigo_cliente}`}
                       </div>
                       <div
                         style={{
@@ -1793,7 +1793,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                       textOverflow: 'ellipsis',
                     }}
                   >
-                    {p.descricao}
+                    #{p.codigo} {p.descricao}
                   </div>
                   <div
                     style={{
@@ -1871,7 +1871,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                         textOverflow: 'ellipsis',
                       }}
                     >
-                      {c.nome_fornecedor || c.codigo_fornecedor}
+                      {c.nome_fornecedor ? `${c.nome_fornecedor} (#${c.codigo_fornecedor})` : `#${c.codigo_fornecedor}`}
                     </div>
                     <div
                       style={{

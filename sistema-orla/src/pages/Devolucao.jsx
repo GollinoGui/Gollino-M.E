@@ -127,7 +127,7 @@ export default function Devolucao({ usuario }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>VENDA #{venda.orcamento}</div>
-                <div style={{ fontSize: 16, fontWeight: 600 }}>{venda.nome_cliente || 'Consumidor'}</div>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>{venda.nome_cliente || 'Consumidor'}{venda.codigo_cliente ? ` (#${venda.codigo_cliente})` : ''}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
                   {fmtDate(venda.data)} · {venda.codigo_forma_pagamento1 || '—'} · Total: <strong>{fmt(venda.valor_total)}</strong>
                 </div>

@@ -1196,6 +1196,9 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
                     textOverflow: 'ellipsis',
                   }}
                 >
+                  <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)', fontWeight: 400 }}>
+                    #{item.codigo}
+                  </span>{' '}
                   {item.descricao}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
@@ -1319,7 +1322,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-primary)' }}>#{v.orcamento}</div>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {v.nome_cliente || 'Consumidor'} · {fmt(v.valor_total)}
+                    {v.nome_cliente || 'Consumidor'}{v.codigo_cliente ? ` (#${v.codigo_cliente})` : ''} · {fmt(v.valor_total)}
                   </div>
                 </div>
                 <button

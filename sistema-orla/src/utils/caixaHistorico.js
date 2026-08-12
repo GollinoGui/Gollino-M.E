@@ -50,7 +50,7 @@ export function montarHistoricoSessao(resumo, vendas) {
     ...(vendas || []).map((v) => ({
       tipo: 'venda',
       hora: v.hora_cadastro || '--:--',
-      descricao: `Venda #${v.orcamento} — ${v.nome_cliente || 'Consumidor'}`,
+      descricao: `Venda #${v.orcamento} — ${v.nome_cliente ? `${v.nome_cliente} (#${v.codigo_cliente})` : 'Consumidor'}`,
       valor: v.valor_total || 0,
     })),
     ...(resumo?.movimentosExtras || []).map((m) => ({

@@ -1180,6 +1180,19 @@ const entradasMercadoria = {
 // Ponto de Equilíbrio em Lucro Real). FIXO vale todo mês até ser
 // editado/removido (mes_referencia fica null); VARIAVEL é lançado mês a mês.
 // ============================================================
+// Códigos de plano_contas usados pelo auto-puxar de despesas variáveis do
+// Ponto de Equilíbrio (ver gastosOperacionais.despesasCategoriaMes). Estáveis
+// no cadastro do Supabase — conferidos direto no banco antes de codar.
+const PLANO_CONTA_MATERIAL_LIMPEZA = '000097'
+const PLANO_CONTA_MATERIAL_ESCRITORIO = '000282' // inclui tinta/cartucho de impressora — sem categoria própria
+
+function limitesDoMes(mesReferencia) {
+  const [y, m] = mesReferencia.split('-').map(Number)
+  const ini = `${mesReferencia}-01`
+  const fim = new Date(y, m, 0).toISOString().slice(0, 10)
+  return { ini, fim }
+}
+
 const gastosOperacionais = {
   async listar(mesReferencia) {
     const [{ data: fixos, error: e1 }, { data: variaveis, error: e2 }] = await Promise.all([
@@ -1188,7 +1201,33 @@ const gastosOperacionais = {
     ])
     if (e1) throw new Error(e1.message)
     if (e2) throw new Error(e2.message)
-    return [...(fixos || []), ...(variaveis || [])].sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR', { sensitivity: 'base' }))
+
+    // Reconciliação: pra cada gasto fixo linkado a um fornecedor, busca a
+    // conta a pagar desse fornecedor com vencimento dentro do mês pedido —
+    // isso é o que vira o selo "pago"/"em aberto"/"não lançado" na tela.
+    const fornecedoresLinkados = [...new Set((fixos || []).map((g) => g.codigo_fornecedor).filter(Boolean))]
+    let contasPorFornecedor = {}
+    if (fornecedoresLinkados.length) {
+      const { ini, fim } = limitesDoMes(mesReferencia)
+      const { data: contas, error: e3 } = await supabase
+        .from('contas_pagar')
+        .select('codigo_fornecedor, situacao_docto, valor_docto, valor_pagamento, data_vencimento, data_pagamento')
+        .in('codigo_fornecedor', fornecedoresLinkados)
+        .gte('data_vencimento', ini)
+        .lte('data_vencimento', fim)
+        .neq('situacao_docto', 'C')
+      if (e3) throw new Error(e3.message)
+      for (const c of contas || []) {
+        const atual = contasPorFornecedor[c.codigo_fornecedor]
+        if (!atual || c.data_vencimento > atual.data_vencimento) contasPorFornecedor[c.codigo_fornecedor] = c
+      }
+    }
+
+    const fixosComConciliacao = (fixos || []).map((g) => ({
+      ...g,
+      conta_pagar_vinculada: g.codigo_fornecedor ? (contasPorFornecedor[g.codigo_fornecedor] || null) : null,
+    }))
+    return [...fixosComConciliacao, ...(variaveis || [])].sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR', { sensitivity: 'base' }))
   },
 
   async salvar(dados) {
@@ -1197,6 +1236,7 @@ const gastosOperacionais = {
       descricao: dados.descricao,
       valor: Number(dados.valor) || 0,
       mes_referencia: dados.tipo === 'VARIAVEL' ? dados.mes_referencia : null,
+      codigo_fornecedor: dados.tipo === 'FIXO' ? (dados.codigo_fornecedor || null) : null,
       usuario: dados.usuario || '',
       data_atualizacao: hoje(),
       hora_atualizacao: agora(),
@@ -1212,6 +1252,36 @@ const gastosOperacionais = {
     const { error } = await supabase.from('gastos_operacionais').update({ situacao: 'C' }).eq('id', id)
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
+  },
+
+  // Despesas variáveis que já passam por Contas a Pagar (material de
+  // limpeza/escritório/tinta de impressora) — puxadas por categoria em vez
+  // de recadastradas à mão aqui. Só funciona pros lançamentos que tiverem a
+  // categoria selecionada no formulário de Contas a Pagar.
+  async despesasCategoriaMes(mesReferencia) {
+    const { ini, fim } = limitesDoMes(mesReferencia)
+    const categorias = {
+      [PLANO_CONTA_MATERIAL_LIMPEZA]: 'Material de Limpeza',
+      [PLANO_CONTA_MATERIAL_ESCRITORIO]: 'Material de Escritório / Cartucho',
+    }
+    const { data, error } = await supabase
+      .from('contas_pagar')
+      .select('codigo_plano_conta, valor_docto')
+      .in('codigo_plano_conta', Object.keys(categorias))
+      .gte('data_vencimento', ini)
+      .lte('data_vencimento', fim)
+      .neq('situacao_docto', 'C')
+    if (error) throw new Error(error.message)
+
+    const totais = {}
+    for (const c of data || []) {
+      totais[c.codigo_plano_conta] = (totais[c.codigo_plano_conta] || 0) + (c.valor_docto || 0)
+    }
+    return Object.entries(categorias).map(([codigo, categoria]) => ({
+      codigo_plano_conta: codigo,
+      categoria,
+      total: totais[codigo] || 0,
+    }))
   },
 }
 

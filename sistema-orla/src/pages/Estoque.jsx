@@ -10,6 +10,9 @@ import { fmtQtd } from '../utils/formatQtd'
 const fmt = (v) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = (d) => new Date(d).toLocaleDateString('pt-BR')
+const codPrefix = (codigo) => (
+  <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)', marginRight: 6 }}>#{codigo}</span>
+)
 
 // Mesma string usada em electron/database.js (registrarPedidoCompraDaEntrada)
 // pra marcar o pedido de compra espelhado automaticamente por uma entrada de
@@ -169,7 +172,7 @@ function ProdutoDropdown({ value, onChange, produtos, placeholder = 'Pesquisar p
             >
               <span style={{ fontWeight: 500 }}>{p.descricao}</span>
               <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
-                Estoque: {fmtQtd(p.estoque_atual ?? 0, p.unidade)}
+                #{p.codigo} · Estoque: {fmtQtd(p.estoque_atual ?? 0, p.unidade)}
               </span>
             </button>
           ))}
@@ -558,7 +561,7 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
               <tbody>
                 {itens.map((i, idx) => (
                   <tr key={idx}>
-                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{i.descricao}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{codPrefix(i.codigo_produto)}{i.descricao}</td>
                     <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmtQtd(i.quantidade, i.unidade)}</td>
                     <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmt(i.preco_custo)}</td>
                     <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{i.preco_venda_vista > 0 ? fmt(i.preco_venda_vista) : '-'}</td>
@@ -945,7 +948,7 @@ function ModalPedidoCompra({ onClose, onSalvar, numero, itensIniciais }) {
               <tbody>
                 {itens.map((item, i) => (
                   <tr key={i}>
-                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{item.produto}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{codPrefix(item.produto_id)}{item.produto}</td>
                     <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmtQtd(item.quantidade, item.unidade)}</td>
                     <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{item.valor_unitario > 0 ? fmt(item.valor_unitario) : '-'}</td>
                     <td style={{ padding: '7px 8px', fontSize: 13, fontWeight: 600, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{item.valor_unitario > 0 ? fmt(item.quantidade * item.valor_unitario) : '-'}</td>
@@ -1503,7 +1506,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                         </td>
                         <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: destacada ? 'none' : '1px solid var(--border)', fontFamily: 'monospace' }}>#{e.numero}</td>
                         <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: destacada ? 'none' : '1px solid var(--border)' }}>{fmtDate(e.data_entrada)}</td>
-                        <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: destacada ? 'none' : '1px solid var(--border)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.nome_fornecedor || e.codigo_fornecedor}</td>
+                        <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: destacada ? 'none' : '1px solid var(--border)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{codPrefix(e.codigo_fornecedor)}{e.nome_fornecedor || '—'}</td>
                         <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: destacada ? 'none' : '1px solid var(--border)' }}>{e.numero_nota || '-'}</td>
                         <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, borderBottom: destacada ? 'none' : '1px solid var(--border)' }}>{fmt(e.valor_total_itens || 0)}</td>
                       </tr>
@@ -1539,7 +1542,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                                       <tbody>
                                         {itensEntrada.map((i) => (
                                           <tr key={i.id}>
-                                            <td style={{ padding: '6px 10px', fontSize: 12.5, borderBottom: '1px solid var(--border)' }}>{i.descricao}</td>
+                                            <td style={{ padding: '6px 10px', fontSize: 12.5, borderBottom: '1px solid var(--border)' }}>{codPrefix(i.codigo_produto)}{i.descricao}</td>
                                             <td style={{ padding: '6px 10px', fontSize: 12.5, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{i.tipo || '-'}</td>
                                             <td style={{ padding: '6px 10px', fontSize: 12.5, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmtQtd(i.quantidade, unidadeDoProduto(i.codigo_produto))}</td>
                                             <td style={{ padding: '6px 10px', fontSize: 12.5, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmt(i.preco_custo || 0)}</td>
@@ -1608,7 +1611,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                         {m.tipo === 'ENTRADA' ? '+ Entrada' : m.tipo === 'SAIDA' ? '− Saída' : '⟳ Acerto'}
                       </span>
                     </td>
-                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.produto}</td>
+                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{codPrefix(m.produto_id)}{m.produto}</td>
                     <td style={{ padding: '9px 10px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 600, color: m.tipo === 'ENTRADA' ? 'var(--green-500)' : m.tipo === 'SAIDA' ? 'var(--red-500)' : 'var(--blue-600)' }}>
                       {m.tipo === 'ENTRADA' ? '+' : m.tipo === 'SAIDA' ? '-' : ''}{fmtQtd(m.quantidade, unidadeDoProduto(m.produto_id))}
                     </td>
@@ -1744,7 +1747,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                     onMouseLeave={(e) => (e.currentTarget.style.background = '#FFF5F5')}
                   >
                     <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{fmtDate(m.data)}</td>
-                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{m.produto}</td>
+                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{codPrefix(m.produto_id)}{m.produto}</td>
                     <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, color: '#B91C1C', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>-{fmtQtd(m.quantidade, unidadeDoProduto(m.produto_id))}</td>
                     <td style={{ padding: '9px 10px', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{m.fornecedor || '-'}</td>
                     <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{m.obs || '-'}</td>
@@ -1775,7 +1778,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                     onMouseLeave={(e) => (e.currentTarget.style.background = '#EFF6FF')}
                   >
                     <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{fmtDate(m.data)}</td>
-                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{m.produto}</td>
+                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{codPrefix(m.produto_id)}{m.produto}</td>
                     <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, color: '#1E40AF', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>{fmtQtd(m.quantidade, unidadeDoProduto(m.produto_id))}</td>
                     <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{m.obs || '-'}</td>
                   </tr>
@@ -1827,7 +1830,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                       <div style={{ background: 'var(--gray-50)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 12 }}>
                         {p.itens.map((item, i) => (
                           <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: i < p.itens.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                            <span>{item.descricao}</span>
+                            <span>{codPrefix(item.codigo_produto)}{item.descricao}</span>
                             <span style={{ color: 'var(--text-secondary)' }}>{fmtQtd(item.quantidade, unidadeDoProduto(item.codigo_produto))}x {item.preco_unitario > 0 ? fmt(item.preco_unitario) : '-'}</span>
                           </div>
                         ))}
@@ -1949,7 +1952,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                         e.target.checked ? [...prev, p.codigo] : prev.filter((c) => c !== p.codigo)
                       )}
                     />
-                    <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.descricao}</span>
+                    <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{codPrefix(p.codigo)}{p.descricao}</span>
                   </label>
                 ))}
               </div>

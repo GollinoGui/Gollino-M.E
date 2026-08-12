@@ -100,7 +100,7 @@ function ModalConfirmarRecebimento({ contas, onClose, onConfirm }) {
             }}
           >
             {unico
-              ? `${contas[0].nome_cliente || contas[0].codigo_cliente}${contas[0].telefone_cliente ? ' · ' + contas[0].telefone_cliente : ''}`
+              ? `${contas[0].nome_cliente || '—'} (#${contas[0].codigo_cliente})${contas[0].telefone_cliente ? ' · ' + contas[0].telefone_cliente : ''}`
               : `${contas.length} conta(s) selecionada(s)`}
           </div>
           <div style={{ color: 'var(--surface)', fontSize: 22, fontWeight: 600 }}>
@@ -151,7 +151,7 @@ function ModalConfirmarRecebimento({ contas, onClose, onConfirm }) {
                       textOverflow: 'ellipsis',
                     }}
                   >
-                    {a.conta.nome_cliente || a.conta.codigo_cliente}
+                    {a.conta.nome_cliente || '—'} (#{a.conta.codigo_cliente})
                   </div>
                   <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>
                     Venc. {fmtDate(a.conta.data_vencimento)}
@@ -326,7 +326,11 @@ function ModalOpcoesRelatorioBaixa({ recebidas, onFechar, onGerar }) {
   const [vencidasGeral, setVencidasGeral] = useState(false)
 
   const nomesClientes = [
-    ...new Set(recebidas.map((r) => r.conta?.nome_cliente || r.conta?.codigo_cliente).filter(Boolean)),
+    ...new Set(
+      recebidas
+        .map((r) => (r.conta?.nome_cliente ? `${r.conta.nome_cliente} (#${r.conta.codigo_cliente})` : r.conta?.codigo_cliente))
+        .filter(Boolean),
+    ),
   ]
 
   const opcoes = [
@@ -495,7 +499,7 @@ export default function ContasReceber({ usuario }) {
       for (const c of g.itens) {
         linhas.push({
           Documento: c.nro_docto || '—',
-          Cliente: g.nome,
+          Cliente: g.codigo ? `${g.nome} (#${g.codigo})` : g.nome,
           Vencimento: fmtDate(c.data_vencimento),
           'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
           'Pago (R$)': (c.valor_pagamento || 0).toFixed(2).replace('.', ','),
@@ -508,7 +512,7 @@ export default function ContasReceber({ usuario }) {
       const subAberto = g.itens.reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
       linhas.push({
         Documento: '',
-        Cliente: `SUBTOTAL — ${g.nome}`,
+        Cliente: `SUBTOTAL — ${g.codigo ? `${g.nome} (#${g.codigo})` : g.nome}`,
         Vencimento: '',
         'Valor (R$)': subDocto.toFixed(2).replace('.', ','),
         'Pago (R$)': subPago.toFixed(2).replace('.', ','),
@@ -607,7 +611,7 @@ export default function ContasReceber({ usuario }) {
       await window.api.dialog.alert(
         `${recebidas.length} conta(s) recebida(s) com sucesso.\n${falhas.length} falharam:\n` +
           falhas
-            .map((f) => `• ${f.conta?.nome_cliente || f.conta?.codigo_cliente || '?'}: ${f.erro}`)
+            .map((f) => `• ${f.conta?.nome_cliente || '—'} (#${f.conta?.codigo_cliente || '?'}): ${f.erro}`)
             .join('\n'),
       )
     }
@@ -634,10 +638,10 @@ export default function ContasReceber({ usuario }) {
     ]
     const montarLinhaConta = (c) => {
       const emAberto = c.valor_docto - (c.valor_pagamento || 0)
-      return `<tr><td>${c.nome_cliente || c.codigo_cliente}</td><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(emAberto)}</td></tr>`
+      return `<tr><td>${c.nome_cliente || '—'} (#${c.codigo_cliente})</td><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(emAberto)}</td></tr>`
     }
     const montarLinhaRecebida = (r) =>
-      `<tr><td>${r.conta?.nome_cliente || r.conta?.codigo_cliente || '?'}</td><td>${r.conta?.nro_docto || '—'}</td><td>${fmtDate(r.conta?.data_vencimento)}</td><td class="num">${fmtMoedaBR(r.valor)}</td></tr>`
+      `<tr><td>${r.conta?.nome_cliente || '—'} (#${r.conta?.codigo_cliente || '?'})</td><td>${r.conta?.nro_docto || '—'}</td><td>${fmtDate(r.conta?.data_vencimento)}</td><td class="num">${fmtMoedaBR(r.valor)}</td></tr>`
     const totalPorLista = (lista) => lista.reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
 
     const totalRecebido = recebidas.reduce((s, r) => s + r.valor, 0)
@@ -727,7 +731,7 @@ export default function ContasReceber({ usuario }) {
         itens: contasSelecionadas.map((c) => ({
           id: c.id,
           nro_docto: c.nro_docto,
-          cliente: c.nome_cliente || c.codigo_cliente,
+          cliente: c.nome_cliente ? `${c.nome_cliente} (#${c.codigo_cliente})` : c.codigo_cliente,
           valor: c.valor_docto - (c.valor_pagamento || 0),
           motivo,
         })),
@@ -1069,7 +1073,7 @@ export default function ContasReceber({ usuario }) {
                       }}
                     >
                       <div style={{ fontWeight: 500 }}>
-                        {c.nome_cliente || c.codigo_cliente}
+                        {c.nome_cliente || '—'} (#{c.codigo_cliente})
                       </div>
                       {c.telefone_cliente && (
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>

@@ -37,6 +37,8 @@ const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = (d) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-'
+const pessoaLabel = (nome, codigo, semCadastro = '—') =>
+  codigo ? `#${codigo}${nome ? ` · ${nome}` : ''}` : nome || semCadastro
 
 function mesAtual() {
   const d = new Date()
@@ -215,7 +217,7 @@ function RelVendas() {
   }, {})
 
   const porCliente = filtradas.reduce((acc, v) => {
-    const cli = v.nome_cliente || 'Consumidor'
+    const cli = pessoaLabel(v.nome_cliente, v.codigo_cliente, 'Consumidor')
     acc[cli] = (acc[cli] || 0) + (v.valor_total || 0)
     return acc
   }, {})
@@ -229,7 +231,7 @@ function RelVendas() {
       ordenados.map((v) => ({
         'Nº Venda': v.orcamento,
         Data: fmtDate(v.data),
-        Cliente: v.nome_cliente || '—',
+        Cliente: pessoaLabel(v.nome_cliente, v.codigo_cliente),
         'Forma Pagamento': v.codigo_forma_pagamento1 || '—',
         'Total (R$)': (v.valor_total || 0).toFixed(2).replace('.', ','),
       })),
@@ -253,7 +255,7 @@ function RelVendas() {
       colunas,
       linhas: ordenados,
       montarLinha: (v) =>
-        `<tr><td>${v.orcamento}</td><td>${fmtDate(v.data)}</td><td>${v.nome_cliente || '—'}</td><td>${v.codigo_forma_pagamento1 || '—'}</td><td class="num">${fmtMoedaBR(v.valor_total)}</td></tr>`,
+        `<tr><td>${v.orcamento}</td><td>${fmtDate(v.data)}</td><td>${pessoaLabel(v.nome_cliente, v.codigo_cliente)}</td><td>${v.codigo_forma_pagamento1 || '—'}</td><td class="num">${fmtMoedaBR(v.valor_total)}</td></tr>`,
       montarTotalGeral: () => `<td colspan="4">TOTAL DO PERÍODO</td><td class="num">${fmtMoedaBR(totalVendas)}</td>`,
     })
     await gerarPdfRelatorio(html, `vendas_${dataInicio}_${dataFim}`)
@@ -559,7 +561,7 @@ function RelVendas() {
                         borderBottom: '1px solid var(--border)',
                       }}
                     >
-                      {v.nome_cliente || '—'}
+                      {pessoaLabel(v.nome_cliente, v.codigo_cliente)}
                     </td>
                     <td
                       style={{
@@ -1116,7 +1118,7 @@ function RelContasReceber() {
   )
 
   const porCliente = abertas.reduce((acc, c) => {
-    const cli = c.nome_cliente || c.codigo_cliente || '—'
+    const cli = pessoaLabel(c.nome_cliente, c.codigo_cliente)
     acc[cli] = (acc[cli] || 0) + ((c.valor_docto || 0) - (c.valor_pagamento || 0))
     return acc
   }, {})
@@ -1140,7 +1142,7 @@ function RelContasReceber() {
         linhas.push({
           Documento: c.nro_docto || '—',
           Seq: c.seq_docto || '—',
-          Cliente: g.nome,
+          Cliente: pessoaLabel(g.nome, g.codigo),
           Vencimento: fmtDate(c.data_vencimento),
           'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
           'Pago (R$)': (c.valor_pagamento || 0).toFixed(2).replace('.', ','),
@@ -1152,7 +1154,7 @@ function RelContasReceber() {
       const subPago = g.itens.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
       const subAberto = g.itens.reduce((s, c) => s + ((c.valor_docto || 0) - (c.valor_pagamento || 0)), 0)
       linhas.push({
-        Documento: '', Seq: '', Cliente: `SUBTOTAL — ${g.nome}`, Vencimento: '',
+        Documento: '', Seq: '', Cliente: `SUBTOTAL — ${pessoaLabel(g.nome, g.codigo)}`, Vencimento: '',
         'Valor (R$)': subDocto.toFixed(2).replace('.', ','),
         'Pago (R$)': subPago.toFixed(2).replace('.', ','),
         'Em Aberto (R$)': subAberto.toFixed(2).replace('.', ','),
@@ -1442,7 +1444,7 @@ function RelContasReceber() {
                           borderBottom: '1px solid var(--border)',
                         }}
                       >
-                        {c.nome_cliente || c.codigo_cliente || '—'}
+                        {pessoaLabel(c.nome_cliente, c.codigo_cliente)}
                       </td>
                       <td
                         style={{
@@ -1562,7 +1564,7 @@ function RelContasPagar() {
       for (const c of g.itens) {
         linhas.push({
           Documento: c.nro_docto || '—',
-          Fornecedor: g.nome,
+          Fornecedor: pessoaLabel(g.nome, g.codigo),
           Vencimento: fmtDate(c.data_vencimento),
           'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
           Situação: situacaoDe(c),
@@ -1570,7 +1572,7 @@ function RelContasPagar() {
       }
       const subtotal = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
       linhas.push({
-        Documento: '', Fornecedor: `SUBTOTAL — ${g.nome}`, Vencimento: '',
+        Documento: '', Fornecedor: `SUBTOTAL — ${pessoaLabel(g.nome, g.codigo)}`, Vencimento: '',
         'Valor (R$)': subtotal.toFixed(2).replace('.', ','), Situação: '',
       })
     }
@@ -1728,7 +1730,7 @@ function RelContasPagar() {
                   >
                     <div>
                       <div style={{ fontSize: 12, fontWeight: 500 }}>
-                        {c.nro_docto || c.nome_fornecedor || '—'}
+                        {c.nro_docto || pessoaLabel(c.nome_fornecedor, c.codigo_fornecedor)}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                         {fmtDate(c.data_vencimento)}
@@ -1864,7 +1866,7 @@ function RelContasPagar() {
                           borderBottom: '1px solid var(--border)',
                         }}
                       >
-                        {c.nome_fornecedor || '—'}
+                        {pessoaLabel(c.nome_fornecedor, c.codigo_fornecedor)}
                       </td>
                       <td
                         style={{
@@ -3306,7 +3308,7 @@ export default function Relatorios({ paginaAtiva, usuario }) {
           Seção: 'Venda',
           Referência: v.orcamento,
           Data: fmtDate(v.data),
-          Descrição: v.nome_cliente || 'Consumidor',
+          Descrição: pessoaLabel(v.nome_cliente, v.codigo_cliente, 'Consumidor'),
           'Forma Pagamento': v.codigo_forma_pagamento1 || '—',
           'Valor (R$)': (v.valor_total || 0).toFixed(2).replace('.', ','),
           Situação: 'Finalizada',
@@ -3325,7 +3327,7 @@ export default function Relatorios({ paginaAtiva, usuario }) {
             Seção: 'A Receber',
             Referência: c.documento || '—',
             Data: fmtDate(c.data_vencimento),
-            Descrição: c.nome_cliente || '—',
+            Descrição: pessoaLabel(c.nome_cliente, c.codigo_cliente),
             'Forma Pagamento': '—',
             'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
             Situação: c.situacao_docto === 'P' ? 'Baixado' : c.data_vencimento < hoje ? 'Vencido' : 'Aberto',
@@ -3335,7 +3337,7 @@ export default function Relatorios({ paginaAtiva, usuario }) {
             Seção: 'A Pagar',
             Referência: c.nro_docto || '—',
             Data: fmtDate(c.data_vencimento),
-            Descrição: c.nome_fornecedor || '—',
+            Descrição: pessoaLabel(c.nome_fornecedor, c.codigo_fornecedor),
             'Forma Pagamento': '—',
             'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
             Situação: c.situacao_docto === 'P' ? 'Pago' : c.data_vencimento < hoje ? 'Vencido' : 'Aberto',

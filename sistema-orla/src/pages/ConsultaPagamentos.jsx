@@ -130,7 +130,7 @@ export default function ConsultaPagamentos() {
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                     <td style={{ padding: '10px 14px', fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(c.data_pagamento)}</td>
                     <td style={{ padding: '10px 14px', fontSize: 12, fontFamily: 'monospace' }}>{c.nro_docto || '-'}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 500 }}>{c.nome_fornecedor || c.codigo_fornecedor}</td>
+                    <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 500 }}>{c.nome_fornecedor || '—'} (#{c.codigo_fornecedor})</td>
                     <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-secondary)' }}>{c.codigo_forma_pagamento || '—'}</td>
                     <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(c.valor_docto)}</td>
                     <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right', color: c.valor_desconto ? '#22863A' : 'var(--text-muted)' }}>{fmt(c.valor_desconto)}</td>

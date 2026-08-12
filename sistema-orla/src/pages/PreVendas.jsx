@@ -76,7 +76,7 @@ function ModalBaixar({ pv, onConfirm, onClose, salvando }) {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500 }}>
       <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-md)', width: 420, padding: 24, boxShadow: '0 20px 50px rgba(0,0,0,0.18)' }}>
         <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Baixar Pré-venda #{pv.numero}</div>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>{pv.nome_cliente} · {fmt(pv.valor_total)}</div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>{pv.nome_cliente}{pv.codigo_cliente ? ` (#${pv.codigo_cliente})` : ''} · {fmt(pv.valor_total)}</div>
 
         <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500, marginBottom: 8 }}>FORMA DE PAGAMENTO</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 20 }}>
@@ -302,7 +302,7 @@ export default function PreVendas({ usuario }) {
                   <button key={c.id} onClick={() => { setForm(p => ({ ...p, cliente_id: c.codigo, nome_cliente: c.nome })); setClienteDropdown(false) }} style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 13, borderBottom: '1px solid var(--border)' }}
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >{c.nome}</button>
+                  ><span style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>#{c.codigo}</span> · {c.nome}</button>
                 ))}
               </div>
             )}
@@ -327,7 +327,9 @@ export default function PreVendas({ usuario }) {
           {form.itens.map(item => (
             <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', marginBottom: 5, background: 'var(--surface)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.descricao}</div>
+                <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)', fontWeight: 400 }}>#{item.codigo}</span> {item.descricao}
+                </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{fmtQtd(item.qty, item.unidade)} × {fmt(item.preco_unitario)}</div>
               </div>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--blue-700)' }}>{fmt(item.total)}</div>
@@ -437,7 +439,7 @@ export default function PreVendas({ usuario }) {
               >
                 <td style={{ padding: '10px 12px', fontSize: 12, fontFamily: 'monospace', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{pv.numero}</td>
                 <td style={{ padding: '10px 12px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{fmtDate(pv.data)}</td>
-                <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{pv.nome_cliente}</td>
+                <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{pv.nome_cliente}{pv.codigo_cliente ? ` (#${pv.codigo_cliente})` : ''}</td>
                 <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{pv.vendedor}</td>
                 <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
                   <span style={{ background: 'var(--blue-50)', color: 'var(--blue-800)', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>{pv.tipo}</span>

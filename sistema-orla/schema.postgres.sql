@@ -694,6 +694,7 @@ CREATE TABLE IF NOT EXISTS gastos_operacionais (
   descricao TEXT NOT NULL,
   valor DOUBLE PRECISION NOT NULL DEFAULT 0,
   mes_referencia TEXT,
+  codigo_fornecedor TEXT,
   situacao TEXT NOT NULL DEFAULT 'A',
   usuario TEXT,
   data_atualizacao TEXT,

@@ -7,6 +7,7 @@ import {
 
 const fmt = (v) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtPct = (v) => `${(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`
+const fmtDate = (d) => (d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-')
 const fmtCompacto = (v) => (v || 0).toLocaleString('pt-BR', { notation: 'compact', maximumFractionDigits: 1 })
 
 const MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
@@ -430,14 +431,24 @@ function GroupedBars({ dados }) {
 }
 
 // ── Modal de gasto (fixo/variável) ──
-function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial }) {
+function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial, fornecedoresLista }) {
   const [form, setForm] = useState({
     tipo: gastoInicial?.tipo || 'FIXO',
     descricao: gastoInicial?.descricao || '',
     valor: gastoInicial?.valor ?? '',
   })
+  const [fornecedorSelecionado, setFornecedorSelecionado] = useState(() =>
+    gastoInicial?.codigo_fornecedor
+      ? fornecedoresLista.find((fo) => fo.codigo === gastoInicial.codigo_fornecedor) || null
+      : null,
+  )
+  const [buscaFornecedor, setBuscaFornecedor] = useState('')
+  const [mostrarFornecedores, setMostrarFornecedores] = useState(false)
   const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }))
   const valido = form.descricao.trim() && Number(form.valor) > 0
+  const fornecedoresFiltrados = (
+    buscaFornecedor ? fornecedoresLista.filter((fo) => fo.nome.toLowerCase().includes(buscaFornecedor.toLowerCase())) : fornecedoresLista
+  ).slice(0, 8)
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
@@ -466,6 +477,41 @@ function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial }) {
           <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Valor mensal (R$) *</label>
           <input value={form.valor} onChange={f('valor')} type='number' min='0' step='0.01' style={{ width: '100%', height: 36, padding: '0 10px' }} />
         </div>
+
+        {form.tipo === 'FIXO' && (
+          <div style={{ marginBottom: 14, position: 'relative' }}>
+            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Vincular a um fornecedor (opcional)</label>
+            <input
+              value={fornecedorSelecionado ? fornecedorSelecionado.nome : buscaFornecedor}
+              onChange={(e) => { setFornecedorSelecionado(null); setBuscaFornecedor(e.target.value); setMostrarFornecedores(true) }}
+              onFocus={() => setMostrarFornecedores(true)}
+              placeholder='Buscar fornecedor...'
+              style={{ width: '100%', height: 34, padding: '0 10px' }}
+            />
+            {fornecedorSelecionado && (
+              <button type='button' onClick={() => { setFornecedorSelecionado(null); setBuscaFornecedor('') }}
+                style={{ position: 'absolute', right: 8, top: 30, fontSize: 11, color: 'var(--text-muted)', background: 'transparent' }}>
+                remover
+              </button>
+            )}
+            {mostrarFornecedores && !fornecedorSelecionado && fornecedoresFiltrados.length > 0 && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border-md)', borderRadius: 8, boxShadow: '0 8px 20px rgba(0,0,0,0.12)', zIndex: 30, maxHeight: 180, overflowY: 'auto' }}>
+                {fornecedoresFiltrados.map((fo) => (
+                  <div key={fo.codigo} onClick={() => { setFornecedorSelecionado(fo); setMostrarFornecedores(false) }}
+                    style={{ padding: '7px 10px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                    <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>#{fo.codigo}</span> · {fo.nome}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+              Pra mostrar aqui se já foi pago esse mês em Contas a Pagar.
+            </div>
+          </div>
+        )}
+
         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
           {form.tipo === 'FIXO'
             ? 'Fica valendo todo mês até você editar ou remover.'
@@ -482,6 +528,7 @@ function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial }) {
               descricao: form.descricao.trim(),
               valor: Number(form.valor),
               mes_referencia: mesReferencia,
+              codigo_fornecedor: form.tipo === 'FIXO' ? (fornecedorSelecionado?.codigo || null) : null,
             })}
             style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: valido ? 'var(--blue-600)' : 'var(--gray-200)', color: valido ? '#fff' : 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: valido ? 'pointer' : 'not-allowed' }}
           >
@@ -493,8 +540,9 @@ function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial }) {
   )
 }
 
-// ── Lista de gastos (fixos | variáveis) com total ──
-function ListaGastos({ titulo, itens, total, onEditar, onExcluir, vazio }) {
+// ── Lista de gastos (fixos | variáveis) com total. Fixos linkados a um
+// fornecedor mostram o selo de conciliação com Contas a Pagar do mês. ──
+function ListaGastos({ titulo, itens, total, onEditar, onExcluir, vazio, fornecedoresLista }) {
   return (
     <div style={{ flex: 1, minWidth: 240 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
@@ -504,21 +552,49 @@ function ListaGastos({ titulo, itens, total, onEditar, onExcluir, vazio }) {
       <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
         {itens.length === 0 ? (
           <div style={{ padding: '14px 12px', fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>{vazio}</div>
-        ) : itens.map((g, i) => (
-          <div key={g.id} style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
-            borderTop: i > 0 ? '1px solid var(--border)' : 'none', background: 'var(--surface)',
-          }}>
-            <div style={{ flex: 1, fontSize: 13 }}>{g.descricao}</div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{fmt(g.valor)}</div>
-            <button onClick={() => onEditar(g)} title='Editar' style={{ display: 'flex', padding: 4, color: 'var(--text-muted)', borderRadius: 6 }}>
-              <Pencil size={13} />
-            </button>
-            <button onClick={() => onExcluir(g)} title='Remover' style={{ display: 'flex', padding: 4, color: 'var(--red-500)', borderRadius: 6 }}>
-              <Trash2 size={13} />
-            </button>
-          </div>
-        ))}
+        ) : itens.map((g, i) => {
+          const conta = g.conta_pagar_vinculada
+          const fornecedorNome = g.codigo_fornecedor
+            ? fornecedoresLista?.find((fo) => fo.codigo === g.codigo_fornecedor)?.nome
+            : null
+          const valorExibido = conta ? conta.valor_docto : g.valor
+          return (
+            <div key={g.id} style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+              borderTop: i > 0 ? '1px solid var(--border)' : 'none', background: 'var(--surface)',
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13 }}>{g.descricao}</div>
+                {g.codigo_fornecedor && (
+                  <div style={{ fontSize: 10.5, marginTop: 2 }}>
+                    {conta ? (
+                      conta.situacao_docto === 'P' ? (
+                        <span style={{ color: 'var(--green-500)', fontWeight: 600 }}>
+                          ✅ pago {fmtDate(conta.data_pagamento || conta.data_vencimento)}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#B7791F', fontWeight: 600 }}>
+                          ⏳ vence {fmtDate(conta.data_vencimento)}
+                        </span>
+                      )
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        — não lançado esse mês{g.codigo_fornecedor ? ` (${fornecedorNome ? fornecedorNome + ' ' : ''}#${g.codigo_fornecedor})` : ''}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{fmt(valorExibido)}</div>
+              <button onClick={() => onEditar(g)} title='Editar' style={{ display: 'flex', padding: 4, color: 'var(--text-muted)', borderRadius: 6 }}>
+                <Pencil size={13} />
+              </button>
+              <button onClick={() => onExcluir(g)} title='Remover' style={{ display: 'flex', padding: 4, color: 'var(--red-500)', borderRadius: 6 }}>
+                <Trash2 size={13} />
+              </button>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -541,6 +617,8 @@ function PontoDeEquilibrio({ usuario }) {
   const [mostrarListaProdutos, setMostrarListaProdutos] = useState(false)
   const [produtoSelecionado, setProdutoSelecionado] = useState(null)
   const [sucesso, setSucesso] = useState('')
+  const [fornecedoresLista, setFornecedoresLista] = useState([])
+  const [despesasCategoria, setDespesasCategoria] = useState([])
 
   const carregar = useCallback(async () => {
     setLoading(true)
@@ -548,18 +626,25 @@ function PontoDeEquilibrio({ usuario }) {
     // allSettled: se gastos_operacionais ainda não existir no banco (migração
     // não rodada), o resumo do mês continua carregando normalmente em vez de
     // travar tudo por causa de uma falha só.
-    const [gRes, rRes] = await Promise.allSettled([
+    const [gRes, rRes, dRes] = await Promise.allSettled([
       window.api.gastosOperacionais.listar(mesSelecionado),
       window.api.financeiro.resumoPeriodo(ini, fim),
+      window.api.gastosOperacionais.despesasCategoriaMes(mesSelecionado),
     ])
     if (gRes.status === 'fulfilled') setGastos(gRes.value || [])
     else console.error('Erro ao carregar gastos operacionais:', gRes.reason)
     if (rRes.status === 'fulfilled') setResumoMes(rRes.value)
     else console.error('Erro ao carregar resumo do mês:', rRes.reason)
+    if (dRes.status === 'fulfilled') setDespesasCategoria(dRes.value || [])
+    else console.error('Erro ao carregar despesas por categoria:', dRes.reason)
     setLoading(false)
   }, [mesSelecionado])
 
   useEffect(() => { carregar() }, [carregar])
+
+  useEffect(() => {
+    window.api.fornecedores.listar({ situacao: 'A' }).then(setFornecedoresLista).catch(() => setFornecedoresLista([]))
+  }, [])
 
   useEffect(() => {
     window.api.produtos.listar({ situacao: 'A', busca: buscaProduto || undefined })
@@ -588,9 +673,12 @@ function PontoDeEquilibrio({ usuario }) {
 
   const fixos = gastos.filter((g) => g.tipo === 'FIXO')
   const variaveis = gastos.filter((g) => g.tipo === 'VARIAVEL')
-  const totalFixos = fixos.reduce((s, g) => s + (g.valor || 0), 0)
+  // Fixo reconciliado usa o valor real lançado em Contas a Pagar esse mês
+  // (mais preciso); sem reconciliação, usa o valor orçado digitado aqui.
+  const totalFixos = fixos.reduce((s, g) => s + (g.conta_pagar_vinculada?.valor_docto ?? g.valor ?? 0), 0)
   const totalVariaveis = variaveis.reduce((s, g) => s + (g.valor || 0), 0)
-  const gastosDoMes = totalFixos + totalVariaveis
+  const totalDespesasCategoria = despesasCategoria.reduce((s, d) => s + (d.total || 0), 0)
+  const gastosDoMes = totalFixos + totalVariaveis + totalDespesasCategoria
 
   const receita = resumoMes?.receita_bruta || 0
   const custoProdutos = resumoMes?.custo_produtos || 0
@@ -624,6 +712,7 @@ function PontoDeEquilibrio({ usuario }) {
           onSalvar={salvarGasto}
           mesReferencia={mesSelecionado}
           gastoInicial={modalGasto === true ? null : modalGasto}
+          fornecedoresLista={fornecedoresLista}
         />
       )}
 
@@ -647,10 +736,39 @@ function PontoDeEquilibrio({ usuario }) {
           {/* GASTOS DO MÊS */}
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', margin: '16px 0' }}>
             <ListaGastos titulo={`Fixos (${fixos.length})`} itens={fixos} total={totalFixos}
-              onEditar={setModalGasto} onExcluir={excluirGasto} vazio='Nenhum gasto fixo cadastrado.' />
+              onEditar={setModalGasto} onExcluir={excluirGasto} vazio='Nenhum gasto fixo cadastrado.' fornecedoresLista={fornecedoresLista} />
             <ListaGastos titulo={`Variáveis (${variaveis.length})`} itens={variaveis} total={totalVariaveis}
-              onEditar={setModalGasto} onExcluir={excluirGasto} vazio={`Nenhum gasto variável lançado em ${mesLabel(mesSelecionado)}.`} />
+              onEditar={setModalGasto} onExcluir={excluirGasto} vazio={`Nenhum gasto variável lançado em ${mesLabel(mesSelecionado)}.`} fornecedoresLista={fornecedoresLista} />
           </div>
+
+          {/* DESPESAS VARIÁVEIS JÁ LANÇADAS NO CONTAS A PAGAR — somente leitura,
+              puxado por categoria (Plano de Contas) em vez de recadastrado aqui. */}
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginBottom: 18 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Despesas variáveis já lançadas (Contas a Pagar)
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>{fmt(totalDespesasCategoria)}</div>
+            </div>
+            {totalDespesasCategoria === 0 ? (
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                Nenhuma compra de material de limpeza/escritório categorizada em {mesLabel(mesSelecionado)} — selecione a categoria (Plano de Contas) ao lançar essa nota em Contas a Pagar pra ela entrar aqui automático.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {despesasCategoria.filter((d) => d.total > 0).map((d) => (
+                  <div key={d.codigo_plano_conta} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>{d.categoria}</span>
+                    <span style={{ fontWeight: 500 }}>{fmt(d.total)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 6 }}>
+              Não recadastre essas compras como gasto variável manual acima — já entram sozinhas aqui.
+            </div>
+          </div>
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
             <button onClick={() => setModalGasto(true)}
               style={{ display: 'flex', alignItems: 'center', gap: 6, height: 32, padding: '0 14px', background: 'var(--blue-600)', color: '#fff', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
@@ -717,7 +835,9 @@ function PontoDeEquilibrio({ usuario }) {
                         style={{ padding: '8px 10px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
                         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
                         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                        <div style={{ fontWeight: 500 }}>{p.descricao}</div>
+                        <div style={{ fontWeight: 500 }}>
+                          <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)', fontWeight: 400 }}>#{p.codigo}</span> {p.descricao}
+                        </div>
                         <div style={{ color: 'var(--text-muted)' }}>{fmt(p.preco_venda_vista)}</div>
                       </div>
                     ))}

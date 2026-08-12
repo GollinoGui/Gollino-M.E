@@ -136,7 +136,7 @@ export default function ConsultaRecebimentos() {
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                     <td style={{ padding: '10px 14px', fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(c.data_pagamento)}</td>
                     <td style={{ padding: '10px 14px', fontSize: 12, fontFamily: 'monospace' }}>{c.nro_docto}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 500 }}>{c.nome_cliente || c.codigo_cliente}</td>
+                    <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 500 }}>{c.nome_cliente || '—'} (#{c.codigo_cliente})</td>
                     <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-secondary)' }}>{c.forma_recebimento || '—'}</td>
                     <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(c.valor_docto)}</td>
                     <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right', color: c.valor_desconto ? '#C53030' : 'var(--text-muted)' }}>{fmt(c.valor_desconto)}</td>
