@@ -583,21 +583,18 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
   // Dados do banco
   const [todosProds, setTodosProds] = useState([])
   const [clientes, setClientes] = useState([])
-  const [numeroVenda, setNumeroVenda] = useState('00000001')
   const [linhas, setLinhas] = useState([])
   const [filtroLinha, setFiltroLinha] = useState('Todos')
 
   useEffect(() => {
     async function carregar() {
       try {
-        const [prods, cls, num] = await Promise.all([
+        const [prods, cls] = await Promise.all([
           window.api.produtos.listar({ situacao: 'A' }),
           window.api.clientes.listar({}),
-          window.api.vendas.proximoNumero(),
         ])
         setTodosProds(prods)
         setClientes(cls)
-        setNumeroVenda(num.numero)
 
         // Monta lista de linhas únicas
         const ls = [
@@ -818,12 +815,9 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
         parcelas = pagamentoInfo.parcelas
       }
 
-      const orcamentoAtual = numeroVenda
-
       const vendedorLabel = [usuario?.codigo_vendedor, usuario?.nome || usuario?.usuario].filter(Boolean).join(' - ')
 
       const resultado = await window.api.vendas.salvar({
-        orcamento: orcamentoAtual,
         codigo_cliente: codigoCliente,
         nome_cliente: clienteSel.nome,
         data: new Date().toISOString().slice(0, 10),
@@ -880,14 +874,12 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
         }),
       )
 
-      // Pega próximo número
-      const num = await window.api.vendas.proximoNumero()
-      setNumeroVenda(num.numero)
+      const orcamentoFinal = resultado.orcamento
 
       setItens([])
       setObservacao('')
       setPagModal(false)
-      setVendaFinalizada(true)
+      setVendaFinalizada(orcamentoFinal)
       carregarUltimas()
       setTimeout(() => setVendaFinalizada(false), 3000)
 
@@ -895,7 +887,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
       if (window.api.pdf) {
         setGerandoPdf(true)
         try {
-          await window.api.pdf.gerarVenda(orcamentoAtual)
+          await window.api.pdf.gerarVenda(orcamentoFinal)
         } catch (pdfErr) {
           console.error('Erro ao gerar PDF:', pdfErr)
         } finally {
@@ -963,7 +955,11 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
             textAlign: 'center',
           }}
         >
-          {erroVenda ? `⚠️ ${erroVenda}` : gerandoPdf ? '📄 Abrindo PDF...' : '✅ Venda finalizada! PDF gerado.'}
+          {erroVenda
+            ? `⚠️ ${erroVenda}`
+            : gerandoPdf
+              ? '📄 Abrindo PDF...'
+              : `✅ Venda #${vendaFinalizada} finalizada! PDF gerado.`}
         </div>
       )}
 
@@ -1031,7 +1027,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
               letterSpacing: '0.05em',
             }}
           >
-            VENDA #{numeroVenda}
+            NOVA VENDA
           </div>
 
           {/* Cliente */}

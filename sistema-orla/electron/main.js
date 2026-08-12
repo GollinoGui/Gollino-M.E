@@ -242,7 +242,6 @@ handle('vendas:buscar', (_, orcamento) => db.vendas.buscar(orcamento))
 handle('vendas:salvar', (_, dados) => db.vendas.salvar(dados))
 handle('vendas:cancelar', (_, { orcamento, motivo, usuario }) => db.vendas.cancelar(orcamento, motivo, usuario))
 handle('vendas:devolver', (_, dados) => db.vendas.devolver(dados))
-handle('vendas:proximoNumero', () => db.vendas.proximoNumero())
 
 // --- CONTAS A RECEBER ---
 handle('contasReceber:listar', (_, filtros) => db.contasReceber.listar(filtros))

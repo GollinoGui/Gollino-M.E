@@ -89,7 +89,6 @@ contextBridge.exposeInMainWorld('api', {
     salvar: (dados) => ipcRenderer.invoke('vendas:salvar', dados),
     cancelar: (dados) => ipcRenderer.invoke('vendas:cancelar', dados),
     devolver: (dados) => ipcRenderer.invoke('vendas:devolver', dados),
-    proximoNumero: () => ipcRenderer.invoke('vendas:proximoNumero'),
   },
 
   // CONTAS A RECEBER

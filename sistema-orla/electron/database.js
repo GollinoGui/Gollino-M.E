@@ -390,14 +390,9 @@ const vendas = {
     return vendaComNome
   },
 
-  async proximoNumero() {
-    const valor = await proximoNumeroAtomico('vendas')
-    return { numero: String(valor).padStart(8, '0') }
-  },
-
   async salvar(dados) {
     const { itens, nome_cliente, cheque_numero, cheque_banco, cheque_vencimento, ...venda } = dados
-    const { error } = await supabase.rpc('vendas_salvar', { p_venda: venda, p_itens: itens || [] })
+    const { data: orcamentoSalvo, error } = await supabase.rpc('vendas_salvar', { p_venda: venda, p_itens: itens || [] })
     if (error) return { sucesso: false, erro: error.message }
 
     // Venda paga (ao menos em parte) com cheque: gera o registro em
@@ -412,8 +407,8 @@ const vendas = {
         banco: cheque_banco || '',
         data_emissao: venda.data,
         data_vencimento: cheque_vencimento || venda.data,
-        nro_docto: venda.orcamento,
-        observacao: `Pagamento da venda #${venda.orcamento}`,
+        nro_docto: orcamentoSalvo,
+        observacao: `Pagamento da venda #${orcamentoSalvo}`,
         usuario: venda.usuario_cadastro || '',
       })
       if (!resCheque.sucesso) {
@@ -421,7 +416,7 @@ const vendas = {
       }
     }
 
-    return { sucesso: true, orcamento: venda.orcamento }
+    return { sucesso: true, orcamento: orcamentoSalvo }
   },
 
   async cancelar(orcamento, motivo, usuario) {
