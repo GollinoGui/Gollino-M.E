@@ -1035,6 +1035,98 @@ const pedidosCompra = {
 // atomicamente via RPC (custo médio, estoque, contas a pagar); ver
 // entrada_mercadoria_confirmar no Supabase.
 // ============================================================
+
+// Marca o pedido de compra espelhado automaticamente a partir de uma entrada
+// (ver registrarPedidoCompraDaEntrada). Mesma string em Estoque.jsx — é o que
+// a tela usa pra reconhecer esses registros e esconder o botão "Cancelar",
+// já que o estoque/conta a pagar desse pedido já foi lançado pela RPC da
+// entrada: cancelar ou receber esse pedido reverteria/duplicaria lançamentos
+// que não são dele.
+const MARCA_PEDIDO_AUTO_ENTRADA = 'Gerado automaticamente pela entrada de mercadoria #'
+
+// A secretária sempre lança mercadoria direto em "Entrada" e nunca passa pelo
+// fluxo de pedido de compra — então, sem isto, a aba "Pedido de compra" fica
+// sempre vazia. Espelha a entrada confirmada como um pedido já RECEBIDO, no
+// mesmo dia e com os mesmos itens/custos, só para efeito de histórico —
+// não deve nunca ser recebido/cancelado (ver marca acima).
+async function registrarPedidoCompraDaEntrada(cabecalho, itens) {
+  if (!itens.length) return
+  const numero = String(await proximoNumeroAtomico('pedidos_compra')).padStart(6, '0')
+  const { data: fornecedor } = await supabase
+    .from('fornecedores')
+    .select('nome')
+    .eq('codigo', cabecalho.codigo_fornecedor)
+    .maybeSingle()
+  const valorTotal = itens.reduce((s, i) => s + (i.quantidade || 0) * (i.preco_custo || 0), 0)
+  const { error: erroCab } = await supabase.from('pedidos_compra').insert({
+    numero,
+    fornecedor: fornecedor?.nome || cabecalho.codigo_fornecedor,
+    data: cabecalho.data_entrada,
+    situacao: 'RECEBIDO',
+    valor_total: valorTotal,
+    observacao: `${MARCA_PEDIDO_AUTO_ENTRADA}${cabecalho.numero}`,
+    usuario: cabecalho.usuario,
+    data_atualizacao: hoje(),
+    hora_atualizacao: agora(),
+  })
+  if (erroCab) throw new Error(erroCab.message)
+  const { error: erroItens } = await supabase.from('pedidos_compra_itens').insert(
+    itens.map((i) => ({
+      numero,
+      codigo_produto: i.codigo_produto,
+      descricao: i.descricao,
+      quantidade: i.quantidade || 0,
+      preco_unitario: i.preco_custo || 0,
+      total: (i.quantidade || 0) * (i.preco_custo || 0),
+    })),
+  )
+  if (erroItens) throw new Error(erroItens.message)
+}
+
+// Backfill único das entradas confirmadas antes de registrarPedidoCompraDaEntrada
+// existir. Idempotente — usa a marca em observacao pra pular quem já tem
+// espelho — então repetir não duplica nada; guardado atrás de
+// backfillPedidosEntradaExecutado pra rodar no máximo uma vez por processo
+// (disparado de entradasMercadoria.listar, que só é chamado já autenticado,
+// evitando o resultado vazio que a leitura sem sessão causaria no boot do app).
+let backfillPedidosEntradaExecutado = false
+async function backfillPedidosDeEntradasExistentes() {
+  const { data: entradas, error: erroEntradas } = await supabase
+    .from('entradas_mercadoria')
+    .select('numero, data_entrada, codigo_fornecedor, usuario')
+  if (erroEntradas) throw new Error(erroEntradas.message)
+  if (!entradas?.length) return
+
+  const { data: pedidosAuto, error: erroPedidos } = await supabase
+    .from('pedidos_compra')
+    .select('observacao')
+    .like('observacao', `${MARCA_PEDIDO_AUTO_ENTRADA}%`)
+  if (erroPedidos) throw new Error(erroPedidos.message)
+  const jaGerados = new Set((pedidosAuto || []).map((p) => p.observacao.slice(MARCA_PEDIDO_AUTO_ENTRADA.length)))
+
+  const faltantes = entradas.filter((e) => !jaGerados.has(e.numero))
+  if (!faltantes.length) return
+
+  let criados = 0
+  for (const entrada of faltantes) {
+    const { data: itensEntrada, error: erroItens } = await supabase
+      .from('entradas_mercadoria_itens')
+      .select('codigo_produto, descricao, quantidade, preco_custo')
+      .eq('numero', entrada.numero)
+    if (erroItens) {
+      console.error(`Erro ao buscar itens da entrada #${entrada.numero} pro backfill:`, erroItens.message)
+      continue
+    }
+    try {
+      await registrarPedidoCompraDaEntrada(entrada, itensEntrada || [])
+      criados++
+    } catch (e) {
+      console.error(`Erro ao gerar pedido de compra retroativo da entrada #${entrada.numero}:`, e.message)
+    }
+  }
+  if (criados) console.log(`✅ Backfill: ${criados} pedido(s) de compra gerado(s) a partir de entradas antigas.`)
+}
+
 const entradasMercadoria = {
   async proximoNumero() {
     const valor = await proximoNumeroAtomico('entradas_mercadoria')
@@ -1049,6 +1141,12 @@ const entradasMercadoria = {
     }
     const { data, error } = await q.order('id', { ascending: false }).limit(200)
     if (error) throw new Error(error.message)
+    if (!backfillPedidosEntradaExecutado) {
+      backfillPedidosEntradaExecutado = true
+      backfillPedidosDeEntradasExistentes().catch((e) =>
+        console.error('Erro no backfill de pedidos de compra das entradas antigas:', e.message),
+      )
+    }
     return anexarNomeFornecedor(data)
   },
 
@@ -1065,7 +1163,55 @@ const entradasMercadoria = {
       p_faturas: faturas || [],
     })
     if (error) return { sucesso: false, erro: error.message }
+    // Best-effort: a entrada em si já está confirmada (estoque/custo/conta a
+    // pagar), então uma falha aqui não deve derrubar a confirmação pro
+    // usuário — só fica sem o espelho em "Pedido de compra".
+    try {
+      await registrarPedidoCompraDaEntrada(cabecalho, itens || [])
+    } catch (e) {
+      console.error('Erro ao gerar pedido de compra automático da entrada:', e.message)
+    }
     return { sucesso: true, numero: cabecalho.numero }
+  },
+}
+
+// ============================================================
+// GASTOS OPERACIONAIS (fixos + variáveis mensais — alimenta o simulador de
+// Ponto de Equilíbrio em Lucro Real). FIXO vale todo mês até ser
+// editado/removido (mes_referencia fica null); VARIAVEL é lançado mês a mês.
+// ============================================================
+const gastosOperacionais = {
+  async listar(mesReferencia) {
+    const [{ data: fixos, error: e1 }, { data: variaveis, error: e2 }] = await Promise.all([
+      supabase.from('gastos_operacionais').select('*').eq('tipo', 'FIXO').eq('situacao', 'A'),
+      supabase.from('gastos_operacionais').select('*').eq('tipo', 'VARIAVEL').eq('situacao', 'A').eq('mes_referencia', mesReferencia),
+    ])
+    if (e1) throw new Error(e1.message)
+    if (e2) throw new Error(e2.message)
+    return [...(fixos || []), ...(variaveis || [])].sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR', { sensitivity: 'base' }))
+  },
+
+  async salvar(dados) {
+    const payload = {
+      tipo: dados.tipo,
+      descricao: dados.descricao,
+      valor: Number(dados.valor) || 0,
+      mes_referencia: dados.tipo === 'VARIAVEL' ? dados.mes_referencia : null,
+      usuario: dados.usuario || '',
+      data_atualizacao: hoje(),
+      hora_atualizacao: agora(),
+    }
+    const { error } = dados.id
+      ? await supabase.from('gastos_operacionais').update(payload).eq('id', dados.id)
+      : await supabase.from('gastos_operacionais').insert({ ...payload, situacao: 'A' })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+
+  async excluir(id) {
+    const { error } = await supabase.from('gastos_operacionais').update({ situacao: 'C' }).eq('id', id)
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
   },
 }
 
@@ -1411,10 +1557,37 @@ const relatorios = {
     return data
   },
 
+  // A RPC relatorio_entradas_mercadoria (criada direto no Supabase, sem
+  // migração versionada no repo) não bate com o schema atual e sempre volta
+  // vazia — por isso o relatório monta o agregado aqui mesmo, direto das
+  // tabelas entradas_mercadoria/entradas_mercadoria_itens.
   async entradasMercadoria(dataInicio, dataFim) {
-    const { data, error } = await supabase.rpc('relatorio_entradas_mercadoria', { p_data_inicio: dataInicio, p_data_fim: dataFim })
-    if (error) throw new Error(error.message)
-    return data
+    const { data: cabecalhos, error: e1 } = await supabase
+      .from('entradas_mercadoria')
+      .select('numero')
+      .gte('data_entrada', dataInicio)
+      .lte('data_entrada', dataFim)
+    if (e1) throw new Error(e1.message)
+    if (!cabecalhos?.length) return []
+
+    const { data: itens, error: e2 } = await supabase
+      .from('entradas_mercadoria_itens')
+      .select('codigo_produto, descricao, quantidade, valor_total')
+      .in('numero', cabecalhos.map((c) => c.numero))
+    if (e2) throw new Error(e2.message)
+
+    const porProduto = {}
+    for (const it of itens) {
+      const chave = it.codigo_produto
+      if (!porProduto[chave]) {
+        porProduto[chave] = { codigo: it.codigo_produto, descricao: it.descricao, qtde_total: 0, valor_total: 0 }
+      }
+      porProduto[chave].qtde_total += it.quantidade || 0
+      porProduto[chave].valor_total += it.valor_total || 0
+    }
+    return Object.values(porProduto).sort((a, b) =>
+      a.descricao.localeCompare(b.descricao, 'pt-BR', { sensitivity: 'base' }),
+    )
   },
 
   async extrato(dataInicio, dataFim) {
@@ -1533,6 +1706,7 @@ module.exports = {
   nfe,
   pedidosCompra,
   entradasMercadoria,
+  gastosOperacionais,
   cheques,
   lancamentosExtras,
   reajustesPreco,

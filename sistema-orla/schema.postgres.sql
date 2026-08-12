@@ -684,6 +684,23 @@ CREATE TABLE IF NOT EXISTS fechamentos_patrimoniais (
 );
 
 -- ============================================================
+-- TABELA: gastos_operacionais (gastos fixos/variáveis mensais — usada pelo
+-- simulador de Ponto de Equilíbrio em Lucro Real; ver
+-- banco/migracao_gastos_operacionais.sql pro script completo com RLS)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS gastos_operacionais (
+  id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tipo TEXT NOT NULL CHECK (tipo IN ('FIXO', 'VARIAVEL')),
+  descricao TEXT NOT NULL,
+  valor DOUBLE PRECISION NOT NULL DEFAULT 0,
+  mes_referencia TEXT,
+  situacao TEXT NOT NULL DEFAULT 'A',
+  usuario TEXT,
+  data_atualizacao TEXT,
+  hora_atualizacao TEXT
+);
+
+-- ============================================================
 -- ÍNDICES para performance
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_clientes_nome ON clientes(nome);
@@ -715,3 +732,4 @@ CREATE INDEX IF NOT EXISTS idx_usuarios_login ON usuarios(usuario, ativo);
 CREATE INDEX IF NOT EXISTS idx_vendas_itens_codigo_produto ON vendas_itens(codigo_produto);
 CREATE INDEX IF NOT EXISTS idx_pedidos_compra_itens_numero ON pedidos_compra_itens(numero);
 CREATE INDEX IF NOT EXISTS idx_lancamentos_extras_tipo_situacao ON lancamentos_extras(tipo, situacao);
+CREATE INDEX IF NOT EXISTS idx_gastos_operacionais_tipo_mes ON gastos_operacionais(tipo, mes_referencia, situacao);

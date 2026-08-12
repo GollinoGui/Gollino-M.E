@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Fragment } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, ArrowDownCircle, ArrowUpCircle, Package, RefreshCw, ShoppingCart, ClipboardList, TrendingUp } from 'lucide-react'
+import { Search, ArrowDownCircle, ArrowUpCircle, Package, RefreshCw, ShoppingCart, ClipboardList, TrendingUp, ChevronRight } from 'lucide-react'
 import ModalAcessoNegado from '../components/ModalAcessoNegado'
 import ModalAviso from '../components/ModalAviso'
 import ModalConfirmacao from '../components/ModalConfirmacao'
@@ -10,6 +10,15 @@ import { fmtQtd } from '../utils/formatQtd'
 const fmt = (v) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = (d) => new Date(d).toLocaleDateString('pt-BR')
+
+// Mesma string usada em electron/database.js (registrarPedidoCompraDaEntrada)
+// pra marcar o pedido de compra espelhado automaticamente por uma entrada de
+// mercadoria. Esse pedido nasce já RECEBIDO e nunca deve ser recebido/
+// cancelado por aqui — o estoque e a conta a pagar dele já foram lançados
+// pela entrada, então essas ações reverteriam/duplicariam lançamentos alheios.
+const MARCA_PEDIDO_AUTO_ENTRADA = 'Gerado automaticamente pela entrada de mercadoria #'
+const numeroEntradaDoPedidoAuto = (p) =>
+  p.observacao?.startsWith(MARCA_PEDIDO_AUTO_ENTRADA) ? p.observacao.slice(MARCA_PEDIDO_AUTO_ENTRADA.length) : null
 
 const abasEstoque = [
   { id: 'movimentos', label: 'Movimentos', pronto: true },
@@ -1003,6 +1012,11 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   const [modalEntradaMercadoria, setModalEntradaMercadoria] = useState(false)
   const [entradasMercadoria, setEntradasMercadoria] = useState([])
   const [proximoNumEntrada, setProximoNumEntrada] = useState('000001')
+  // { numero, fase } — fase 'abrindo'|'aberto' controla o slide para baixo,
+  // 'fechando' o slide de volta pra cima antes de desmontar a linha.
+  const [entradaAcordeao, setEntradaAcordeao] = useState(null)
+  const [itensPorEntrada, setItensPorEntrada] = useState({})
+  const [carregandoItensEntrada, setCarregandoItensEntrada] = useState(false)
 
   // Posição de estoque — filtro de situação e seleção para pedido de compra
   const [filtroSituacaoEstoque, setFiltroSituacaoEstoque] = useState('todos')
@@ -1081,6 +1095,37 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
       console.error('Erro ao confirmar entrada de mercadoria:', err)
       return { sucesso: false, erro: err.message }
     }
+  }
+
+  const DURACAO_ACORDEAO = 220
+
+  // Expande a linha (slide para baixo) e busca os itens daquela entrada sob
+  // demanda (só na primeira vez — fica em cache em itensPorEntrada). Fechar
+  // primeiro anima de volta pra cima (fase 'fechando') e só desmonta a linha
+  // de detalhe depois da transição, pra não sumir de repente.
+  function alternarEntradaExpandida(numero) {
+    if (entradaAcordeao?.numero === numero && entradaAcordeao.fase !== 'fechando') {
+      setEntradaAcordeao({ numero, fase: 'fechando' })
+      setTimeout(() => {
+        setEntradaAcordeao((prev) => (prev?.numero === numero && prev.fase === 'fechando' ? null : prev))
+      }, DURACAO_ACORDEAO)
+      return
+    }
+    setEntradaAcordeao({ numero, fase: 'abrindo' })
+    // Precisa de dois frames: o primeiro garante que o navegador pinte a
+    // fase 'abrindo' (altura 0) antes de mudar pra 'aberto' — só assim o
+    // CSS anima a transição em vez de já nascer na altura final.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setEntradaAcordeao((prev) => (prev?.numero === numero ? { numero, fase: 'aberto' } : prev))
+      })
+    })
+    if (itensPorEntrada[numero]) return
+    setCarregandoItensEntrada(true)
+    window.api.entradasMercadoria.itens(numero)
+      .then((itens) => setItensPorEntrada((prev) => ({ ...prev, [numero]: itens })))
+      .catch((err) => console.error('Erro ao carregar itens da entrada:', err))
+      .finally(() => setCarregandoItensEntrada(false))
   }
 
   const movFiltrados = movimentos.filter((m) => {
@@ -1425,31 +1470,96 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
               <colgroup>
+                <col style={{ width: 28 }} />
                 <col style={{ width: 90 }} />
                 <col style={{ width: 100 }} />
                 <col />
                 <col style={{ width: 100 }} />
                 <col style={{ width: 120 }} />
-                <col style={{ width: 120 }} />
               </colgroup>
               <thead>
                 <tr>
-                  {['Id', 'Data entrada', 'Fornecedor', 'Nº Nota', 'Total itens', 'Previsão lucro'].map((h) => (
+                  {['', 'Id', 'Data entrada', 'Fornecedor', 'Nº Nota', 'Total itens'].map((h) => (
                     <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', textAlign: 'left', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {entradasMercadoria.map((e) => (
-                  <tr key={e.id} style={{ borderLeft: '3px solid #22C55E' }}>
-                    <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)', fontFamily: 'monospace' }}>#{e.numero}</td>
-                    <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{fmtDate(e.data_entrada)}</td>
-                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.nome_fornecedor || e.codigo_fornecedor}</td>
-                    <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{e.numero_nota || '-'}</td>
-                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, borderBottom: '1px solid var(--border)' }}>{fmt(e.valor_total_itens || 0)}</td>
-                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, borderBottom: '1px solid var(--border)', color: (e.previsao_lucro || 0) >= 0 ? 'var(--green-500)' : '#EF4444' }}>{fmt(e.previsao_lucro || 0)}</td>
-                  </tr>
-                ))}
+                {entradasMercadoria.map((e) => {
+                  const fase = entradaAcordeao?.numero === e.numero ? entradaAcordeao.fase : null
+                  const aberta = fase === 'aberto' || fase === 'abrindo'
+                  const destacada = !!fase
+                  const itensEntrada = itensPorEntrada[e.numero]
+                  return (
+                    <Fragment key={e.id}>
+                      <tr
+                        onClick={() => alternarEntradaExpandida(e.numero)}
+                        style={{ borderLeft: '3px solid #22C55E', cursor: 'pointer', background: destacada ? 'var(--gray-50)' : 'transparent' }}
+                      >
+                        <td style={{ padding: '9px 10px', borderBottom: destacada ? 'none' : '1px solid var(--border)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+                          <span style={{ display: 'inline-flex', transform: aberta ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }}>
+                            <ChevronRight size={14} />
+                          </span>
+                        </td>
+                        <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: destacada ? 'none' : '1px solid var(--border)', fontFamily: 'monospace' }}>#{e.numero}</td>
+                        <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: destacada ? 'none' : '1px solid var(--border)' }}>{fmtDate(e.data_entrada)}</td>
+                        <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 500, borderBottom: destacada ? 'none' : '1px solid var(--border)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.nome_fornecedor || e.codigo_fornecedor}</td>
+                        <td style={{ padding: '9px 10px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: destacada ? 'none' : '1px solid var(--border)' }}>{e.numero_nota || '-'}</td>
+                        <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 600, borderBottom: destacada ? 'none' : '1px solid var(--border)' }}>{fmt(e.valor_total_itens || 0)}</td>
+                      </tr>
+                      {fase && (
+                        <tr style={{ borderLeft: '3px solid #22C55E' }}>
+                          <td colSpan={6} style={{ padding: 0, borderBottom: '1px solid var(--border)', background: 'var(--gray-50)' }}>
+                            {/* Truque do grid-template-rows 0fr↔1fr: anima a altura do
+                                conteúdo (variável, depende dos itens) sem precisar medir
+                                pixels em JS — funciona nos dois sentidos (abre/fecha). */}
+                            <div style={{ display: 'grid', gridTemplateRows: aberta ? '1fr' : '0fr', transition: `grid-template-rows ${DURACAO_ACORDEAO}ms ease` }}>
+                              <div style={{ overflow: 'hidden' }}>
+                                <div style={{ padding: '4px 10px 14px' }}>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 24px', fontSize: 12, color: 'var(--text-secondary)', padding: '4px 0 10px' }}>
+                                    {e.data_emissao && <span>Emissão: <strong style={{ color: 'var(--text-primary)' }}>{fmtDate(e.data_emissao)}</strong></span>}
+                                    {e.chave_nfe && <span>Chave NFe: <strong style={{ color: 'var(--text-primary)' }}>{e.chave_nfe}</strong></span>}
+                                    <span>Total das faturas: <strong style={{ color: 'var(--text-primary)' }}>{fmt(e.valor_total_faturas || 0)}</strong></span>
+                                    {e.usuario && <span>Lançado por: <strong style={{ color: 'var(--text-primary)' }}>{e.usuario}</strong></span>}
+                                    {e.observacao && <span>Obs: <strong style={{ color: 'var(--text-primary)' }}>{e.observacao}</strong></span>}
+                                  </div>
+                                  {!itensEntrada ? (
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0' }}>
+                                      {carregandoItensEntrada ? 'Carregando itens...' : 'Nenhum item encontrado.'}
+                                    </div>
+                                  ) : (
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                                      <thead>
+                                        <tr>
+                                          {['Produto', 'Tipo', 'Qtde', 'Custo', 'Preço vista', 'Preço prazo', 'Total'].map((h) => (
+                                            <th key={h} style={{ padding: '6px 10px', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                                          ))}
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {itensEntrada.map((i) => (
+                                          <tr key={i.id}>
+                                            <td style={{ padding: '6px 10px', fontSize: 12.5, borderBottom: '1px solid var(--border)' }}>{i.descricao}</td>
+                                            <td style={{ padding: '6px 10px', fontSize: 12.5, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{i.tipo || '-'}</td>
+                                            <td style={{ padding: '6px 10px', fontSize: 12.5, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmtQtd(i.quantidade, unidadeDoProduto(i.codigo_produto))}</td>
+                                            <td style={{ padding: '6px 10px', fontSize: 12.5, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmt(i.preco_custo || 0)}</td>
+                                            <td style={{ padding: '6px 10px', fontSize: 12.5, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{i.preco_venda_vista > 0 ? fmt(i.preco_venda_vista) : '-'}</td>
+                                            <td style={{ padding: '6px 10px', fontSize: 12.5, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{i.preco_venda_prazo > 0 ? fmt(i.preco_venda_prazo) : '-'}</td>
+                                            <td style={{ padding: '6px 10px', fontSize: 12.5, fontWeight: 600, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmt((i.quantidade || 0) * (i.preco_custo || 0) + (i.rateio_despesas || 0))}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           )}
@@ -1688,6 +1798,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {pedidos.map((p) => {
                 const st = statusPedido(p.situacao)
+                const numeroEntradaOrigem = numeroEntradaDoPedidoAuto(p)
                 return (
                   <div key={p.id} style={{ background: 'var(--surface)', border: '1px solid var(--border-md)', borderRadius: 'var(--radius-md)', padding: '14px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -1695,18 +1806,23 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                         <span style={{ fontWeight: 600, fontSize: 14 }}>#{String(p.numero).padStart(4, '0')}</span>
                         <span style={{ fontWeight: 500, fontSize: 14 }}>{p.fornecedor}</span>
                         <span style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}`, padding: '2px 10px', borderRadius: 10, fontSize: 11, fontWeight: 600 }}>{st.label}</span>
+                        {numeroEntradaOrigem && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--blue-50)', color: 'var(--blue-700)', border: '1px solid var(--blue-100)', padding: '2px 10px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>
+                            <ArrowDownCircle size={11} /> Via entrada #{numeroEntradaOrigem}
+                          </span>
+                        )}
                       </div>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(p.data)}</span>
-                        {p.situacao === 'ABERTO' && (
+                        {!numeroEntradaOrigem && p.situacao === 'ABERTO' && (
                           <button onClick={() => receberPedido(p.numero)} style={{ padding: '4px 12px', background: 'var(--green-500)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 12, fontWeight: 500 }}>Receber</button>
                         )}
-                        {(p.situacao === 'ABERTO' || p.situacao === 'RECEBIDO') && (
+                        {!numeroEntradaOrigem && (p.situacao === 'ABERTO' || p.situacao === 'RECEBIDO') && (
                           <button onClick={() => cancelarPedido(p.numero)} style={{ padding: '4px 10px', background: 'var(--red-50)', color: 'var(--red-500)', border: '1px solid var(--red-100)', borderRadius: 'var(--radius-md)', fontSize: 12 }}>Cancelar</button>
                         )}
                       </div>
                     </div>
-                    {p.obs && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>{p.obs}</div>}
+                    {p.observacao && !numeroEntradaOrigem && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>{p.observacao}</div>}
                     {p.itens && p.itens.length > 0 && (
                       <div style={{ background: 'var(--gray-50)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 12 }}>
                         {p.itens.map((item, i) => (

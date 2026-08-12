@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   RefreshCw, TrendingUp, TrendingDown, Settings2, Save,
   ArrowUpRight, ArrowDownRight, PlusCircle, CreditCard,
+  Target, Plus, Trash2, Pencil, Search,
 } from 'lucide-react'
 
 const fmt = (v) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -45,6 +46,19 @@ function periodoAnterior(ini, fim) {
   prevFimD.setDate(prevFimD.getDate() - 1)
   const prevIniD = new Date(prevFimD.getTime() - spanMs)
   return { ini: prevIniD.toISOString().slice(0, 10), fim: prevFimD.toISOString().slice(0, 10) }
+}
+
+function mesAtualStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+// Primeiro e último dia do mês 'YYYY-MM', pra reaproveitar financeiro.resumoPeriodo
+function limitesDoMes(mesStr) {
+  const [y, m] = mesStr.split('-').map(Number)
+  const ini = `${mesStr}-01`
+  const fim = new Date(y, m, 0).toISOString().slice(0, 10)
+  return { ini, fim }
 }
 
 const CHAVES_TAXA = {
@@ -415,7 +429,332 @@ function GroupedBars({ dados }) {
   )
 }
 
-export default function FinanceiroLucro() {
+// ── Modal de gasto (fixo/variável) ──
+function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial }) {
+  const [form, setForm] = useState({
+    tipo: gastoInicial?.tipo || 'FIXO',
+    descricao: gastoInicial?.descricao || '',
+    valor: gastoInicial?.valor ?? '',
+  })
+  const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }))
+  const valido = form.descricao.trim() && Number(form.valor) > 0
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+      <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-md)', width: 420, padding: 22, boxShadow: '0 16px 40px rgba(0,0,0,0.14)' }}>
+        <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 16 }}>{gastoInicial ? 'Editar gasto' : 'Novo gasto'}</div>
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          {[['FIXO', 'Fixo — repete todo mês'], ['VARIAVEL', `Variável — só ${mesLabel(mesReferencia)}`]].map(([v, label]) => (
+            <button key={v} type='button' onClick={() => setForm((p) => ({ ...p, tipo: v }))}
+              style={{
+                flex: 1, padding: '8px 10px', borderRadius: 'var(--radius-md)', fontSize: 12, cursor: 'pointer',
+                border: `1px solid ${form.tipo === v ? 'var(--blue-600)' : 'var(--border-md)'}`,
+                background: form.tipo === v ? 'var(--blue-50)' : 'var(--surface)',
+                color: form.tipo === v ? 'var(--blue-700)' : 'var(--text-secondary)', fontWeight: 500,
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Descrição *</label>
+          <input value={form.descricao} onChange={f('descricao')} autoFocus placeholder='Ex: Aluguel' style={{ width: '100%', height: 36, padding: '0 10px' }} />
+        </div>
+        <div style={{ marginBottom: 6 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Valor mensal (R$) *</label>
+          <input value={form.valor} onChange={f('valor')} type='number' min='0' step='0.01' style={{ width: '100%', height: 36, padding: '0 10px' }} />
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
+          {form.tipo === 'FIXO'
+            ? 'Fica valendo todo mês até você editar ou remover.'
+            : `Vale só para ${mesLabel(mesReferencia)} — no mês seguinte você lança de novo.`}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
+          <button
+            disabled={!valido}
+            onClick={() => onSalvar({
+              id: gastoInicial?.id,
+              tipo: form.tipo,
+              descricao: form.descricao.trim(),
+              valor: Number(form.valor),
+              mes_referencia: mesReferencia,
+            })}
+            style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: valido ? 'var(--blue-600)' : 'var(--gray-200)', color: valido ? '#fff' : 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: valido ? 'pointer' : 'not-allowed' }}
+          >
+            Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Lista de gastos (fixos | variáveis) com total ──
+function ListaGastos({ titulo, itens, total, onEditar, onExcluir, vazio }) {
+  return (
+    <div style={{ flex: 1, minWidth: 240 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{titulo}</div>
+        <div style={{ fontSize: 12, fontWeight: 700 }}>{fmt(total)}</div>
+      </div>
+      <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+        {itens.length === 0 ? (
+          <div style={{ padding: '14px 12px', fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>{vazio}</div>
+        ) : itens.map((g, i) => (
+          <div key={g.id} style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+            borderTop: i > 0 ? '1px solid var(--border)' : 'none', background: 'var(--surface)',
+          }}>
+            <div style={{ flex: 1, fontSize: 13 }}>{g.descricao}</div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{fmt(g.valor)}</div>
+            <button onClick={() => onEditar(g)} title='Editar' style={{ display: 'flex', padding: 4, color: 'var(--text-muted)', borderRadius: 6 }}>
+              <Pencil size={13} />
+            </button>
+            <button onClick={() => onExcluir(g)} title='Remover' style={{ display: 'flex', padding: 4, color: 'var(--red-500)', borderRadius: 6 }}>
+              <Trash2 size={13} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Simulador de ponto de equilíbrio: gastos do mês + margem de contribuição
+// real (derivada do mesmo resumo do Lucro Real) → faturamento/unidades
+// necessárias pra pagar as contas e pra atingir um lucro alvo. É um cálculo
+// separado do "Lucro Real" (que é por confronto patrimonial) — respondem
+// perguntas diferentes: um é o que já aconteceu, o outro é planejamento.
+function PontoDeEquilibrio({ usuario }) {
+  const [mesSelecionado, setMesSelecionado] = useState(mesAtualStr())
+  const [gastos, setGastos] = useState([])
+  const [resumoMes, setResumoMes] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [modalGasto, setModalGasto] = useState(null) // null | true (novo) | {...gasto} (editar)
+  const [lucroAlvo, setLucroAlvo] = useState('')
+  const [buscaProduto, setBuscaProduto] = useState('')
+  const [produtosLista, setProdutosLista] = useState([])
+  const [mostrarListaProdutos, setMostrarListaProdutos] = useState(false)
+  const [produtoSelecionado, setProdutoSelecionado] = useState(null)
+  const [sucesso, setSucesso] = useState('')
+
+  const carregar = useCallback(async () => {
+    setLoading(true)
+    const { ini, fim } = limitesDoMes(mesSelecionado)
+    // allSettled: se gastos_operacionais ainda não existir no banco (migração
+    // não rodada), o resumo do mês continua carregando normalmente em vez de
+    // travar tudo por causa de uma falha só.
+    const [gRes, rRes] = await Promise.allSettled([
+      window.api.gastosOperacionais.listar(mesSelecionado),
+      window.api.financeiro.resumoPeriodo(ini, fim),
+    ])
+    if (gRes.status === 'fulfilled') setGastos(gRes.value || [])
+    else console.error('Erro ao carregar gastos operacionais:', gRes.reason)
+    if (rRes.status === 'fulfilled') setResumoMes(rRes.value)
+    else console.error('Erro ao carregar resumo do mês:', rRes.reason)
+    setLoading(false)
+  }, [mesSelecionado])
+
+  useEffect(() => { carregar() }, [carregar])
+
+  useEffect(() => {
+    window.api.produtos.listar({ situacao: 'A', busca: buscaProduto || undefined })
+      .then((data) => setProdutosLista((data || []).slice(0, 8)))
+      .catch(() => setProdutosLista([]))
+  }, [buscaProduto])
+
+  function mostrarSucesso(msg) {
+    setSucesso(msg)
+    setTimeout(() => setSucesso(''), 2200)
+  }
+
+  async function salvarGasto(dados) {
+    await window.api.gastosOperacionais.salvar({ ...dados, usuario: usuario?.usuario || usuario?.nome || 'sistema' })
+    setModalGasto(null)
+    await carregar()
+    mostrarSucesso('Gasto salvo!')
+  }
+
+  async function excluirGasto(g) {
+    if (!(await window.api.dialog.confirm(`Remover o gasto "${g.descricao}"?`))) return
+    await window.api.gastosOperacionais.excluir(g.id)
+    await carregar()
+    mostrarSucesso('Gasto removido.')
+  }
+
+  const fixos = gastos.filter((g) => g.tipo === 'FIXO')
+  const variaveis = gastos.filter((g) => g.tipo === 'VARIAVEL')
+  const totalFixos = fixos.reduce((s, g) => s + (g.valor || 0), 0)
+  const totalVariaveis = variaveis.reduce((s, g) => s + (g.valor || 0), 0)
+  const gastosDoMes = totalFixos + totalVariaveis
+
+  const receita = resumoMes?.receita_bruta || 0
+  const custoProdutos = resumoMes?.custo_produtos || 0
+  const taxaCartao = resumoMes?.taxa_cartao || 0
+  const temVendas = receita > 0
+  const margemContribuicaoPct = temVendas ? (receita - custoProdutos - taxaCartao) / receita : 0
+  const taxaCartaoPct = temVendas ? taxaCartao / receita : 0
+
+  const lucroAlvoNum = Number(lucroAlvo) || 0
+  const margemValida = temVendas && margemContribuicaoPct > 0
+  const pontoEquilibrioRS = margemValida ? gastosDoMes / margemContribuicaoPct : null
+  const faturamentoLucroAlvoRS = margemValida ? (gastosDoMes + lucroAlvoNum) / margemContribuicaoPct : null
+
+  const margemUnit = produtoSelecionado
+    ? produtoSelecionado.preco_venda_vista - (produtoSelecionado.preco_custo_atual || 0) - produtoSelecionado.preco_venda_vista * taxaCartaoPct
+    : null
+  const margemUnitValida = margemUnit != null && margemUnit > 0
+  const unidadesEmpate = margemUnitValida ? Math.ceil(gastosDoMes / margemUnit) : null
+  const unidadesLucroAlvo = margemUnitValida ? Math.ceil((gastosDoMes + lucroAlvoNum) / margemUnit) : null
+
+  return (
+    <div style={{ margin: '16px 20px 0', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', position: 'relative' }}>
+      {sucesso && (
+        <div style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', background: 'var(--green-500)', color: '#fff', padding: '7px 18px', borderRadius: 'var(--radius-lg)', fontSize: 12, fontWeight: 500, zIndex: 250 }}>
+          {sucesso}
+        </div>
+      )}
+      {modalGasto && (
+        <ModalGasto
+          onClose={() => setModalGasto(null)}
+          onSalvar={salvarGasto}
+          mesReferencia={mesSelecionado}
+          gastoInicial={modalGasto === true ? null : modalGasto}
+        />
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10, marginBottom: 4 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Target size={14} /> Ponto de equilíbrio
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            Planejamento: quanto preciso vender em {mesLabel(mesSelecionado)} pra pagar as contas do mês e pra sobrar o lucro que eu quero
+          </div>
+        </div>
+        <input type='month' value={mesSelecionado} onChange={(e) => setMesSelecionado(e.target.value)}
+          style={{ height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13 }} />
+      </div>
+
+      {loading ? (
+        <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>Carregando...</div>
+      ) : (
+        <>
+          {/* GASTOS DO MÊS */}
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', margin: '16px 0' }}>
+            <ListaGastos titulo={`Fixos (${fixos.length})`} itens={fixos} total={totalFixos}
+              onEditar={setModalGasto} onExcluir={excluirGasto} vazio='Nenhum gasto fixo cadastrado.' />
+            <ListaGastos titulo={`Variáveis (${variaveis.length})`} itens={variaveis} total={totalVariaveis}
+              onEditar={setModalGasto} onExcluir={excluirGasto} vazio={`Nenhum gasto variável lançado em ${mesLabel(mesSelecionado)}.`} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+            <button onClick={() => setModalGasto(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, height: 32, padding: '0 14px', background: 'var(--blue-600)', color: '#fff', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
+              <Plus size={13} /> Gasto
+            </button>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              Gastos do mês: <b style={{ color: 'var(--text-primary)' }}>{fmt(gastosDoMes)}</b>
+            </div>
+          </div>
+
+          {/* LUCRO ALVO */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Lucro que eu quero sobrar (R$)</label>
+              <input type='number' min='0' step='100' value={lucroAlvo} onChange={(e) => setLucroAlvo(e.target.value)} placeholder='0'
+                style={{ width: 160, height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13 }} />
+            </div>
+          </div>
+
+          {!temVendas && (
+            <div style={{ padding: '10px 14px', background: 'var(--amber-50, #FFFBEB)', border: '1px solid var(--amber-100, #FDE68A)', borderRadius: 8, fontSize: 12, color: 'var(--amber-700, #92400E)', marginBottom: 16 }}>
+              Sem vendas registradas em {mesLabel(mesSelecionado)} ainda — a margem de contribuição real só aparece depois da primeira venda do mês.
+            </div>
+          )}
+          {temVendas && !margemValida && (
+            <div style={{ padding: '10px 14px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 8, fontSize: 12, color: 'var(--red-700)', marginBottom: 16 }}>
+              A margem de contribuição de {mesLabel(mesSelecionado)} está zerada ou negativa (custo de produtos + taxa de cartão consumiu toda a receita) — não dá pra calcular ponto de equilíbrio nesse cenário.
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            {/* CARD: NEGÓCIO */}
+            <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border-md)', borderRadius: 10, padding: '14px 16px' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10 }}>Ponto de equilíbrio do negócio</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                Margem de contribuição de {mesLabel(mesSelecionado)}: <b>{margemValida ? fmtPct(margemContribuicaoPct * 100) : '—'}</b>
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Faturamento pra pagar as contas</div>
+                <div style={{ fontSize: 20, fontWeight: 700 }}>{margemValida ? fmt(pontoEquilibrioRS) : '—'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Faturamento pra sobrar {fmt(lucroAlvoNum)} de lucro</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--green-500)' }}>{margemValida ? fmt(faturamentoLucroAlvoRS) : '—'}</div>
+              </div>
+            </div>
+
+            {/* CARD: PRODUTO ESPECÍFICO */}
+            <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border-md)', borderRadius: 10, padding: '14px 16px' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10 }}>Calculadora por produto</div>
+              <div style={{ position: 'relative', marginBottom: 10 }}>
+                <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input
+                  value={produtoSelecionado ? produtoSelecionado.descricao : buscaProduto}
+                  onChange={(e) => { setBuscaProduto(e.target.value); setProdutoSelecionado(null); setMostrarListaProdutos(true) }}
+                  onFocus={() => setMostrarListaProdutos(true)}
+                  placeholder='Buscar produto...'
+                  style={{ width: '100%', height: 34, paddingLeft: 28, borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13 }}
+                />
+                {mostrarListaProdutos && !produtoSelecionado && produtosLista.length > 0 && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border-md)', borderRadius: 8, boxShadow: '0 8px 20px rgba(0,0,0,0.12)', zIndex: 20, maxHeight: 220, overflowY: 'auto' }}>
+                    {produtosLista.map((p) => (
+                      <div key={p.codigo} onClick={() => { setProdutoSelecionado(p); setMostrarListaProdutos(false) }}
+                        style={{ padding: '8px 10px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                        <div style={{ fontWeight: 500 }}>{p.descricao}</div>
+                        <div style={{ color: 'var(--text-muted)' }}>{fmt(p.preco_venda_vista)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {!produtoSelecionado ? (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Selecione um produto pra simular.</div>
+              ) : !margemUnitValida ? (
+                <div style={{ fontSize: 12, color: 'var(--red-500)' }}>
+                  Vendendo a {fmt(produtoSelecionado.preco_venda_vista)}, esse produto não cobre custo + taxa de cartão — margem de contribuição negativa.
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                    Margem de contribuição/unidade: <b>{fmt(margemUnit)}</b>
+                  </div>
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Unidades pra pagar as contas (sozinho)</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{unidadesEmpate.toLocaleString('pt-BR')}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Unidades pra sobrar {fmt(lucroAlvoNum)}</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--green-500)' }}>{unidadesLucroAlvo.toLocaleString('pt-BR')}</div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+export default function FinanceiroLucro({ usuario }) {
   const { ini, fim } = mesAtual()
   const [preset, setPreset] = useState('mes-atual')
   const [dataInicio, setDataInicio] = useState(ini)
@@ -578,6 +917,8 @@ export default function FinanceiroLucro() {
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 14 }}>De onde veio e para onde foi o dinheiro</div>
             <CompositionBar resumo={resumo} />
           </div>
+
+          <PontoDeEquilibrio usuario={usuario} />
 
           {/* TENDÊNCIA DO LUCRO */}
           <div style={{ margin: '16px 20px 0', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px' }}>

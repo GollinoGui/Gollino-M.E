@@ -237,6 +237,13 @@ contextBridge.exposeInMainWorld('api', {
     cancelar: (id) => ipcRenderer.invoke('lancamentosExtras:cancelar', id),
   },
 
+  // GASTOS OPERACIONAIS
+  gastosOperacionais: {
+    listar: (mesReferencia) => ipcRenderer.invoke('gastosOperacionais:listar', mesReferencia),
+    salvar: (dados) => ipcRenderer.invoke('gastosOperacionais:salvar', dados),
+    excluir: (id) => ipcRenderer.invoke('gastosOperacionais:excluir', id),
+  },
+
   // REAJUSTES DE PREÇO
   reajustesPreco: {
     listar: (filtros) => ipcRenderer.invoke('reajustesPreco:listar', filtros),

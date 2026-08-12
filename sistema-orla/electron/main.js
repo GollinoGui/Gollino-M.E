@@ -304,6 +304,11 @@ handle('lancamentosExtras:salvar', (_, dados) => db.lancamentosExtras.salvar(dad
 handle('lancamentosExtras:pagar', (_, { id, usuario }) => db.lancamentosExtras.pagar(id, usuario))
 handle('lancamentosExtras:cancelar', (_, id) => db.lancamentosExtras.cancelar(id))
 
+// --- GASTOS OPERACIONAIS ---
+handle('gastosOperacionais:listar', (_, mesReferencia) => db.gastosOperacionais.listar(mesReferencia))
+handle('gastosOperacionais:salvar', (_, dados) => db.gastosOperacionais.salvar(dados))
+handle('gastosOperacionais:excluir', (_, id) => db.gastosOperacionais.excluir(id))
+
 // --- REAJUSTES DE PREÇO ---
 handle('reajustesPreco:listar', (_, filtros) => db.reajustesPreco.listar(filtros))
 handle('reajustesPreco:aplicar', (_, { codigos, percentual, usuario }) => db.reajustesPreco.aplicar(codigos, percentual, usuario))
