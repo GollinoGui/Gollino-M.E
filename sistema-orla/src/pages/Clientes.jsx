@@ -10,6 +10,8 @@ import {
   X,
   Eye,
 } from 'lucide-react'
+import { BotoesRelatorio } from '../components/BotoesRelatorio'
+import { exportarCSV, buscarEmpresa, gerarHtmlListaSimples, gerarPdfRelatorio } from '../utils/relatorios'
 
 // ── Máscaras ──────────────────────────────────────────────────
 function maskCPF(v) {
@@ -220,6 +222,59 @@ export default function Clientes({ usuario }) {
 
   function documento(c) {
     return c.cgc || c.cpf || '-'
+  }
+
+  // ── Relatório (Excel/PDF) — respeita a busca aplicada, já que `clientes`
+  // vem do servidor filtrado por ela ────────────────────────────────────
+  function exportarExcel() {
+    exportarCSV(
+      clientes.map((c) => ({
+        Código: c.codigo,
+        Nome: c.nome,
+        'Nome Fantasia': c.nome_fantasia || '',
+        'CPF/CNPJ': documento(c),
+        Telefone: c.telefone || '',
+        Celular: c.celular || '',
+        'E-mail': c.email || '',
+        Cidade: c.cidade || '',
+        UF: c.uf || '',
+        Situação: c.codigo_situacao_cliente === 'A' ? 'Ativo' : 'Inativo',
+        'Haver (R$)': (parseFloat(c.haver) || 0).toFixed(2).replace('.', ','),
+        'Limite de Crédito (R$)': (parseFloat(c.limite_credito) || 0).toFixed(2).replace('.', ','),
+      })),
+      `clientes_${new Date().toISOString().slice(0, 10)}`,
+    )
+  }
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const emOrdem = [...clientes].sort((a, b) =>
+      String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR', { sensitivity: 'base' }),
+    )
+    const colunas = [
+      { label: 'Código' },
+      { label: 'Nome' },
+      { label: 'CPF/CNPJ' },
+      { label: 'Telefone' },
+      { label: 'Cidade/UF' },
+      { label: 'Situação' },
+    ]
+    const html = gerarHtmlListaSimples({
+      empresa,
+      titulo: 'Clientes',
+      subtitulo: `${emOrdem.length} cliente(s)${busca ? ` — filtrando por "${busca}"` : ''}`,
+      colunas,
+      linhas: emOrdem,
+      montarLinha: (c) => `<tr>
+        <td>${c.codigo}</td>
+        <td>${c.nome}${c.nome_fantasia ? ` (${c.nome_fantasia})` : ''}</td>
+        <td>${documento(c)}</td>
+        <td>${c.celular || c.telefone || '—'}</td>
+        <td>${[c.cidade, c.uf].filter(Boolean).join('/') || '—'}</td>
+        <td>${c.codigo_situacao_cliente === 'A' ? 'Ativo' : 'Inativo'}</td>
+      </tr>`,
+    })
+    await gerarPdfRelatorio(html, `clientes_${new Date().toISOString().slice(0, 10)}`)
   }
 
   function badgeSituacao(sit) {
@@ -625,6 +680,7 @@ export default function Clientes({ usuario }) {
               style={{ width: '100%', height: 34, paddingLeft: 32 }}
             />
           </div>
+          <BotoesRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />
           <button
             onClick={abrirNovo}
             style={{

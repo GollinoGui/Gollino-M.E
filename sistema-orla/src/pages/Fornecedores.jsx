@@ -10,6 +10,8 @@ import {
   X,
   Eye,
 } from 'lucide-react'
+import { BotoesRelatorio } from '../components/BotoesRelatorio'
+import { exportarCSV, buscarEmpresa, gerarHtmlListaSimples, gerarPdfRelatorio } from '../utils/relatorios'
 
 // ── Máscaras ──────────────────────────────────────────────────
 function maskCPF(v) {
@@ -194,6 +196,56 @@ export default function Fornecedores({ usuario }) {
 
   function documento(f) {
     return f.cnpj || f.cpf || '-'
+  }
+
+  // ── Relatório (Excel/PDF) — respeita a busca aplicada, já que `fornecedores`
+  // vem do servidor filtrado por ela ────────────────────────────────────
+  function exportarExcel() {
+    exportarCSV(
+      fornecedores.map((f) => ({
+        Código: f.codigo,
+        Nome: f.nome,
+        'Nome Fantasia': f.nome_fantasia || '',
+        'CNPJ/CPF': documento(f),
+        Telefone: f.telefone || '',
+        Celular: f.celular || '',
+        'E-mail': f.email || '',
+        Contato: f.contato || '',
+        Situação: f.situacao === 'A' ? 'Ativo' : 'Inativo',
+      })),
+      `fornecedores_${new Date().toISOString().slice(0, 10)}`,
+    )
+  }
+
+  async function gerarRelatorioPDF() {
+    const empresa = await buscarEmpresa()
+    const emOrdem = [...fornecedores].sort((a, b) =>
+      String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR', { sensitivity: 'base' }),
+    )
+    const colunas = [
+      { label: 'Código' },
+      { label: 'Nome' },
+      { label: 'CNPJ/CPF' },
+      { label: 'Telefone' },
+      { label: 'Contato' },
+      { label: 'Situação' },
+    ]
+    const html = gerarHtmlListaSimples({
+      empresa,
+      titulo: 'Fornecedores',
+      subtitulo: `${emOrdem.length} fornecedor(es)${busca ? ` — filtrando por "${busca}"` : ''}`,
+      colunas,
+      linhas: emOrdem,
+      montarLinha: (f) => `<tr>
+        <td>${f.codigo}</td>
+        <td>${f.nome}${f.nome_fantasia ? ` (${f.nome_fantasia})` : ''}</td>
+        <td>${documento(f)}</td>
+        <td>${f.celular || f.telefone || '—'}</td>
+        <td>${f.contato || '—'}</td>
+        <td>${f.situacao === 'A' ? 'Ativo' : 'Inativo'}</td>
+      </tr>`,
+    })
+    await gerarPdfRelatorio(html, `fornecedores_${new Date().toISOString().slice(0, 10)}`)
   }
 
   function badgeSituacao(sit) {
@@ -556,6 +608,7 @@ export default function Fornecedores({ usuario }) {
               style={{ width: '100%', height: 34, paddingLeft: 32 }}
             />
           </div>
+          <BotoesRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} />
           <button
             onClick={abrirNovo}
             style={{

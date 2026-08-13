@@ -1622,6 +1622,26 @@ const relatorios = {
     return data
   },
 
+  // Histórico completo (sem filtro de período) — cardinalidade baixa
+  // (produto × mês, ou só mês), usado pela Sazonalidade em Lucro Real.
+  async sazonalidadeProdutos() {
+    const { data, error } = await supabase.rpc('relatorio_sazonalidade_produtos')
+    if (error) throw new Error(error.message)
+    return data
+  },
+
+  async vendasMensais() {
+    const { data, error } = await supabase.rpc('relatorio_vendas_mensais')
+    if (error) throw new Error(error.message)
+    return data
+  },
+
+  async contasReceberMensal() {
+    const { data, error } = await supabase.rpc('relatorio_contas_receber_mensal')
+    if (error) throw new Error(error.message)
+    return data
+  },
+
   // A RPC relatorio_entradas_mercadoria (criada direto no Supabase, sem
   // migração versionada no repo) não bate com o schema atual e sempre volta
   // vazia — por isso o relatório monta o agregado aqui mesmo, direto das

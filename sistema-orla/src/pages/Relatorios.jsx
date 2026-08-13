@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import {
   BarChart2,
   TrendingUp,
@@ -15,6 +15,9 @@ import {
   Download,
   ListTree,
   PiggyBank,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
 import { BotaoGerarRelatorio } from '../components/BotoesRelatorio'
@@ -45,6 +48,40 @@ function mesAtual() {
   const ini = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
   const fim = d.toISOString().slice(0, 10)
   return { ini, fim }
+}
+
+const NOMES_MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+
+function mesLabel(mesStr) {
+  const [ano, mes] = String(mesStr || '').split('-')
+  const idx = Number(mes) - 1
+  return `${NOMES_MESES[idx] || mes}/${ano}`
+}
+
+// Agrupa linhas {mes: 'YYYY-MM', ...} por mês-do-ano (Jan..Dez), somando os
+// anos observados em cada mês. Um mês só é "elegível" pra apontar alta/baixa
+// quando já se repetiu em pelo menos 2 anos diferentes — com só 1 ano, o
+// "pico" seria só o único mês que existe no histórico, não um padrão real.
+function agruparPorMesDoAno(linhas, chaveValor, chaveQtd) {
+  const buckets = Array.from({ length: 12 }, () => ({ anos: new Set(), somaValor: 0, somaQtd: 0 }))
+  for (const l of linhas) {
+    const partes = String(l.mes || '').split('-')
+    const ano = partes[0]
+    const mesIdx = Number(partes[1]) - 1
+    if (!ano || mesIdx < 0 || mesIdx > 11) continue
+    const b = buckets[mesIdx]
+    b.anos.add(ano)
+    b.somaValor += l[chaveValor] || 0
+    b.somaQtd += l[chaveQtd] || 0
+  }
+  return buckets.map((b, i) => ({
+    mesIdx: i,
+    nome: NOMES_MESES[i],
+    anosObservados: b.anos.size,
+    mediaValor: b.anos.size ? b.somaValor / b.anos.size : 0,
+    mediaQtd: b.anos.size ? b.somaQtd / b.anos.size : 0,
+    elegivel: b.anos.size >= 2,
+  }))
 }
 
 const abas = [
@@ -3025,17 +3062,27 @@ function RelLucroReal({ usuario }) {
   const [fechando, setFechando] = useState(false)
   const [modalFechar, setModalFechar] = useState(false)
   const [erro, setErro] = useState('')
+  const [vendasMensais, setVendasMensais] = useState([])
+  const [contasReceberMensal, setContasReceberMensal] = useState([])
+  const [sazonalidade, setSazonalidade] = useState([])
+  const [produtoExpandido, setProdutoExpandido] = useState(null)
 
   async function carregar() {
     setLoading(true)
     setErro('')
     try {
-      const [snap, hist] = await Promise.all([
+      const [snap, hist, vm, crm, saz] = await Promise.all([
         window.api.patrimonio.snapshotAtual(),
         window.api.patrimonio.listar(),
+        window.api.relatorios.vendasMensais(),
+        window.api.relatorios.contasReceberMensal(),
+        window.api.relatorios.sazonalidadeProdutos(),
       ])
       setAtual(snap)
       setHistorico(hist || [])
+      setVendasMensais(vm || [])
+      setContasReceberMensal(crm || [])
+      setSazonalidade(saz || [])
     } catch (e) {
       setErro('Erro ao carregar: ' + e.message)
     } finally {
@@ -3066,6 +3113,79 @@ function RelLucroReal({ usuario }) {
   const comLucro = historico.filter((h) => h.lucro_periodo !== null && h.lucro_periodo !== undefined)
   const melhor = comLucro.length ? comLucro.reduce((a, b) => (b.lucro_periodo > a.lucro_periodo ? b : a)) : null
   const pior = comLucro.length ? comLucro.reduce((a, b) => (b.lucro_periodo < a.lucro_periodo ? b : a)) : null
+
+  // ── Sazonalidade — empresa (vendas por mês) ──
+  const vendasMensaisOrd = [...vendasMensais].sort((a, b) => a.mes.localeCompare(b.mes))
+  const mesesEmpresa = agruparPorMesDoAno(
+    vendasMensais.map((m) => ({ mes: m.mes, valor: m.valor_total, quantidade: m.quantidade_vendas })),
+    'valor', 'quantidade',
+  )
+  const empresaComDado = mesesEmpresa.filter((m) => m.anosObservados > 0)
+  const empresaElegiveis = mesesEmpresa.filter((m) => m.elegivel)
+  const mediaBaseEmpresa = empresaComDado.length
+    ? empresaComDado.reduce((s, m) => s + m.mediaValor, 0) / empresaComDado.length
+    : 0
+  const altaEmpresa = empresaElegiveis.length
+    ? empresaElegiveis.reduce((a, b) => (b.mediaValor > a.mediaValor ? b : a))
+    : null
+  const baixaEmpresa = empresaElegiveis.length
+    ? empresaElegiveis.reduce((a, b) => (b.mediaValor < a.mediaValor ? b : a))
+    : null
+
+  // ── Sazonalidade — contas a receber geradas por mês ──
+  const contasReceberMensalOrd = [...contasReceberMensal].sort((a, b) => a.mes.localeCompare(b.mes))
+  const mesesCR = agruparPorMesDoAno(
+    contasReceberMensal.map((m) => ({ mes: m.mes, valor: m.valor_gerado, quantidade: m.quantidade })),
+    'valor', 'quantidade',
+  )
+  const crComDado = mesesCR.filter((m) => m.anosObservados > 0)
+  const crElegiveis = mesesCR.filter((m) => m.elegivel)
+  const mediaBaseCR = crComDado.length
+    ? crComDado.reduce((s, m) => s + m.mediaValor, 0) / crComDado.length
+    : 0
+  const picoCR = crElegiveis.length
+    ? crElegiveis.reduce((a, b) => (b.mediaValor > a.mediaValor ? b : a))
+    : null
+
+  // ── Sazonalidade — por produto ──
+  const produtosMap = {}
+  for (const r of sazonalidade) {
+    if (!produtosMap[r.codigo]) {
+      produtosMap[r.codigo] = { codigo: r.codigo, descricao: r.descricao, unidade: r.unidade, linhas: [] }
+    }
+    produtosMap[r.codigo].linhas.push(r)
+  }
+  const produtosSaz = Object.values(produtosMap).map((p) => {
+    const buckets = agruparPorMesDoAno(p.linhas, 'valor_venda', 'quantidade')
+    const elegiveis = buckets.filter((b) => b.elegivel)
+    const somaMediaQtd = buckets.reduce((s, b) => s + b.mediaQtd, 0)
+    const pico = elegiveis.length ? elegiveis.reduce((a, b) => (b.mediaQtd > a.mediaQtd ? b : a)) : null
+    const percentualPico = pico && somaMediaQtd > 0 ? (pico.mediaQtd / somaMediaQtd) * 100 : null
+    return {
+      ...p,
+      qtdeTotal: p.linhas.reduce((s, l) => s + (l.quantidade || 0), 0),
+      valorTotal: p.linhas.reduce((s, l) => s + (l.valor_venda || 0), 0),
+      mesesComVenda: p.linhas.length,
+      linhasOrdenadas: [...p.linhas].sort((a, b) => a.mes.localeCompare(b.mes)),
+      pico,
+      percentualPico,
+    }
+  })
+  const {
+    ordenados: produtosSazOrd,
+    coluna: colProdSaz,
+    direcao: dirProdSaz,
+    alternar: alternarProdSaz,
+  } = useOrdenacao(produtosSaz, {
+    colunaInicial: 'descricao',
+    acessores: {
+      mes_forte: (p) => p.pico?.nome || '',
+      qtde_total: (p) => p.qtdeTotal,
+      meses_com_venda: (p) => p.mesesComVenda,
+    },
+  })
+
+  const primeiroMesComDado = vendasMensaisOrd[0]?.mes
 
   if (loading) return <Carregando />
 
@@ -3157,6 +3277,215 @@ function RelLucroReal({ usuario }) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* ── SAZONALIDADE ────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 32, marginBottom: 6 }}>
+        <Calendar size={16} color='var(--text-secondary)' />
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Sazonalidade</div>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 680, lineHeight: 1.5, marginBottom: 18 }}>
+        Baseado no histórico real de vendas do sistema{primeiroMesComDado ? ` (dado contínuo a partir de ${mesLabel(primeiroMesComDado)})` : ''}.
+        Só apontamos "mês forte/fraco" quando o mesmo mês do ano já se repetiu em pelo menos 2 anos diferentes —
+        com só 1 ano de histórico, o "pico" seria só o único mês que existe no banco, não um padrão real da loja.
+        Até lá, os números abaixo são só o que já aconteceu, mês a mês.
+      </div>
+
+      {/* Alta/baixa da empresa */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Vendas por mês — alta e baixa da empresa</div>
+        {altaEmpresa || baixaEmpresa ? (
+          <div style={{ display: 'flex', gap: 20, marginBottom: 14, fontSize: 12, flexWrap: 'wrap' }}>
+            {altaEmpresa && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)' }}>
+                <TrendingUp size={13} color='#15803D' />
+                Mês de alta: <strong style={{ color: '#15803D' }}>
+                  {altaEmpresa.nome} ({fmt(altaEmpresa.mediaValor)} em média
+                  {mediaBaseEmpresa > 0 ? `, ${(((altaEmpresa.mediaValor - mediaBaseEmpresa) / mediaBaseEmpresa) * 100).toFixed(0)}% acima da média` : ''})
+                </strong>
+                <span style={{ color: 'var(--text-muted)' }}>— {altaEmpresa.anosObservados} anos observados</span>
+              </span>
+            )}
+            {baixaEmpresa && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)' }}>
+                <TrendingDown size={13} color='#B91C1C' />
+                Mês de baixa: <strong style={{ color: '#B91C1C' }}>
+                  {baixaEmpresa.nome} ({fmt(baixaEmpresa.mediaValor)} em média
+                  {mediaBaseEmpresa > 0 ? `, ${(((baixaEmpresa.mediaValor - mediaBaseEmpresa) / mediaBaseEmpresa) * 100).toFixed(0)}% da média` : ''})
+                </strong>
+                <span style={{ color: 'var(--text-muted)' }}>— {baixaEmpresa.anosObservados} anos observados</span>
+              </span>
+            )}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
+            Ainda em observação — nenhum mês do ano se repetiu em 2 anos diferentes ainda. Volte aqui depois de um ciclo anual completo.
+          </div>
+        )}
+        {vendasMensaisOrd.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Nenhuma venda registrada ainda.</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  <th style={{ padding: '6px 10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>MÊS</th>
+                  <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>Nº VENDAS</th>
+                  <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>VALOR TOTAL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vendasMensaisOrd.map((m) => (
+                  <tr key={m.mes} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '6px 10px', fontWeight: 500 }}>{mesLabel(m.mes)}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right' }}>{m.quantidade_vendas}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--blue-700)' }}>{fmt(m.valor_total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Contas a receber por mês */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Contas a receber geradas por mês</div>
+        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 10, maxWidth: 640, lineHeight: 1.4 }}>
+          Quanto de venda parcelada/fiado foi gerado em cada mês — não é saldo em aberto, é volume de crédito concedido.
+          Mês que gera mais conta a receber é mês que compromete mais caixa futuro (lucro no papel, caixa que ainda não entrou).
+        </div>
+        {picoCR && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
+            <TrendingUp size={13} color='#B91C1C' />
+            Mês que mais gera conta a receber: <strong style={{ color: '#B91C1C' }}>
+              {picoCR.nome} ({fmt(picoCR.mediaValor)} em média
+              {mediaBaseCR > 0 ? `, ${(((picoCR.mediaValor - mediaBaseCR) / mediaBaseCR) * 100).toFixed(0)}% acima da média` : ''})
+            </strong>
+            <span style={{ color: 'var(--text-muted)' }}>— {picoCR.anosObservados} anos observados</span>
+          </div>
+        )}
+        {contasReceberMensalOrd.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Nenhuma conta a receber registrada ainda.</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  <th style={{ padding: '6px 10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>MÊS</th>
+                  <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>Nº DOCUMENTOS</th>
+                  <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>VALOR GERADO</th>
+                </tr>
+              </thead>
+              <tbody>
+                {contasReceberMensalOrd.map((m) => (
+                  <tr key={m.mes} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '6px 10px', fontWeight: 500 }}>{mesLabel(m.mes)}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right' }}>{m.quantidade}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: '#B91C1C' }}>{fmt(m.valor_gerado)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Sazonalidade por produto */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Venda por produto, mês a mês ({produtosSazOrd.length})</div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>Clique numa linha pra ver o detalhe mês a mês e a sugestão de compra.</div>
+        </div>
+        {produtosSazOrd.length === 0 ? (
+          <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>Nenhuma venda registrada ainda.</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead>
+              <tr>
+                {[
+                  { label: 'Código', chave: 'codigo' },
+                  { label: 'Descrição', chave: 'descricao' },
+                  { label: 'Meses c/ venda', chave: 'meses_com_venda' },
+                  { label: 'Qtde total', chave: 'qtde_total' },
+                  { label: 'Mês forte', chave: 'mes_forte' },
+                ].map((h) => (
+                  <ThOrdenavel
+                    key={h.chave}
+                    label={h.label}
+                    chave={h.chave}
+                    colunaAtual={colProdSaz}
+                    direcao={dirProdSaz}
+                    onOrdenar={alternarProdSaz}
+                    style={{ padding: '8px 12px', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textAlign: h.chave === 'descricao' || h.chave === 'codigo' ? 'left' : 'right', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}
+                  />
+                ))}
+                <th style={{ padding: '8px 12px', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }} />
+              </tr>
+            </thead>
+            <tbody>
+              {produtosSazOrd.map((p) => {
+                const aberto = produtoExpandido === p.codigo
+                const maxQtdMes = Math.max(...p.linhasOrdenadas.map((l) => l.quantidade || 0), 1)
+                return (
+                  <Fragment key={p.codigo}>
+                    <tr
+                      onClick={() => setProdutoExpandido(aberto ? null : p.codigo)}
+                      style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>{p.codigo}</td>
+                      <td style={{ padding: '8px 12px', fontWeight: 500 }}>{p.descricao}</td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>{p.mesesComVenda}</td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>{p.qtdeTotal.toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                        {p.pico ? (
+                          <span style={{ background: 'var(--green-50)', color: 'var(--green-500)', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>
+                            {p.pico.nome} ({(p.percentualPico || 0).toFixed(0)}%)
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                        {aberto ? <ChevronDown size={14} color='var(--text-muted)' /> : <ChevronRight size={14} color='var(--text-muted)' />}
+                      </td>
+                    </tr>
+                    {aberto && (
+                      <tr>
+                        <td colSpan={6} style={{ padding: '14px 20px', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                          {p.linhasOrdenadas.map((l) => (
+                            <BarraHorizontal
+                              key={l.mes}
+                              label={mesLabel(l.mes)}
+                              value={l.quantidade || 0}
+                              max={maxQtdMes}
+                              color='var(--blue-400)'
+                            />
+                          ))}
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.5 }}>
+                            {p.pico ? (
+                              <>
+                                Historicamente vende mais em <strong>{p.pico.nome}</strong> — média de{' '}
+                                <strong>{p.pico.mediaQtd.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} {p.unidade}</strong>{' '}
+                                (baseado em {p.pico.anosObservados} anos), {(p.percentualPico || 0).toFixed(0)}% da venda média anual do produto
+                                concentrada nesse mês. Vale garantir estoque de pelo menos{' '}
+                                <strong>{Math.ceil(p.pico.mediaQtd)} {p.unidade}</strong> antes desse mês chegar.
+                              </>
+                            ) : (
+                              <>Ainda não há um mês do ano com 2 anos de histórico pra esse produto — o gráfico acima é só o que já vendeu, mês a mês.</>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {modalFechar && (

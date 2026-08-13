@@ -740,6 +740,9 @@ handle('relatorios:inventario', () => db.relatorios.inventario())
 handle('relatorios:itenisVendidos', (_, f) => db.relatorios.itenisVendidos(f.dataInicio, f.dataFim))
 handle('relatorios:entradasMercadoria', (_, f) => db.relatorios.entradasMercadoria(f.dataInicio, f.dataFim))
 handle('relatorios:extrato', (_, f) => db.relatorios.extrato(f.dataInicio, f.dataFim))
+handle('relatorios:sazonalidadeProdutos', () => db.relatorios.sazonalidadeProdutos())
+handle('relatorios:vendasMensais', () => db.relatorios.vendasMensais())
+handle('relatorios:contasReceberMensal', () => db.relatorios.contasReceberMensal())
 
 // --- LUCRO REAL (patrimônio) ---
 handle('patrimonio:snapshotAtual', (_, dataReferencia) => db.patrimonio.snapshotAtual(dataReferencia))
