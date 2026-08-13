@@ -2896,6 +2896,28 @@ function RelInventario() {
   )
 }
 
+// Junta em uma linha só sequências consecutivas do mesmo dia/forma/pessoa —
+// é o caso de uma baixa em lote no Contas a Receber (várias parcelas do mesmo
+// cliente, na mesma hora), que senão aparece 1 linha por parcela e polui o
+// extrato. O detalhe fica disponível expandindo a linha; a soma 1x1 já existe
+// no relatório de Contas a Receber, não precisa duplicar aqui.
+function agruparLinhasExtrato(linhas) {
+  const grupos = []
+  for (const l of linhas) {
+    const ultimo = grupos[grupos.length - 1]
+    const mesmaChave = ultimo && ultimo.data === l.data && ultimo.historico === l.historico && ultimo.observacao === l.observacao
+    if (mesmaChave) {
+      ultimo.debito += l.debito || 0
+      ultimo.credito += l.credito || 0
+      ultimo.saldo = l.saldo
+      ultimo.itens.push(l)
+    } else {
+      grupos.push({ ...l, itens: [l] })
+    }
+  }
+  return grupos
+}
+
 // ── EXTRATO ───────────────────────────────────────────────────────────────────
 function RelExtrato() {
   const { ini, fim } = mesAtual()
@@ -2903,12 +2925,14 @@ function RelExtrato() {
   const [dataFim, setDataFim] = useState(fim)
   const [dados, setDados] = useState({ saldoInicial: 0, movimentos: [] })
   const [loading, setLoading] = useState(false)
+  const [expandidos, setExpandidos] = useState(new Set())
 
   async function carregar() {
     setLoading(true)
     try {
       const data = await window.api.relatorios.extrato({ dataInicio, dataFim })
       setDados(data || { saldoInicial: 0, movimentos: [] })
+      setExpandidos(new Set())
     } finally { setLoading(false) }
   }
 
@@ -2920,6 +2944,15 @@ function RelExtrato() {
     saldo += (m.credito || 0) - (m.debito || 0)
     return { ...m, saldo }
   })
+  const linhasAgrupadas = agruparLinhasExtrato(linhas)
+
+  function toggleExpandido(i) {
+    setExpandidos(prev => {
+      const novo = new Set(prev)
+      novo.has(i) ? novo.delete(i) : novo.add(i)
+      return novo
+    })
+  }
 
   const totalDeb = (dados.movimentos || []).reduce((s, m) => s + (m.debito || 0), 0)
   const totalCred = (dados.movimentos || []).reduce((s, m) => s + (m.credito || 0), 0)
@@ -2928,7 +2961,7 @@ function RelExtrato() {
   function exportarExcel() {
     exportarCSV([
       { Data: '', Histórico: 'SALDO ANTERIOR', Débito: '', Crédito: '', Saldo: dados.saldoInicial.toFixed(2).replace('.', ','), Documento: '', Observação: '' },
-      ...linhas.map(m => ({
+      ...linhasAgrupadas.map(m => ({
         Data: fmtDate(m.data), Histórico: m.historico,
         'Débito (R$)': m.debito ? (m.debito).toFixed(2).replace('.', ',') : '',
         'Crédito (R$)': m.credito ? (m.credito).toFixed(2).replace('.', ',') : '',
@@ -2952,12 +2985,12 @@ function RelExtrato() {
     ]
     const linhasRelatorio = [
       { tipo: 'marco', rotulo: 'SALDO ANTERIOR', saldo: dados.saldoInicial },
-      ...linhas.map((m) => ({ tipo: 'movimento', ...m })),
-      { tipo: 'marco', rotulo: 'SALDO FINAL', saldo: saldoFinal },
+      ...linhasAgrupadas.map((m) => ({ tipo: 'movimento', ...m })),
+      { tipo: 'marco', rotulo: 'TOTAL / SALDO FINAL', saldo: saldoFinal, debito: totalDeb, credito: totalCred },
     ]
     const montarLinha = (l) =>
       l.tipo === 'marco'
-        ? `<tr><td colspan="4"><b>${l.rotulo}</b></td><td class="num"><b>${fmtMoedaBR(l.saldo)}</b></td><td colspan="2"></td></tr>`
+        ? `<tr><td colspan="2"><b>${l.rotulo}</b></td><td class="num"><b>${l.debito != null ? fmtMoedaBR(l.debito) : ''}</b></td><td class="num"><b>${l.credito != null ? fmtMoedaBR(l.credito) : ''}</b></td><td class="num"><b>${fmtMoedaBR(l.saldo)}</b></td><td colspan="2"></td></tr>`
         : `<tr><td>${fmtDate(l.data)}</td><td>${l.historico}</td><td class="num">${l.debito ? fmtMoedaBR(l.debito) : '—'}</td><td class="num">${l.credito ? fmtMoedaBR(l.credito) : '—'}</td><td class="num">${fmtMoedaBR(l.saldo)}</td><td>${l.documento || ''}</td><td>${l.observacao || ''}</td></tr>`
     const html = gerarHtmlListaSimples({
       empresa,
@@ -3020,19 +3053,39 @@ function RelExtrato() {
                 <td style={{ padding: '6px 10px', textAlign: 'right', color: '#166534', fontWeight: 700 }}>{fmt(dados.saldoInicial)}</td>
                 <td colSpan={2} />
               </tr>
-              {linhas.map((m, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{fmtDate(m.data)}</td>
-                  <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontWeight: 600, fontSize: 11 }}>{m.historico}</td>
-                  <td style={{ padding: '6px 10px', textAlign: 'right', color: m.debito ? '#DC2626' : 'var(--text-muted)' }}>{m.debito ? fmt(m.debito) : '—'}</td>
-                  <td style={{ padding: '6px 10px', textAlign: 'right', color: m.credito ? '#16A34A' : 'var(--text-muted)' }}>{m.credito ? fmt(m.credito) : '—'}</td>
-                  <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600 }}>{fmt(m.saldo)}</td>
-                  <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>{m.documento}</td>
-                  <td style={{ padding: '6px 10px', color: 'var(--text-secondary)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.observacao}</td>
-                </tr>
-              ))}
+              {linhasAgrupadas.map((m, i) => {
+                const agrupada = m.itens.length > 1
+                const aberta = expandidos.has(i)
+                return (
+                  <Fragment key={i}>
+                    <tr style={{ borderBottom: '1px solid var(--border)', cursor: agrupada ? 'pointer' : 'default' }}
+                      onClick={() => agrupada && toggleExpandido(i)}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{fmtDate(m.data)}</td>
+                      <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontWeight: 600, fontSize: 11 }}>{m.historico}</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right', color: m.debito ? '#DC2626' : 'var(--text-muted)' }}>{m.debito ? fmt(m.debito) : '—'}</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right', color: m.credito ? '#16A34A' : 'var(--text-muted)' }}>{m.credito ? fmt(m.credito) : '—'}</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600 }}>{fmt(m.saldo)}</td>
+                      <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>
+                        {agrupada ? `${aberta ? '▾' : '▸'} ${m.itens.length} títulos` : m.documento}
+                      </td>
+                      <td style={{ padding: '6px 10px', color: 'var(--text-secondary)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.observacao}</td>
+                    </tr>
+                    {agrupada && aberta && m.itens.map((it, j) => (
+                      <tr key={j} style={{ borderBottom: '1px solid var(--border)', background: 'var(--gray-50)' }}>
+                        <td />
+                        <td />
+                        <td style={{ padding: '4px 10px', textAlign: 'right', fontSize: 11, color: 'var(--text-muted)' }}>{it.debito ? fmt(it.debito) : '—'}</td>
+                        <td style={{ padding: '4px 10px', textAlign: 'right', fontSize: 11, color: 'var(--text-muted)' }}>{it.credito ? fmt(it.credito) : '—'}</td>
+                        <td />
+                        <td style={{ padding: '4px 10px', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>{it.documento}</td>
+                        <td />
+                      </tr>
+                    ))}
+                  </Fragment>
+                )
+              })}
             </tbody>
             <tfoot>
               <tr style={{ background: 'var(--gray-50)', borderTop: '2px solid var(--border)', fontWeight: 700 }}>

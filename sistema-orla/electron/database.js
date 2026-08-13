@@ -6,6 +6,13 @@ function orValue(v) {
   return `"${String(v).replace(/"/g, '\\"')}"`
 }
 
+// Os nomes vêm em CAIXA ALTA da migração do Orlasoft — deixa em Title Case
+// pra não ficar "gritando" em telas e relatórios.
+function titleCase(nome) {
+  if (!nome) return nome
+  return nome.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase())
+}
+
 // As tabelas legadas não têm FK declarada para clientes/fornecedores, então o
 // embed automático do PostgREST (`select=*,clientes(nome)`) não funciona —
 // busca os nomes em uma segunda query e mescla em JS.
@@ -15,7 +22,7 @@ async function anexarNomeCliente(linhas) {
     return linhas.map((v) => ({ ...v, nome_cliente: null, telefone_cliente: null }))
   const { data } = await supabase.from('clientes').select('codigo, nome, telefone, celular').in('codigo', codigos)
   const infoPorCodigo = Object.fromEntries(
-    (data || []).map((c) => [c.codigo, { nome: c.nome, telefone: c.telefone || c.celular }]),
+    (data || []).map((c) => [c.codigo, { nome: titleCase(c.nome), telefone: c.telefone || c.celular }]),
   )
   return linhas.map((v) => ({
     ...v,
@@ -28,7 +35,7 @@ async function anexarNomeFornecedor(linhas) {
   const codigos = [...new Set(linhas.map((v) => v.codigo_fornecedor).filter(Boolean))]
   if (!codigos.length) return linhas.map((v) => ({ ...v, nome_fornecedor: null }))
   const { data } = await supabase.from('fornecedores').select('codigo, nome').in('codigo', codigos)
-  const nomePorCodigo = Object.fromEntries((data || []).map((f) => [f.codigo, f.nome]))
+  const nomePorCodigo = Object.fromEntries((data || []).map((f) => [f.codigo, titleCase(f.nome)]))
   return linhas.map((v) => ({ ...v, nome_fornecedor: nomePorCodigo[v.codigo_fornecedor] || null }))
 }
 
