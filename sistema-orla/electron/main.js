@@ -643,7 +643,7 @@ ipcMain.handle('pdf:gerarVenda', async (_, orcamento) => {
     const pdfBuffer = await win.webContents.printToPDF({
       pageSize: 'A4',
       printBackground: false,
-      marginsType: 1,
+      preferCSSPageSize: true,
     })
 
     win.close()
@@ -684,7 +684,7 @@ ipcMain.handle('pdf:gerarRelatorio', async (_, { html, nomeArquivo }) => {
     const pdfBuffer = await win.webContents.printToPDF({
       pageSize: 'A4',
       printBackground: true,
-      marginsType: 1,
+      preferCSSPageSize: true,
     })
 
     win.close()
