@@ -207,7 +207,7 @@ export default function Produtos({ usuario }) {
     }
     try {
       setSalvando(true)
-      await window.api.produtos.salvar({
+      const r = await window.api.produtos.salvar({
         ...form,
         preco_venda_vista: parseMoney(form.preco_venda_vista),
         preco_venda_prazo: parseMoney(form.preco_venda_prazo),
@@ -218,6 +218,10 @@ export default function Produtos({ usuario }) {
         aliquota_pis: parseFloat(form.aliquota_pis) || 0,
         aliquota_cofins: parseFloat(form.aliquota_cofins) || 0,
       })
+      if (r?.sucesso === false) {
+        alert('Erro ao salvar: ' + (r.erro || 'desconhecido'))
+        return
+      }
       await carregar()
       fechar()
     } catch (e) {

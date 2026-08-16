@@ -169,9 +169,10 @@ export default function Assistente({ caixaAberto, onNavigate, usuario, pagina })
   // disso ele muda de lado pra esquerda, onde não há números pra cobrir.
   const emRelatorio = !!pagina?.startsWith('rel-')
   const fabSide = emRelatorio ? { left: 24 } : { right: 24 }
-  // Abre sozinho só na primeira vez (login) — depois disso, fechar o chat
-  // significa fechar mesmo: alertas viram só o badge/balão no canto, nunca
-  // reabrem o painel grande sozinhos.
+  // Abre sozinho ao entrar na página inicial e recolhe pro botão flutuante
+  // depois de alguns segundos (ver efeito de auto-recolhimento abaixo) —
+  // depois disso, fechar o chat significa fechar mesmo: alertas viram só o
+  // badge/balão no canto, nunca reabrem o painel grande sozinhos.
   const [aberto, setAberto] = useState(true)
   const [mensagens, setMensagens] = useState(mensagensIniciais)
   const [input, setInput] = useState('')
@@ -482,6 +483,12 @@ export default function Assistente({ caixaAberto, onNavigate, usuario, pagina })
     const intervalo = setInterval(carregarDados, 2 * 60 * 1000) // refresh a cada 2 minutos
     return () => clearInterval(intervalo)
   }, [caixaAberto, podeAprovar, nomeUsuarioAtual])
+
+  useEffect(() => {
+    const timer = setTimeout(() => setAberto(false), 3000)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     // Marca como "visto" sempre que o painel abre ou fecha — se estava

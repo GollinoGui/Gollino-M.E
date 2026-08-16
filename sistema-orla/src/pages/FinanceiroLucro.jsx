@@ -1,9 +1,14 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import {
   RefreshCw, TrendingUp, TrendingDown, Settings2, Save,
   ArrowUpRight, ArrowDownRight, PlusCircle, CreditCard,
   Target, Plus, Trash2, Pencil, Search,
+  PiggyBank, Calendar, ChevronDown, ChevronRight, Table2, AlertTriangle,
 } from 'lucide-react'
+import ThOrdenavel from '../components/ThOrdenavel'
+import ModalConfirmacao from '../components/ModalConfirmacao'
+import { useOrdenacao } from '../utils/ordenacao'
+import { fmtQtd } from '../utils/formatQtd'
 
 const fmt = (v) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtPct = (v) => `${(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`
@@ -62,6 +67,45 @@ function limitesDoMes(mesStr) {
   return { ini, fim }
 }
 
+function diaAtual() {
+  const hoje = new Date().toISOString().slice(0, 10)
+  return { ini: hoje, fim: hoje }
+}
+
+function semanaAtual() {
+  const hoje = new Date()
+  const offsetSegunda = hoje.getDay() === 0 ? 6 : hoje.getDay() - 1
+  const segunda = new Date(hoje)
+  segunda.setDate(hoje.getDate() - offsetSegunda)
+  return { ini: segunda.toISOString().slice(0, 10), fim: hoje.toISOString().slice(0, 10) }
+}
+
+// Agrupa linhas {mes: 'YYYY-MM', ...} por mês-do-ano (Jan..Dez), somando os
+// anos observados em cada mês. Um mês só é "elegível" pra apontar alta/baixa
+// quando já se repetiu em pelo menos 2 anos diferentes — com só 1 ano, o
+// "pico" seria só o único mês que existe no histórico, não um padrão real.
+function agruparPorMesDoAno(linhas, chaveValor, chaveQtd) {
+  const buckets = Array.from({ length: 12 }, () => ({ anos: new Set(), somaValor: 0, somaQtd: 0 }))
+  for (const l of linhas) {
+    const partes = String(l.mes || '').split('-')
+    const ano = partes[0]
+    const mesIdx = Number(partes[1]) - 1
+    if (!ano || mesIdx < 0 || mesIdx > 11) continue
+    const b = buckets[mesIdx]
+    b.anos.add(ano)
+    b.somaValor += l[chaveValor] || 0
+    b.somaQtd += l[chaveQtd] || 0
+  }
+  return buckets.map((b, i) => ({
+    mesIdx: i,
+    nome: MESES_ABREV[i],
+    anosObservados: b.anos.size,
+    mediaValor: b.anos.size ? b.somaValor / b.anos.size : 0,
+    mediaQtd: b.anos.size ? b.somaQtd / b.anos.size : 0,
+    elegivel: b.anos.size >= 2,
+  }))
+}
+
 const CHAVES_TAXA = {
   taxa_cartao_debito: 'Débito',
   taxa_cartao_credito_avista: 'Crédito à vista',
@@ -102,6 +146,37 @@ function Legenda({ itens }) {
       ))}
     </div>
   )
+}
+
+function CardMetrica({ label, value, sub, color }) {
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px 20px' }}>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: color || 'var(--text-primary)', lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{sub}</div>}
+    </div>
+  )
+}
+
+function BarraHorizontal({ label, value, max, color }) {
+  const pct = max > 0 ? (value / max) * 100 : 0
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+        <span style={{ fontSize: 12, color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '68%' }}>
+          {label}
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{fmt(value)}</span>
+      </div>
+      <div style={{ height: 8, background: 'var(--gray-100)', borderRadius: 99, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: color || 'var(--blue-400)', borderRadius: 99, transition: 'width 0.4s ease' }} />
+      </div>
+    </div>
+  )
+}
+
+function Carregando() {
+  return <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 40 }}>Carregando...</div>
 }
 
 // ── Hero: lucro real em destaque, com variação vs período anterior ──
@@ -874,7 +949,699 @@ function PontoDeEquilibrio({ usuario }) {
   )
 }
 
-export default function FinanceiroLucro({ usuario }) {
+// ── LUCRO REAL (confronto patrimonial) ───────────────────────────────────────
+// Lucro real = variação do patrimônio líquido (estoque a custo + a receber +
+// caixa/banco − a pagar) entre um fechamento e o anterior, ajustada por
+// retiradas/aportes de sócio (que não são resultado operacional). Cada
+// fechamento é um registro permanente — não é recalculado depois.
+function Patrimonio({ usuario }) {
+  const [atual, setAtual] = useState(null)
+  const [historico, setHistorico] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [fechando, setFechando] = useState(false)
+  const [modalFechar, setModalFechar] = useState(false)
+  const [erro, setErro] = useState('')
+  const [vendasMensais, setVendasMensais] = useState([])
+  const [contasReceberMensal, setContasReceberMensal] = useState([])
+  const [sazonalidade, setSazonalidade] = useState([])
+  const [produtoExpandido, setProdutoExpandido] = useState(null)
+
+  async function carregar() {
+    setLoading(true)
+    setErro('')
+    try {
+      const [snap, hist, vm, crm, saz] = await Promise.all([
+        window.api.patrimonio.snapshotAtual(),
+        window.api.patrimonio.listar(),
+        window.api.relatorios.vendasMensais(),
+        window.api.relatorios.contasReceberMensal(),
+        window.api.relatorios.sazonalidadeProdutos(),
+      ])
+      setAtual(snap)
+      setHistorico(hist || [])
+      setVendasMensais(vm || [])
+      setContasReceberMensal(crm || [])
+      setSazonalidade(saz || [])
+    } catch (e) {
+      setErro('Erro ao carregar: ' + e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { carregar() }, [])
+
+  const hoje = new Date().toISOString().slice(0, 10)
+  const jaFechouHoje = historico.some((h) => h.data_fechamento === hoje)
+
+  async function fecharMes() {
+    setModalFechar(false)
+    setFechando(true)
+    setErro('')
+    try {
+      const r = await window.api.patrimonio.fechar({ usuario: usuario?.nome || usuario?.usuario || 'sistema' })
+      if (!r?.sucesso) setErro('Erro ao fechar: ' + (r?.erro || 'desconhecido'))
+      await carregar()
+    } catch (e) {
+      setErro('Erro ao fechar: ' + e.message)
+    } finally {
+      setFechando(false)
+    }
+  }
+
+  const comLucro = historico.filter((h) => h.lucro_periodo !== null && h.lucro_periodo !== undefined)
+  const melhor = comLucro.length ? comLucro.reduce((a, b) => (b.lucro_periodo > a.lucro_periodo ? b : a)) : null
+  const pior = comLucro.length ? comLucro.reduce((a, b) => (b.lucro_periodo < a.lucro_periodo ? b : a)) : null
+
+  // ── Sazonalidade — empresa (vendas por mês) ──
+  const vendasMensaisOrd = [...vendasMensais].sort((a, b) => a.mes.localeCompare(b.mes))
+  const mesesEmpresa = agruparPorMesDoAno(
+    vendasMensais.map((m) => ({ mes: m.mes, valor: m.valor_total, quantidade: m.quantidade_vendas })),
+    'valor', 'quantidade',
+  )
+  const empresaComDado = mesesEmpresa.filter((m) => m.anosObservados > 0)
+  const empresaElegiveis = mesesEmpresa.filter((m) => m.elegivel)
+  const mediaBaseEmpresa = empresaComDado.length
+    ? empresaComDado.reduce((s, m) => s + m.mediaValor, 0) / empresaComDado.length
+    : 0
+  const altaEmpresa = empresaElegiveis.length
+    ? empresaElegiveis.reduce((a, b) => (b.mediaValor > a.mediaValor ? b : a))
+    : null
+  const baixaEmpresa = empresaElegiveis.length
+    ? empresaElegiveis.reduce((a, b) => (b.mediaValor < a.mediaValor ? b : a))
+    : null
+
+  // ── Sazonalidade — contas a receber geradas por mês ──
+  const contasReceberMensalOrd = [...contasReceberMensal].sort((a, b) => a.mes.localeCompare(b.mes))
+  const mesesCR = agruparPorMesDoAno(
+    contasReceberMensal.map((m) => ({ mes: m.mes, valor: m.valor_gerado, quantidade: m.quantidade })),
+    'valor', 'quantidade',
+  )
+  const crComDado = mesesCR.filter((m) => m.anosObservados > 0)
+  const crElegiveis = mesesCR.filter((m) => m.elegivel)
+  const mediaBaseCR = crComDado.length
+    ? crComDado.reduce((s, m) => s + m.mediaValor, 0) / crComDado.length
+    : 0
+  const picoCR = crElegiveis.length
+    ? crElegiveis.reduce((a, b) => (b.mediaValor > a.mediaValor ? b : a))
+    : null
+
+  // ── Sazonalidade — por produto ──
+  const produtosMap = {}
+  for (const r of sazonalidade) {
+    if (!produtosMap[r.codigo]) {
+      produtosMap[r.codigo] = { codigo: r.codigo, descricao: r.descricao, unidade: r.unidade, linhas: [] }
+    }
+    produtosMap[r.codigo].linhas.push(r)
+  }
+  const produtosSaz = Object.values(produtosMap).map((p) => {
+    const buckets = agruparPorMesDoAno(p.linhas, 'valor_venda', 'quantidade')
+    const elegiveis = buckets.filter((b) => b.elegivel)
+    const somaMediaQtd = buckets.reduce((s, b) => s + b.mediaQtd, 0)
+    const pico = elegiveis.length ? elegiveis.reduce((a, b) => (b.mediaQtd > a.mediaQtd ? b : a)) : null
+    const percentualPico = pico && somaMediaQtd > 0 ? (pico.mediaQtd / somaMediaQtd) * 100 : null
+    return {
+      ...p,
+      qtdeTotal: p.linhas.reduce((s, l) => s + (l.quantidade || 0), 0),
+      valorTotal: p.linhas.reduce((s, l) => s + (l.valor_venda || 0), 0),
+      mesesComVenda: p.linhas.length,
+      linhasOrdenadas: [...p.linhas].sort((a, b) => a.mes.localeCompare(b.mes)),
+      pico,
+      percentualPico,
+    }
+  })
+  const {
+    ordenados: produtosSazOrd,
+    coluna: colProdSaz,
+    direcao: dirProdSaz,
+    alternar: alternarProdSaz,
+  } = useOrdenacao(produtosSaz, {
+    colunaInicial: 'descricao',
+    acessores: {
+      mes_forte: (p) => p.pico?.nome || '',
+      qtde_total: (p) => p.qtdeTotal,
+      meses_com_venda: (p) => p.mesesComVenda,
+    },
+  })
+
+  const primeiroMesComDado = vendasMensaisOrd[0]?.mes
+
+  if (loading) return <Carregando />
+
+  // Contas ainda não unificadas em um banco só (previsto pra setembro/2026) —
+  // até lá o Caixa/Banco calculado aqui fica incompleto, então o fechamento
+  // de agora não deve ser tratado como o marco zero real.
+  const antesDaUnificacao = new Date() < new Date('2026-09-01')
+
+  return (
+    <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
+      {antesDaUnificacao && (
+        <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 'var(--radius-md)', background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E', fontSize: 12.5, lineHeight: 1.5 }}>
+          <strong>Aguardando unificação da conta bancária (previsão: setembro).</strong> Até lá o Caixa/Banco
+          nesta tela fica incompleto, porque nem tudo passa por uma conta só ainda. Use só pra acompanhar —
+          o primeiro "Fechar o mês" que vale como marco zero é depois de pagar tudo e unificar a conta.
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 560, lineHeight: 1.5 }}>
+          Patrimônio = estoque a custo + contas a receber + caixa/banco − contas a pagar.
+          O lucro real de cada mês é a variação desse número em relação ao fechamento anterior.
+        </div>
+        <button
+          onClick={() => setModalFechar(true)}
+          disabled={fechando || jaFechouHoje}
+          title={jaFechouHoje ? 'Já existe um fechamento hoje' : 'Trava um registro permanente com os números de hoje'}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 16px',
+            background: jaFechouHoje ? 'var(--gray-200)' : 'var(--blue-700)',
+            color: jaFechouHoje ? 'var(--text-muted)' : '#fff',
+            border: 'none', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 600,
+            cursor: jaFechouHoje || fechando ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
+          }}
+        >
+          <PiggyBank size={14} /> {jaFechouHoje ? 'Já fechado hoje' : fechando ? 'Fechando...' : 'Fechar o mês'}
+        </button>
+      </div>
+
+      {erro && (
+        <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 'var(--radius-md)', background: '#fef2f2', border: '1px solid #fecaca', color: '#B91C1C', fontSize: 13 }}>
+          {erro}
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 20 }}>
+        <CardMetrica label='Estoque (a custo)' value={fmt(atual?.estoqueCusto)} color='var(--blue-700)' />
+        <CardMetrica label='Contas a receber' value={fmt(atual?.receberAberto)} color='#15803D' />
+        <CardMetrica label='Caixa / banco' value={fmt(atual?.caixaBanco)} color='#0D9488' />
+        <CardMetrica label='Contas a pagar' value={fmt(atual?.pagarAberto)} color='#B91C1C' />
+        <CardMetrica label='Patrimônio atual' value={fmt(atual?.patrimonio)} color='#7C3AED' />
+      </div>
+
+      {comLucro.length > 0 && (
+        <div style={{ display: 'flex', gap: 16, marginBottom: 16, fontSize: 12, flexWrap: 'wrap' }}>
+          <span style={{ color: 'var(--text-secondary)' }}>
+            Melhor mês: <strong style={{ color: '#15803D' }}>{fmtDate(melhor.data_fechamento)} ({fmt(melhor.lucro_periodo)})</strong>
+          </span>
+          <span style={{ color: 'var(--text-secondary)' }}>
+            Pior mês: <strong style={{ color: '#B91C1C' }}>{fmtDate(pior.data_fechamento)} ({fmt(pior.lucro_periodo)})</strong>
+          </span>
+        </div>
+      )}
+
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: 'var(--gray-50)', borderBottom: '2px solid var(--border)' }}>
+              {['FECHAMENTO', 'ESTOQUE', 'A RECEBER', 'A PAGAR', 'CAIXA/BANCO', 'PATRIMÔNIO', 'LUCRO DO PERÍODO'].map((h) => (
+                <th key={h} style={{ padding: '8px 12px', textAlign: h === 'FECHAMENTO' ? 'left' : 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {historico.length === 0 && (
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>Nenhum fechamento registrado ainda.</td></tr>
+            )}
+            {historico.map((h) => (
+              <tr key={h.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td style={{ padding: '7px 12px', fontWeight: 500 }}>{fmtDate(h.data_fechamento)}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right' }}>{fmt(h.estoque_custo)}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right' }}>{fmt(h.contas_receber_aberto)}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right' }}>{fmt(h.contas_pagar_aberto)}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right' }}>{fmt(h.caixa_banco)}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 600, color: '#7C3AED' }}>{fmt(h.patrimonio)}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 700, color: h.lucro_periodo == null ? 'var(--text-muted)' : h.lucro_periodo >= 0 ? '#15803D' : '#B91C1C' }}>
+                  {h.lucro_periodo == null ? '—' : fmt(h.lucro_periodo)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── SAZONALIDADE ────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 32, marginBottom: 6 }}>
+        <Calendar size={16} color='var(--text-secondary)' />
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Sazonalidade</div>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 680, lineHeight: 1.5, marginBottom: 18 }}>
+        Baseado no histórico real de vendas do sistema{primeiroMesComDado ? ` (dado contínuo a partir de ${mesLabel(primeiroMesComDado)})` : ''}.
+        Só apontamos "mês forte/fraco" quando o mesmo mês do ano já se repetiu em pelo menos 2 anos diferentes —
+        com só 1 ano de histórico, o "pico" seria só o único mês que existe no banco, não um padrão real da loja.
+        Até lá, os números abaixo são só o que já aconteceu, mês a mês.
+      </div>
+
+      {/* Alta/baixa da empresa */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Vendas por mês — alta e baixa da empresa</div>
+        {altaEmpresa || baixaEmpresa ? (
+          <div style={{ display: 'flex', gap: 20, marginBottom: 14, fontSize: 12, flexWrap: 'wrap' }}>
+            {altaEmpresa && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)' }}>
+                <TrendingUp size={13} color='#15803D' />
+                Mês de alta: <strong style={{ color: '#15803D' }}>
+                  {altaEmpresa.nome} ({fmt(altaEmpresa.mediaValor)} em média
+                  {mediaBaseEmpresa > 0 ? `, ${(((altaEmpresa.mediaValor - mediaBaseEmpresa) / mediaBaseEmpresa) * 100).toFixed(0)}% acima da média` : ''})
+                </strong>
+                <span style={{ color: 'var(--text-muted)' }}>— {altaEmpresa.anosObservados} anos observados</span>
+              </span>
+            )}
+            {baixaEmpresa && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)' }}>
+                <TrendingDown size={13} color='#B91C1C' />
+                Mês de baixa: <strong style={{ color: '#B91C1C' }}>
+                  {baixaEmpresa.nome} ({fmt(baixaEmpresa.mediaValor)} em média
+                  {mediaBaseEmpresa > 0 ? `, ${(((baixaEmpresa.mediaValor - mediaBaseEmpresa) / mediaBaseEmpresa) * 100).toFixed(0)}% da média` : ''})
+                </strong>
+                <span style={{ color: 'var(--text-muted)' }}>— {baixaEmpresa.anosObservados} anos observados</span>
+              </span>
+            )}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
+            Ainda em observação — nenhum mês do ano se repetiu em 2 anos diferentes ainda. Volte aqui depois de um ciclo anual completo.
+          </div>
+        )}
+        {vendasMensaisOrd.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Nenhuma venda registrada ainda.</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  <th style={{ padding: '6px 10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>MÊS</th>
+                  <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>Nº VENDAS</th>
+                  <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>VALOR TOTAL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vendasMensaisOrd.map((m) => (
+                  <tr key={m.mes} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '6px 10px', fontWeight: 500 }}>{mesLabel(m.mes)}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right' }}>{m.quantidade_vendas}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--blue-700)' }}>{fmt(m.valor_total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Contas a receber por mês */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Contas a receber geradas por mês</div>
+        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 10, maxWidth: 640, lineHeight: 1.4 }}>
+          Quanto de venda parcelada/fiado foi gerado em cada mês — não é saldo em aberto, é volume de crédito concedido.
+          Mês que gera mais conta a receber é mês que compromete mais caixa futuro (lucro no papel, caixa que ainda não entrou).
+        </div>
+        {picoCR && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
+            <TrendingUp size={13} color='#B91C1C' />
+            Mês que mais gera conta a receber: <strong style={{ color: '#B91C1C' }}>
+              {picoCR.nome} ({fmt(picoCR.mediaValor)} em média
+              {mediaBaseCR > 0 ? `, ${(((picoCR.mediaValor - mediaBaseCR) / mediaBaseCR) * 100).toFixed(0)}% acima da média` : ''})
+            </strong>
+            <span style={{ color: 'var(--text-muted)' }}>— {picoCR.anosObservados} anos observados</span>
+          </div>
+        )}
+        {contasReceberMensalOrd.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Nenhuma conta a receber registrada ainda.</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  <th style={{ padding: '6px 10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>MÊS</th>
+                  <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>Nº DOCUMENTOS</th>
+                  <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>VALOR GERADO</th>
+                </tr>
+              </thead>
+              <tbody>
+                {contasReceberMensalOrd.map((m) => (
+                  <tr key={m.mes} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '6px 10px', fontWeight: 500 }}>{mesLabel(m.mes)}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right' }}>{m.quantidade}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: '#B91C1C' }}>{fmt(m.valor_gerado)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Sazonalidade por produto */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Venda por produto, mês a mês ({produtosSazOrd.length})</div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>Clique numa linha pra ver o detalhe mês a mês e a sugestão de compra.</div>
+        </div>
+        {produtosSazOrd.length === 0 ? (
+          <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>Nenhuma venda registrada ainda.</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead>
+              <tr>
+                {[
+                  { label: 'Código', chave: 'codigo' },
+                  { label: 'Descrição', chave: 'descricao' },
+                  { label: 'Meses c/ venda', chave: 'meses_com_venda' },
+                  { label: 'Qtde total', chave: 'qtde_total' },
+                  { label: 'Mês forte', chave: 'mes_forte' },
+                ].map((h) => (
+                  <ThOrdenavel
+                    key={h.chave}
+                    label={h.label}
+                    chave={h.chave}
+                    colunaAtual={colProdSaz}
+                    direcao={dirProdSaz}
+                    onOrdenar={alternarProdSaz}
+                    style={{ padding: '8px 12px', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textAlign: h.chave === 'descricao' || h.chave === 'codigo' ? 'left' : 'right', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}
+                  />
+                ))}
+                <th style={{ padding: '8px 12px', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }} />
+              </tr>
+            </thead>
+            <tbody>
+              {produtosSazOrd.map((p) => {
+                const aberto = produtoExpandido === p.codigo
+                const maxQtdMes = Math.max(...p.linhasOrdenadas.map((l) => l.quantidade || 0), 1)
+                return (
+                  <Fragment key={p.codigo}>
+                    <tr
+                      onClick={() => setProdutoExpandido(aberto ? null : p.codigo)}
+                      style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>{p.codigo}</td>
+                      <td style={{ padding: '8px 12px', fontWeight: 500 }}>{p.descricao}</td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>{p.mesesComVenda}</td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>{p.qtdeTotal.toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                        {p.pico ? (
+                          <span style={{ background: 'var(--green-50)', color: 'var(--green-500)', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>
+                            {p.pico.nome} ({(p.percentualPico || 0).toFixed(0)}%)
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                        {aberto ? <ChevronDown size={14} color='var(--text-muted)' /> : <ChevronRight size={14} color='var(--text-muted)' />}
+                      </td>
+                    </tr>
+                    {aberto && (
+                      <tr>
+                        <td colSpan={6} style={{ padding: '14px 20px', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                          {p.linhasOrdenadas.map((l) => (
+                            <BarraHorizontal
+                              key={l.mes}
+                              label={mesLabel(l.mes)}
+                              value={l.quantidade || 0}
+                              max={maxQtdMes}
+                              color='var(--blue-400)'
+                            />
+                          ))}
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.5 }}>
+                            {p.pico ? (
+                              <>
+                                Historicamente vende mais em <strong>{p.pico.nome}</strong> — média de{' '}
+                                <strong>{p.pico.mediaQtd.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} {p.unidade}</strong>{' '}
+                                (baseado em {p.pico.anosObservados} anos), {(p.percentualPico || 0).toFixed(0)}% da venda média anual do produto
+                                concentrada nesse mês. Vale garantir estoque de pelo menos{' '}
+                                <strong>{Math.ceil(p.pico.mediaQtd)} {p.unidade}</strong> antes desse mês chegar.
+                              </>
+                            ) : (
+                              <>Ainda não há um mês do ano com 2 anos de histórico pra esse produto — o gráfico acima é só o que já vendeu, mês a mês.</>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {modalFechar && (
+        <ModalConfirmacao
+          titulo='Fechar o mês?'
+          mensagem='Vai gravar um registro permanente com o estoque, a receber, a pagar e o caixa/banco de hoje, e calcular o lucro real do período em relação ao último fechamento. Não muda mais depois de gravado.'
+          icone={PiggyBank}
+          corIcone='#7C3AED'
+          corFundoIcone='#F3E8FF'
+          botoes={[
+            { label: 'Cancelar', variante: 'secundaria', onClick: () => setModalFechar(false) },
+            { label: 'Fechar o mês', variante: 'primaria', onClick: fecharMes, autoFocus: true },
+          ]}
+          onFechar={() => setModalFechar(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── VENDAS DETALHADAS — extrato técnico, uma linha por item vendido ─────────
+// Markup % = (preço − custo) / custo, olhando só o produto. Resultado já
+// desconta a fatia de custo fixo do mês (rateada proporcional à receita da
+// venda naquele mês) — por isso "markup alto" e "resultado bom" nem sempre
+// coincidem: uma venda pequena de alta margem ainda carrega sua fatia de
+// aluguel/salário do mês.
+function CelulaImposto({ linha, onSalvar }) {
+  const [editando, setEditando] = useState(false)
+  const [valor, setValor] = useState(linha.imposto_percentual ?? '')
+  const inputRef = useRef(null)
+
+  useEffect(() => { if (editando) inputRef.current?.focus() }, [editando])
+
+  async function salvar() {
+    setEditando(false)
+    if (Number(valor || 0) === Number(linha.imposto_percentual || 0)) return
+    await onSalvar(linha.orcamento, valor)
+  }
+
+  if (editando) {
+    return (
+      <input
+        ref={inputRef}
+        type='number' min='0' step='0.01' value={valor}
+        onChange={(e) => setValor(e.target.value)}
+        onBlur={salvar}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+          if (e.key === 'Escape') { setValor(linha.imposto_percentual ?? ''); setEditando(false) }
+        }}
+        style={{ width: 64, height: 26, padding: '0 6px', borderRadius: 6, border: '1px solid var(--blue-600)', fontSize: 12, textAlign: 'right' }}
+      />
+    )
+  }
+  return (
+    <button
+      onClick={() => setEditando(true)}
+      title='Clique para editar'
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4, background: 'transparent', border: 'none',
+        cursor: 'pointer', fontSize: 12.5, color: linha.imposto_percentual != null ? 'var(--text-primary)' : 'var(--text-muted)',
+        padding: '2px 4px', borderRadius: 6,
+      }}
+    >
+      {linha.imposto_percentual != null ? fmtPct(linha.imposto_percentual) : '—'}
+      <Pencil size={10} style={{ opacity: 0.5 }} />
+    </button>
+  )
+}
+
+function VendasDetalhadas() {
+  const { ini, fim } = mesAtual()
+  const [preset, setPreset] = useState('mes-atual')
+  const [dataInicio, setDataInicio] = useState(ini)
+  const [dataFim, setDataFim] = useState(fim)
+  const [linhas, setLinhas] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [erro, setErro] = useState('')
+  const [busca, setBusca] = useState('')
+
+  function aplicarPreset(p) {
+    setPreset(p)
+    if (p === 'hoje') { const r = diaAtual(); setDataInicio(r.ini); setDataFim(r.fim) }
+    else if (p === 'semana') { const r = semanaAtual(); setDataInicio(r.ini); setDataFim(r.fim) }
+    else if (p === 'mes-atual') { const r = mesAtual(); setDataInicio(r.ini); setDataFim(r.fim) }
+    else if (p === 'mes-anterior') { const r = mesAnterior(); setDataInicio(r.ini); setDataFim(r.fim) }
+    else if (p === 'ano-atual') { const r = anoAtual(); setDataInicio(r.ini); setDataFim(r.fim) }
+  }
+
+  const carregar = useCallback(async () => {
+    setLoading(true)
+    setErro('')
+    try {
+      const data = await window.api.relatorios.vendasDetalhadas({ dataInicio, dataFim })
+      setLinhas(data || [])
+    } catch (e) {
+      console.error('Erro ao carregar vendas detalhadas:', e)
+      setErro(e?.message || 'Erro ao carregar vendas.')
+    } finally {
+      setLoading(false)
+    }
+  }, [dataInicio, dataFim])
+
+  useEffect(() => { carregar() }, [carregar])
+
+  async function salvarImposto(orcamento, percentual) {
+    const r = await window.api.vendas.atualizarImposto({ orcamento, percentual })
+    if (!r?.sucesso) { setErro('Erro ao salvar imposto: ' + (r?.erro || 'desconhecido')); return }
+    setLinhas((ls) => ls.map((l) => (l.orcamento === orcamento ? { ...l, imposto_percentual: percentual === '' ? null : Number(percentual) } : l)))
+  }
+
+  const buscaNorm = busca.trim().toLowerCase()
+  const filtradas = buscaNorm
+    ? linhas.filter((l) =>
+      (l.produto || '').toLowerCase().includes(buscaNorm) ||
+      (l.cliente || '').toLowerCase().includes(buscaNorm) ||
+      String(l.orcamento).includes(buscaNorm))
+    : linhas
+
+  const { ordenados, coluna, direcao, alternar } = useOrdenacao(filtradas, {
+    colunaInicial: 'data', direcaoInicial: 'desc',
+  })
+
+  const totalCusto = filtradas.reduce((s, l) => s + (l.custo_compra || 0), 0)
+  const totalPreco = filtradas.reduce((s, l) => s + (l.preco_venda || 0), 0)
+  const totalResultado = filtradas.reduce((s, l) => s + (l.resultado || 0), 0)
+  const markupMedioPonderado = totalCusto > 0 ? ((totalPreco - totalCusto) / totalCusto) * 100 : null
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, margin: 20, marginBottom: 0, padding: '16px 20px' }}>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          {[
+            ['hoje', 'Hoje'],
+            ['semana', 'Esta semana'],
+            ['mes-atual', 'Mês atual'],
+            ['mes-anterior', 'Mês anterior'],
+            ['ano-atual', 'Ano atual'],
+          ].map(([id, label]) => (
+            <button key={id} onClick={() => aplicarPreset(id)}
+              style={{
+                height: 34, padding: '0 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                border: `1px solid ${preset === id ? 'var(--blue-600)' : 'var(--border-md)'}`,
+                background: preset === id ? 'var(--blue-600)' : 'var(--surface)',
+                color: preset === id ? '#fff' : 'var(--text-secondary)',
+              }}>
+              {label}
+            </button>
+          ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>De</label>
+            <input type='date' value={dataInicio} onChange={(e) => { setPreset('custom'); setDataInicio(e.target.value) }}
+              style={{ height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13 }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Até</label>
+            <input type='date' value={dataFim} onChange={(e) => { setPreset('custom'); setDataFim(e.target.value) }}
+              style={{ height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13 }} />
+          </div>
+          <button onClick={carregar}
+            style={{ height: 34, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 6, border: '1px solid var(--border-md)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', background: 'var(--surface)' }}>
+            <RefreshCw size={13} /> Atualizar
+          </button>
+          <div style={{ position: 'relative', marginLeft: 'auto' }}>
+            <Search size={13} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--text-muted)' }} />
+            <input
+              placeholder='Buscar produto, cliente ou venda...' value={busca} onChange={(e) => setBusca(e.target.value)}
+              style={{ height: 34, width: 240, padding: '0 10px 0 30px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13 }}
+            />
+          </div>
+        </div>
+        {erro && <div style={{ color: '#C53030', fontSize: 13 }}>{erro}</div>}
+      </div>
+
+      {loading ? <Carregando /> : (
+        <div style={{ margin: '16px 20px 20px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead>
+              <tr>
+                {[
+                  { label: 'Venda', chave: 'orcamento' },
+                  { label: 'Data', chave: 'data' },
+                  { label: 'Cliente', chave: 'cliente' },
+                  { label: 'Produto', chave: 'produto' },
+                  { label: 'Qtde', chave: 'quantidade' },
+                  { label: 'Custo de compra', chave: 'custo_compra' },
+                  { label: 'Preço de venda', chave: 'preco_venda' },
+                  { label: 'Markup %', chave: 'markup_percentual' },
+                  { label: 'Resultado', chave: 'resultado' },
+                ].map((h) => (
+                  <ThOrdenavel
+                    key={h.chave}
+                    label={h.label}
+                    chave={h.chave}
+                    colunaAtual={coluna}
+                    direcao={direcao}
+                    onOrdenar={alternar}
+                    style={{
+                      padding: '9px 12px', fontSize: 11, fontWeight: 500, color: 'var(--text-muted)',
+                      textAlign: ['orcamento', 'data', 'cliente', 'produto'].includes(h.chave) ? 'left' : 'right',
+                      background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap',
+                    }}
+                  />
+                ))}
+                <th style={{ padding: '9px 12px', fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', textAlign: 'right', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>Imposto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ordenados.length === 0 && (
+                <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Nenhuma venda no período.</td></tr>
+              )}
+              {ordenados.map((l, i) => (
+                <tr key={`${l.orcamento}-${l.codigo_produto}-${i}`} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>#{l.orcamento}</td>
+                  <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{fmtDate(l.data)}</td>
+                  <td style={{ padding: '8px 12px' }}>{l.cliente}</td>
+                  <td style={{ padding: '8px 12px', fontWeight: 500 }}>{l.produto}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtQtd(l.quantidade, l.unidade)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmt(l.custo_compra)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmt(l.preco_venda)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>{l.markup_percentual == null ? '—' : fmtPct(l.markup_percentual)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: (l.resultado || 0) >= 0 ? '#22863A' : '#C53030' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, justifyContent: 'flex-end' }}>
+                      {(l.resultado || 0) < 0 && (
+                        <span title='Esse item não está contribuindo o suficiente pra cobrir a conta fixa da loja neste mês.' style={{ display: 'inline-flex' }}>
+                          <AlertTriangle size={12} />
+                        </span>
+                      )}
+                      {fmt(l.resultado)}
+                    </span>
+                  </td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                    <CelulaImposto linha={l} onSalvar={salvarImposto} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            {ordenados.length > 0 && (
+              <tfoot>
+                <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--gray-50)' }}>
+                  <td colSpan={5} style={{ padding: '9px 12px', fontSize: 12, fontWeight: 600 }}>Total do período ({ordenados.length} itens)</td>
+                  <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700 }}>{fmt(totalCusto)}</td>
+                  <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700 }}>{fmt(totalPreco)}</td>
+                  <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700 }}>{markupMedioPonderado == null ? '—' : fmtPct(markupMedioPonderado)}</td>
+                  <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: totalResultado >= 0 ? '#22863A' : '#C53030' }}>{fmt(totalResultado)}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function VisaoGeral({ usuario }) {
   const { ini, fim } = mesAtual()
   const [preset, setPreset] = useState('mes-atual')
   const [dataInicio, setDataInicio] = useState(ini)
@@ -1095,6 +1862,47 @@ export default function FinanceiroLucro({ usuario }) {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+const ABAS_LUCRO_REAL = [
+  { id: 'visao-geral', label: 'Visão Geral', icon: TrendingUp },
+  { id: 'patrimonio', label: 'Patrimônio', icon: PiggyBank },
+  { id: 'vendas-detalhadas', label: 'Vendas Detalhadas', icon: Table2 },
+]
+
+export default function FinanceiroLucro({ usuario }) {
+  const [abaAtiva, setAbaAtiva] = useState('visao-geral')
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
+      <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '0 16px', display: 'flex', gap: 4, overflowX: 'auto', alignItems: 'center', flexShrink: 0 }}>
+        {ABAS_LUCRO_REAL.map((aba) => {
+          const Icon = aba.icon
+          const ativo = abaAtiva === aba.id
+          return (
+            <button
+              key={aba.id}
+              onClick={() => setAbaAtiva(aba.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '13px 16px', fontSize: 13,
+                fontWeight: ativo ? 500 : 400, color: ativo ? 'var(--blue-700)' : 'var(--text-secondary)',
+                borderBottom: ativo ? '2px solid var(--blue-700)' : '2px solid transparent',
+                marginBottom: -1, transition: 'all 0.12s', whiteSpace: 'nowrap', cursor: 'pointer',
+              }}
+            >
+              <Icon size={14} style={{ color: ativo ? 'var(--blue-600)' : 'var(--text-muted)' }} />
+              {aba.label}
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        {abaAtiva === 'visao-geral' && <VisaoGeral usuario={usuario} />}
+        {abaAtiva === 'patrimonio' && <Patrimonio usuario={usuario} />}
+        {abaAtiva === 'vendas-detalhadas' && <VendasDetalhadas />}
+      </div>
     </div>
   )
 }

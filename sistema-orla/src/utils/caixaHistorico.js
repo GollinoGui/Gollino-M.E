@@ -8,6 +8,20 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 
+// Total efetivamente recebido no caixa de uma sessão — soma só as formas de
+// pagamento imediatas (dinheiro/cartão/cheque/PIX). Difere de `valor_total`
+// da sessão, que é o faturamento (inclui a parcela "A Receber" de vendas
+// fiado e vendas em Convênio, que ainda não entraram no caixa).
+export function totalRecebidoSessao(sessao) {
+  return (
+    (sessao?.valor_dinheiro || 0) +
+    (sessao?.valor_cartao_credito || 0) +
+    (sessao?.valor_cartao_debito || 0) +
+    (sessao?.valor_cheque || 0) +
+    (sessao?.valor_pix || 0)
+  )
+}
+
 // Rótulos e ícones de cada tipo de movimento de uma sessão de caixa —
 // compartilhado entre a tela de Caixa, o relatório de fechamento
 // (ModalRelatorioCaixa) e o fechamento de caixa atrasado (AvisoCaixaAtrasado).

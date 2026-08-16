@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
-import { RefreshCw, FolderOpen } from 'lucide-react'
+import { useState, useEffect, Fragment } from 'react'
+import { RefreshCw, FolderOpen, ChevronRight } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
 import { BotoesRelatorio } from '../components/BotoesRelatorio'
 import { useOrdenacao } from '../utils/ordenacao'
+import { totalRecebidoSessao } from '../utils/caixaHistorico'
 import {
   exportarCSV,
   buscarEmpresa,
@@ -28,12 +29,16 @@ export default function CaixasFechados() {
   const [dataFim, setDataFim] = useState(fim)
   const [sessoes, setSessoes] = useState([])
   const [loading, setLoading] = useState(true)
+  const [expandidos, setExpandidos] = useState(() => new Set())
+  const [detalhes, setDetalhes] = useState({})
 
   async function carregar() {
     setLoading(true)
     try {
       const data = await window.api.caixa.historico({ dataInicio, dataFim })
       setSessoes((data || []).filter((s) => s.situacao === 'F'))
+      setExpandidos(new Set())
+      setDetalhes({})
     } catch (e) {
       console.error('Erro ao carregar caixas fechados:', e)
     } finally {
@@ -43,20 +48,44 @@ export default function CaixasFechados() {
 
   useEffect(() => { carregar() }, [])
 
+  // Expande/recolhe os detalhes (vendas) de um caixa; busca sob demanda na
+  // 1ª vez que a linha é aberta e guarda em cache pelo id da sessão.
+  async function alternarExpandir(sessao) {
+    const id = sessao.id
+    setExpandidos((prev) => {
+      const novo = new Set(prev)
+      novo.has(id) ? novo.delete(id) : novo.add(id)
+      return novo
+    })
+    if (detalhes[id]) return
+    setDetalhes((prev) => ({ ...prev, [id]: { carregando: true, vendas: [] } }))
+    try {
+      const vendas = await window.api.vendas.listar({ caixaSessaoId: id })
+      setDetalhes((prev) => ({ ...prev, [id]: { carregando: false, vendas: vendas || [] } }))
+    } catch (e) {
+      console.error('Erro ao carregar detalhes do caixa:', e)
+      setDetalhes((prev) => ({ ...prev, [id]: { carregando: false, vendas: [], erro: true } }))
+    }
+  }
+
   const totalVendas = sessoes.reduce((s, c) => s + (c.qtde_vendas || 0), 0)
-  const totalGeral = sessoes.reduce((s, c) => s + (c.valor_total || 0), 0)
   const totalDinheiro = sessoes.reduce((s, c) => s + (c.valor_dinheiro || 0), 0)
   const totalCartaoC = sessoes.reduce((s, c) => s + (c.valor_cartao_credito || 0), 0)
   const totalCartaoD = sessoes.reduce((s, c) => s + (c.valor_cartao_debito || 0), 0)
   const totalCheque = sessoes.reduce((s, c) => s + (c.valor_cheque || 0), 0)
   const totalPix = sessoes.reduce((s, c) => s + (c.valor_pix || 0), 0)
   const totalPrejuizo = sessoes.reduce((s, c) => s + (c.valor_prejuizo || 0), 0)
+  // "Total" é o que realmente entrou no caixa (formas de pagamento imediatas)
+  // — não o faturamento da sessão, que incluiria vendas fiado/convênio ainda
+  // não recebidas e inflaria o número (ver totalRecebidoSessao).
+  const totalGeral = sessoes.reduce((s, c) => s + totalRecebidoSessao(c), 0)
 
   const { ordenados, coluna, direcao, alternar } = useOrdenacao(sessoes, {
     colunaInicial: 'data_abertura',
     acessores: {
       data_abertura: (s) => `${s.data_abertura || ''} ${s.hora_abertura || ''}`,
       data_fechamento: (s) => `${s.data_fechamento || ''} ${s.hora_fechamento || ''}`,
+      valor_total: (s) => totalRecebidoSessao(s),
     },
   })
 
@@ -73,7 +102,7 @@ export default function CaixasFechados() {
       'Cheque (R$)': (s.valor_cheque || 0).toFixed(2).replace('.', ','),
       'PIX (R$)': (s.valor_pix || 0).toFixed(2).replace('.', ','),
       'Prejuízo (R$)': (s.valor_prejuizo || 0).toFixed(2).replace('.', ','),
-      'Total (R$)': (s.valor_total || 0).toFixed(2).replace('.', ','),
+      'Total (R$)': totalRecebidoSessao(s).toFixed(2).replace('.', ','),
     }))
     linhas.push({
       Abertura: '', 'Aberto por': '', Fechamento: '', 'Fechado por': '',
@@ -119,7 +148,7 @@ export default function CaixasFechados() {
         <td class="num">${fmtMoedaBR(s.valor_cheque)}</td>
         <td class="num">${fmtMoedaBR(s.valor_pix)}</td>
         <td class="num">${fmtMoedaBR(s.valor_prejuizo)}</td>
-        <td class="num">${fmtMoedaBR(s.valor_total)}</td>
+        <td class="num">${fmtMoedaBR(totalRecebidoSessao(s))}</td>
       </tr>`,
       montarTotalGeral: () => `
         <td colspan="2">TOTAL GERAL</td>
@@ -219,24 +248,42 @@ export default function CaixasFechados() {
                 </tr>
               </thead>
               <tbody>
-                {ordenados.map((s) => (
-                  <tr key={s.id} style={{ borderBottom: '1px solid var(--border)' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                    <td style={{ padding: '10px 14px', fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(s.data_abertura)} {fmtHora(s.hora_abertura)}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-secondary)' }}>{s.usuario_abertura || '—'}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(s.data_fechamento)} {fmtHora(s.hora_fechamento)}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-secondary)' }}>{s.usuario_fechamento || '—'}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{s.qtde_vendas || 0}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(s.valor_dinheiro)}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(s.valor_cartao_credito)}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(s.valor_cartao_debito)}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(s.valor_cheque)}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(s.valor_pix)}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right', color: s.valor_prejuizo > 0 ? '#C53030' : undefined }}>{fmt(s.valor_prejuizo)}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700, textAlign: 'right', color: '#185FA5' }}>{fmt(s.valor_total)}</td>
-                  </tr>
-                ))}
+                {ordenados.map((s) => {
+                  const aberta = expandidos.has(s.id)
+                  return (
+                    <Fragment key={s.id}>
+                      <tr style={{ borderBottom: aberta ? 'none' : '1px solid var(--border)', cursor: 'pointer' }}
+                        onClick={() => alternarExpandir(s)}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                        <td style={{ padding: '10px 14px', fontSize: 12, whiteSpace: 'nowrap' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <ChevronRight size={13} style={{ color: 'var(--text-muted)', flexShrink: 0, transform: aberta ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
+                            {fmtDate(s.data_abertura)} {fmtHora(s.hora_abertura)}
+                          </span>
+                        </td>
+                        <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-secondary)' }}>{s.usuario_abertura || '—'}</td>
+                        <td style={{ padding: '10px 14px', fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(s.data_fechamento)} {fmtHora(s.hora_fechamento)}</td>
+                        <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-secondary)' }}>{s.usuario_fechamento || '—'}</td>
+                        <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{s.qtde_vendas || 0}</td>
+                        <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(s.valor_dinheiro)}</td>
+                        <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(s.valor_cartao_credito)}</td>
+                        <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(s.valor_cartao_debito)}</td>
+                        <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(s.valor_cheque)}</td>
+                        <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right' }}>{fmt(s.valor_pix)}</td>
+                        <td style={{ padding: '10px 14px', fontSize: 13, textAlign: 'right', color: s.valor_prejuizo > 0 ? '#C53030' : undefined }}>{fmt(s.valor_prejuizo)}</td>
+                        <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700, textAlign: 'right', color: '#185FA5' }}>{fmt(totalRecebidoSessao(s))}</td>
+                      </tr>
+                      {aberta && (
+                        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td colSpan={12} style={{ padding: 0, background: 'var(--gray-50)' }}>
+                            <DetalheCaixa sessao={s} detalhe={detalhes[s.id]} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
               </tbody>
               <tfoot>
                 <tr style={{ background: 'var(--gray-50)', borderTop: '2px solid var(--border)', fontWeight: 700 }}>
@@ -255,6 +302,61 @@ export default function CaixasFechados() {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// Detalhe expandido de um caixa: cruza o faturamento da sessão com o que
+// foi de fato recebido (a diferença é venda fiado/convênio ainda em aberto)
+// e lista as vendas individuais daquele caixa, buscadas sob demanda.
+function DetalheCaixa({ sessao, detalhe }) {
+  const faturamento = sessao.valor_total || 0
+  const recebido = totalRecebidoSessao(sessao)
+  const aReceber = Math.max(0, faturamento - recebido - (sessao.valor_prejuizo || 0))
+
+  return (
+    <div style={{ padding: '4px 20px 16px 42px' }}>
+      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', padding: '10px 0 12px', fontSize: 12 }}>
+        <div><span style={{ color: 'var(--text-muted)' }}>Faturamento (vendas): </span><strong>{fmt(faturamento)}</strong></div>
+        <div><span style={{ color: 'var(--text-muted)' }}>Recebido no caixa: </span><strong style={{ color: '#185FA5' }}>{fmt(recebido)}</strong></div>
+        {aReceber > 0.004 && (
+          <div><span style={{ color: 'var(--text-muted)' }}>Ainda a receber (fiado/convênio): </span><strong style={{ color: '#B7791F' }}>{fmt(aReceber)}</strong></div>
+        )}
+      </div>
+
+      {!detalhe || detalhe.carregando ? (
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0 10px' }}>Carregando vendas...</div>
+      ) : detalhe.erro ? (
+        <div style={{ fontSize: 12, color: '#C53030', padding: '4px 0 10px' }}>Erro ao carregar as vendas desse caixa.</div>
+      ) : detalhe.vendas.length === 0 ? (
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0 10px' }}>Nenhuma venda registrada nesse caixa.</div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 4 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 500, color: 'var(--text-muted)' }}>Venda</th>
+              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 500, color: 'var(--text-muted)' }}>Hora</th>
+              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 500, color: 'var(--text-muted)' }}>Cliente</th>
+              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 500, color: 'var(--text-muted)' }}>Forma de pagamento</th>
+              <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 500, color: 'var(--text-muted)' }}>Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {detalhe.vendas.map((v) => (
+              <tr key={v.orcamento} style={{ opacity: v.situacao === 'C' ? 0.55 : 1 }}>
+                <td style={{ padding: '4px 8px' }}>#{v.orcamento}</td>
+                <td style={{ padding: '4px 8px' }}>{v.hora_cadastro || '--:--'}</td>
+                <td style={{ padding: '4px 8px' }}>{v.nome_cliente ? `${v.nome_cliente} (#${v.codigo_cliente})` : 'Consumidor'}</td>
+                <td style={{ padding: '4px 8px' }}>
+                  {v.codigo_forma_pagamento1 || '—'}
+                  {v.situacao === 'C' && <span style={{ marginLeft: 6, color: '#C53030', fontWeight: 600, fontSize: 11 }}>CANCELADA</span>}
+                </td>
+                <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 600, textDecoration: v.situacao === 'C' ? 'line-through' : 'none' }}>{fmt(v.valor_total)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   )
 }

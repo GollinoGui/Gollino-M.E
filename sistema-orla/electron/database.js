@@ -174,9 +174,10 @@ const clientes = {
   },
 
   async salvar(dados) {
+    const { id, ...resto } = dados
     const { error } = await supabase
       .from('clientes')
-      .upsert({ ...dados, data_atualizacao: hoje(), hora_atualizacao: agora() }, { onConflict: 'codigo' })
+      .upsert({ ...resto, data_atualizacao: hoje(), hora_atualizacao: agora() }, { onConflict: 'codigo' })
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
@@ -211,9 +212,10 @@ const fornecedores = {
   },
 
   async salvar(dados) {
+    const { id, ...resto } = dados
     const { error } = await supabase
       .from('fornecedores')
-      .upsert({ ...dados, data_atualizacao: hoje() }, { onConflict: 'codigo' })
+      .upsert({ ...resto, data_atualizacao: hoje() }, { onConflict: 'codigo' })
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
@@ -243,9 +245,10 @@ const historicos = {
   },
 
   async salvar(dados) {
+    const { id, ...resto } = dados
     const { error } = await supabase
       .from('historicos')
-      .upsert({ ...dados, data_atualizacao: hoje() }, { onConflict: 'codigo' })
+      .upsert({ ...resto, data_atualizacao: hoje() }, { onConflict: 'codigo' })
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
@@ -277,9 +280,10 @@ const planoContas = {
   },
 
   async salvar(dados) {
+    const { id, ...resto } = dados
     const { error } = await supabase
       .from('plano_contas')
-      .upsert({ ...dados, data_atualizacao: hoje() }, { onConflict: 'codigo' })
+      .upsert({ ...resto, data_atualizacao: hoje() }, { onConflict: 'codigo' })
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
@@ -319,9 +323,10 @@ const produtos = {
   },
 
   async salvar(dados) {
+    const { id, ...resto } = dados
     const { error } = await supabase
       .from('produtos')
-      .upsert({ ...dados, data_atualizacao: hoje(), hora_atualizacao: agora() }, { onConflict: 'codigo' })
+      .upsert({ ...resto, data_atualizacao: hoje(), hora_atualizacao: agora() }, { onConflict: 'codigo' })
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
@@ -442,6 +447,16 @@ const vendas = {
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true, ...data }
   },
+
+  // % de imposto digitado manualmente quando a nota fiscal da venda é
+  // emitida — não há cálculo automático de imposto no sistema.
+  async atualizarImposto(orcamento, percentual) {
+    const { error } = await supabase.from('vendas')
+      .update({ imposto_percentual: percentual === '' || percentual == null ? null : Number(percentual) })
+      .eq('orcamento', orcamento)
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
 }
 
 // ============================================================
@@ -514,7 +529,7 @@ const contasReceber = {
   async listarPagamentos(filtros = {}) {
     let q = supabase
       .from('contas_receber_pagamentos')
-      .select('*, contas_receber(nro_docto, seq_docto, codigo_cliente, data_vencimento, valor_docto)')
+      .select('*, contas_receber(nro_docto, seq_docto, tipo_docto, codigo_cliente, data_vencimento, valor_docto, observacao)')
     if (filtros.dataInicio) q = q.gte('data_pagamento', filtros.dataInicio)
     if (filtros.dataFim) q = q.lte('data_pagamento', filtros.dataFim)
     const { data, error } = await q.order('data_pagamento', { ascending: false }).limit(500)
@@ -870,30 +885,36 @@ const importar = {
         continue
       }
       try {
-        const { data: existeAntes } = await supabase.from('produtos').select('codigo').eq('codigo', codigo).maybeSingle()
+        const { data: atual } = await supabase.from('produtos').select('*').eq('codigo', codigo).maybeSingle()
+        // Colunas ausentes no CSV preservam o valor atual do produto em vez de
+        // cair num padrão fixo — um import parcial (só preço, só estoque) não
+        // pode reativar um produto desativado nem zerar o estoque de quem não
+        // está na planilha.
+        const tem = (chaves) => chaves.some((k) => row[k] !== undefined && String(row[k]).trim() !== '')
+
         const { error } = await supabase.from('produtos').upsert({
           codigo,
           descricao,
-          descricao_menor: str(row['descricao_menor'] || descricao.substring(0, 30)),
-          referencia: str(row['referencia'] || row['ref'] || row['ean'] || row['codigo_barras']),
-          unidade: str(row['unidade'] || row['un'] || 'UN'),
-          codigo_grupo: str(row['codigo_grupo'] || row['grupo']),
-          codigo_linha: str(row['codigo_linha'] || row['linha']),
-          preco_venda_vista: num(row['preco_venda_vista'] || row['preco_vista'] || row['preco'] || row['valor']),
-          preco_venda_prazo: num(row['preco_venda_prazo'] || row['preco_prazo'] || row['preco'] || row['valor']),
-          preco_venda_minimo: num(row['preco_venda_minimo'] || row['preco_minimo']),
-          custo_preco_unitario: num(row['custo_preco_unitario'] || row['custo'] || row['preco_custo']),
-          preco_custo_atual: num(row['preco_custo_atual'] || row['custo'] || row['preco_custo']),
-          estoque_atual: num(row['estoque_atual'] || row['estoque'] || row['saldo']),
-          estoque_minimo: num(row['estoque_minimo'] || row['minimo']),
-          controla_estoque: yn(row['controla_estoque'] || row['controla'], 'S'),
-          situacao_produto: str(row['situacao'], 'A'),
+          descricao_menor: tem(['descricao_menor']) ? str(row['descricao_menor']) : (atual?.descricao_menor || descricao.substring(0, 30)),
+          referencia: tem(['referencia', 'ref', 'ean', 'codigo_barras']) ? str(row['referencia'] || row['ref'] || row['ean'] || row['codigo_barras']) : (atual?.referencia || ''),
+          unidade: tem(['unidade', 'un']) ? str(row['unidade'] || row['un']) : (atual?.unidade || 'UN'),
+          codigo_grupo: tem(['codigo_grupo', 'grupo']) ? str(row['codigo_grupo'] || row['grupo']) : (atual?.codigo_grupo || ''),
+          codigo_linha: tem(['codigo_linha', 'linha']) ? str(row['codigo_linha'] || row['linha']) : (atual?.codigo_linha || ''),
+          preco_venda_vista: tem(['preco_venda_vista', 'preco_vista', 'preco', 'valor']) ? num(row['preco_venda_vista'] || row['preco_vista'] || row['preco'] || row['valor']) : (atual?.preco_venda_vista ?? 0),
+          preco_venda_prazo: tem(['preco_venda_prazo', 'preco_prazo', 'preco', 'valor']) ? num(row['preco_venda_prazo'] || row['preco_prazo'] || row['preco'] || row['valor']) : (atual?.preco_venda_prazo ?? 0),
+          preco_venda_minimo: tem(['preco_venda_minimo', 'preco_minimo']) ? num(row['preco_venda_minimo'] || row['preco_minimo']) : (atual?.preco_venda_minimo ?? 0),
+          custo_preco_unitario: tem(['custo_preco_unitario', 'custo', 'preco_custo']) ? num(row['custo_preco_unitario'] || row['custo'] || row['preco_custo']) : (atual?.custo_preco_unitario ?? 0),
+          preco_custo_atual: tem(['preco_custo_atual', 'custo', 'preco_custo']) ? num(row['preco_custo_atual'] || row['custo'] || row['preco_custo']) : (atual?.preco_custo_atual ?? 0),
+          estoque_atual: tem(['estoque_atual', 'estoque', 'saldo']) ? num(row['estoque_atual'] || row['estoque'] || row['saldo']) : (atual?.estoque_atual ?? 0),
+          estoque_minimo: tem(['estoque_minimo', 'minimo']) ? num(row['estoque_minimo'] || row['minimo']) : (atual?.estoque_minimo ?? 0),
+          controla_estoque: tem(['controla_estoque', 'controla']) ? yn(row['controla_estoque'] || row['controla'], 'S') : (atual?.controla_estoque || 'S'),
+          situacao_produto: tem(['situacao']) ? str(row['situacao']) : (atual?.situacao_produto || 'A'),
           usuario: 'importacao',
           data_atualizacao: hoje(),
           hora_atualizacao: agora(),
         }, { onConflict: 'codigo' })
         if (error) throw new Error(error.message)
-        resultados.push({ codigo, descricao, status: existeAntes ? 'atualizado' : 'inserido' })
+        resultados.push({ codigo, descricao, status: atual ? 'atualizado' : 'inserido' })
       } catch (e) {
         resultados.push({ codigo, descricao, status: 'erro', motivo: e.message })
       }
@@ -1284,6 +1305,22 @@ const gastosOperacionais = {
       categoria,
       total: totais[codigo] || 0,
     }))
+  },
+
+  // Total de custo fixo do mês (fixos + variáveis + despesas por categoria),
+  // mesma fórmula que o Ponto de Equilíbrio calcula no frontend — usado pra
+  // ratear custo fixo por venda em relatorios.vendasDetalhadas.
+  async totalDoMes(mesReferencia) {
+    const [gastos, despesasCategoria] = await Promise.all([
+      this.listar(mesReferencia),
+      this.despesasCategoriaMes(mesReferencia),
+    ])
+    const totalFixos = gastos.filter((g) => g.tipo === 'FIXO')
+      .reduce((s, g) => s + (g.conta_pagar_vinculada?.valor_docto ?? g.valor ?? 0), 0)
+    const totalVariaveis = gastos.filter((g) => g.tipo === 'VARIAVEL')
+      .reduce((s, g) => s + (g.valor || 0), 0)
+    const totalDespesasCategoria = despesasCategoria.reduce((s, d) => s + (d.total || 0), 0)
+    return totalFixos + totalVariaveis + totalDespesasCategoria
   },
 }
 
@@ -1690,6 +1727,68 @@ const relatorios = {
     if (e1) throw new Error(e1.message)
     if (e2) throw new Error(e2.message)
     return { saldoInicial: saldoInicial || 0, movimentos }
+  },
+
+  // Lista técnica de vendas, uma linha por item vendido, com custo/preço
+  // gravados no momento da venda (vendas_itens.preco_custo/preco_unitario),
+  // markup do produto e resultado líquido já descontando a fatia de custo
+  // fixo do mês (rateada proporcional à receita da venda naquele mês) —
+  // usada na aba "Vendas Detalhadas" de Financeiro > Lucro Real.
+  async vendasDetalhadas(dataInicio, dataFim) {
+    const { data: vendasCab, error: e1 } = await supabase
+      .from('vendas')
+      .select('orcamento, data, codigo_cliente, numero_nfe, imposto_percentual')
+      .eq('situacao', 'N')
+      .gte('data', dataInicio)
+      .lte('data', dataFim)
+    if (e1) throw new Error(e1.message)
+    if (!vendasCab?.length) return []
+
+    const vendasComNome = await anexarNomeCliente(vendasCab)
+    const vendaPorOrcamento = Object.fromEntries(vendasComNome.map((v) => [v.orcamento, v]))
+
+    const { data: itens, error: e2 } = await supabase
+      .from('vendas_itens')
+      .select('orcamento, codigo_produto, descricao, quantidade, unidade, preco_unitario, preco_custo, valor_total')
+      .in('orcamento', vendasCab.map((v) => v.orcamento))
+    if (e2) throw new Error(e2.message)
+
+    // Receita por mês (base do rateio) e gastos fixos de cada mês envolvido.
+    const receitaPorMes = {}
+    for (const it of itens || []) {
+      const mes = vendaPorOrcamento[it.orcamento]?.data?.slice(0, 7)
+      if (!mes) continue
+      receitaPorMes[mes] = (receitaPorMes[mes] || 0) + (it.valor_total || 0)
+    }
+    const meses = Object.keys(receitaPorMes)
+    const gastosPorMes = Object.fromEntries(
+      await Promise.all(meses.map(async (mes) => [mes, await gastosOperacionais.totalDoMes(mes)])),
+    )
+
+    return (itens || []).map((it) => {
+      const venda = vendaPorOrcamento[it.orcamento] || {}
+      const mes = venda.data?.slice(0, 7)
+      const custoCompra = (it.preco_custo || 0) * (it.quantidade || 0)
+      const precoVenda = it.valor_total || 0
+      const receitaMes = receitaPorMes[mes] || 0
+      const custoFixoAlocado = receitaMes > 0 ? (precoVenda / receitaMes) * (gastosPorMes[mes] || 0) : 0
+      return {
+        orcamento: it.orcamento,
+        data: venda.data,
+        cliente: venda.nome_cliente || 'Consumidor',
+        codigo_produto: it.codigo_produto,
+        produto: it.descricao,
+        unidade: it.unidade,
+        quantidade: it.quantidade,
+        custo_compra: custoCompra,
+        preco_venda: precoVenda,
+        markup_percentual: it.preco_custo > 0 ? ((it.preco_unitario - it.preco_custo) / it.preco_custo) * 100 : null,
+        custo_fixo_alocado: custoFixoAlocado,
+        resultado: (precoVenda - custoCompra) - custoFixoAlocado,
+        numero_nfe: venda.numero_nfe,
+        imposto_percentual: venda.imposto_percentual,
+      }
+    }).sort((a, b) => (a.data === b.data ? String(b.orcamento).localeCompare(String(a.orcamento)) : b.data.localeCompare(a.data)))
   },
 }
 

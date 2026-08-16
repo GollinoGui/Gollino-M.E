@@ -241,6 +241,7 @@ handle('vendas:listar', (_, filtros) => db.vendas.listar(filtros))
 handle('vendas:buscar', (_, orcamento) => db.vendas.buscar(orcamento))
 handle('vendas:salvar', (_, dados) => db.vendas.salvar(dados))
 handle('vendas:cancelar', (_, { orcamento, motivo, usuario }) => db.vendas.cancelar(orcamento, motivo, usuario))
+handle('vendas:atualizarImposto', (_, { orcamento, percentual }) => db.vendas.atualizarImposto(orcamento, percentual))
 handle('vendas:devolver', (_, dados) => db.vendas.devolver(dados))
 
 // --- CONTAS A RECEBER ---
@@ -743,6 +744,7 @@ handle('relatorios:extrato', (_, f) => db.relatorios.extrato(f.dataInicio, f.dat
 handle('relatorios:sazonalidadeProdutos', () => db.relatorios.sazonalidadeProdutos())
 handle('relatorios:vendasMensais', () => db.relatorios.vendasMensais())
 handle('relatorios:contasReceberMensal', () => db.relatorios.contasReceberMensal())
+handle('relatorios:vendasDetalhadas', (_, f) => db.relatorios.vendasDetalhadas(f.dataInicio, f.dataFim))
 
 // --- LUCRO REAL (patrimônio) ---
 handle('patrimonio:snapshotAtual', (_, dataReferencia) => db.patrimonio.snapshotAtual(dataReferencia))

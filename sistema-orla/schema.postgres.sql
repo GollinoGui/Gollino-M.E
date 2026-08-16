@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS vendas (
   qtde_parcelas_entrada INTEGER DEFAULT 0,
   qtde_parcelas_restante INTEGER DEFAULT 0,
   numero_nfe TEXT,
+  imposto_percentual DOUBLE PRECISION,
   chave_consulta_sat TEXT,
   numero_serie_ecf TEXT,
   coo TEXT,

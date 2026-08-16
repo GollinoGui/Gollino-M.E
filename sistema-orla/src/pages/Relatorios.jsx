@@ -14,10 +14,6 @@ import {
   Printer,
   Download,
   ListTree,
-  PiggyBank,
-  Calendar,
-  ChevronDown,
-  ChevronRight,
 } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
 import { BotaoGerarRelatorio } from '../components/BotoesRelatorio'
@@ -26,6 +22,7 @@ import ModalConfirmacao from '../components/ModalConfirmacao'
 import { getSituacao as getSituacaoConta, STATUS_CFG } from '../utils/statusContas'
 import { useOrdenacao } from '../utils/ordenacao'
 import { fmtQtd } from '../utils/formatQtd'
+import { totalRecebidoSessao } from '../utils/caixaHistorico'
 import {
   exportarCSV,
   agruparPorPessoa,
@@ -50,40 +47,6 @@ function mesAtual() {
   return { ini, fim }
 }
 
-const NOMES_MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-
-function mesLabel(mesStr) {
-  const [ano, mes] = String(mesStr || '').split('-')
-  const idx = Number(mes) - 1
-  return `${NOMES_MESES[idx] || mes}/${ano}`
-}
-
-// Agrupa linhas {mes: 'YYYY-MM', ...} por mês-do-ano (Jan..Dez), somando os
-// anos observados em cada mês. Um mês só é "elegível" pra apontar alta/baixa
-// quando já se repetiu em pelo menos 2 anos diferentes — com só 1 ano, o
-// "pico" seria só o único mês que existe no histórico, não um padrão real.
-function agruparPorMesDoAno(linhas, chaveValor, chaveQtd) {
-  const buckets = Array.from({ length: 12 }, () => ({ anos: new Set(), somaValor: 0, somaQtd: 0 }))
-  for (const l of linhas) {
-    const partes = String(l.mes || '').split('-')
-    const ano = partes[0]
-    const mesIdx = Number(partes[1]) - 1
-    if (!ano || mesIdx < 0 || mesIdx > 11) continue
-    const b = buckets[mesIdx]
-    b.anos.add(ano)
-    b.somaValor += l[chaveValor] || 0
-    b.somaQtd += l[chaveQtd] || 0
-  }
-  return buckets.map((b, i) => ({
-    mesIdx: i,
-    nome: NOMES_MESES[i],
-    anosObservados: b.anos.size,
-    mediaValor: b.anos.size ? b.somaValor / b.anos.size : 0,
-    mediaQtd: b.anos.size ? b.somaQtd / b.anos.size : 0,
-    elegivel: b.anos.size >= 2,
-  }))
-}
-
 const abas = [
   { id: 'rel-vendas', label: 'Vendas', icon: BarChart2 },
   { id: 'rel-itens-vendidos', label: 'Itens Vendidos', icon: ShoppingCart },
@@ -96,7 +59,6 @@ const abas = [
   { id: 'rel-contas-pagar', label: 'Contas a pagar', icon: TrendingDown },
   { id: 'rel-financeiro', label: 'Financeiro', icon: DollarSign },
   { id: 'rel-plano-contas', label: 'Plano de Contas', icon: ListTree },
-  { id: 'rel-lucro-real', label: 'Lucro Real', icon: PiggyBank },
 ]
 
 function CardMetrica({ label, value, sub, color }) {
@@ -2596,7 +2558,9 @@ function RelFechamentoCaixa() {
 
   const fechadas = sessoes.filter((s) => s.situacao === 'F')
   const totalVendas = fechadas.reduce((s, c) => s + (c.qtde_vendas || 0), 0)
-  const totalGeral = fechadas.reduce((s, c) => s + (c.valor_total || 0), 0)
+  // "Total" é o que realmente entrou no caixa — não o faturamento da sessão
+  // (valor_total), que inclui vendas fiado/convênio ainda não recebidas.
+  const totalGeral = fechadas.reduce((s, c) => s + totalRecebidoSessao(c), 0)
   const totalDinheiro = fechadas.reduce((s, c) => s + (c.valor_dinheiro || 0), 0)
   const totalCartaoC = fechadas.reduce((s, c) => s + (c.valor_cartao_credito || 0), 0)
   const totalCartaoD = fechadas.reduce((s, c) => s + (c.valor_cartao_debito || 0), 0)
@@ -2610,6 +2574,7 @@ function RelFechamentoCaixa() {
       data_abertura: (s) => `${s.data_abertura || ''} ${s.hora_abertura || ''}`,
       data_fechamento: (s) => `${s.data_fechamento || ''} ${s.hora_fechamento || ''}`,
       situacao: (s) => (s.situacao === 'F' ? 'Fechado' : 'Aberto'),
+      valor_total: (s) => totalRecebidoSessao(s),
     },
   })
 
@@ -2645,7 +2610,7 @@ function RelFechamentoCaixa() {
         <td class="num">${fmtMoedaBR(s.valor_cheque)}</td>
         <td class="num">${fmtMoedaBR(s.valor_pix)}</td>
         <td class="num">${fmtMoedaBR(s.valor_convenio)}</td>
-        <td class="num">${fmtMoedaBR(s.valor_total)}</td>
+        <td class="num">${fmtMoedaBR(totalRecebidoSessao(s))}</td>
       </tr>`,
       montarTotalGeral: () => `
         <td colspan="3">TOTAL — ${fechadas.length} fechamento(s)</td>
@@ -2690,7 +2655,7 @@ function RelFechamentoCaixa() {
             'Cheque (R$)': (s.valor_cheque || 0).toFixed(2).replace('.', ','),
             'PIX (R$)': (s.valor_pix || 0).toFixed(2).replace('.', ','),
             'Convênio (R$)': (s.valor_convenio || 0).toFixed(2).replace('.', ','),
-            'Total (R$)': (s.valor_total || 0).toFixed(2).replace('.', ','),
+            'Total (R$)': totalRecebidoSessao(s).toFixed(2).replace('.', ','),
           })), `fechamento_caixa_${dataInicio}_${dataFim}`)}
           onGerarPDF={gerarRelatorioPDF}
         />
@@ -2761,7 +2726,7 @@ function RelFechamentoCaixa() {
                   <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmt(s.valor_cheque)}</td>
                   <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmt(s.valor_pix)}</td>
                   <td style={{ padding: '7px 10px', textAlign: 'right', color: '#7C3AED' }}>{fmt(s.valor_convenio)}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600 }}>{fmt(s.valor_total)}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600 }}>{fmt(totalRecebidoSessao(s))}</td>
                 </tr>
               ))}
             </tbody>
@@ -3103,462 +3068,6 @@ function RelExtrato() {
   )
 }
 
-// ── LUCRO REAL (confronto patrimonial) ───────────────────────────────────────
-// Lucro real = variação do patrimônio líquido (estoque a custo + a receber +
-// caixa/banco − a pagar) entre um fechamento e o anterior, ajustada por
-// retiradas/aportes de sócio (que não são resultado operacional). Cada
-// fechamento é um registro permanente — não é recalculado depois.
-function RelLucroReal({ usuario }) {
-  const [atual, setAtual] = useState(null)
-  const [historico, setHistorico] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [fechando, setFechando] = useState(false)
-  const [modalFechar, setModalFechar] = useState(false)
-  const [erro, setErro] = useState('')
-  const [vendasMensais, setVendasMensais] = useState([])
-  const [contasReceberMensal, setContasReceberMensal] = useState([])
-  const [sazonalidade, setSazonalidade] = useState([])
-  const [produtoExpandido, setProdutoExpandido] = useState(null)
-
-  async function carregar() {
-    setLoading(true)
-    setErro('')
-    try {
-      const [snap, hist, vm, crm, saz] = await Promise.all([
-        window.api.patrimonio.snapshotAtual(),
-        window.api.patrimonio.listar(),
-        window.api.relatorios.vendasMensais(),
-        window.api.relatorios.contasReceberMensal(),
-        window.api.relatorios.sazonalidadeProdutos(),
-      ])
-      setAtual(snap)
-      setHistorico(hist || [])
-      setVendasMensais(vm || [])
-      setContasReceberMensal(crm || [])
-      setSazonalidade(saz || [])
-    } catch (e) {
-      setErro('Erro ao carregar: ' + e.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => { carregar() }, [])
-
-  const hoje = new Date().toISOString().slice(0, 10)
-  const jaFechouHoje = historico.some((h) => h.data_fechamento === hoje)
-
-  async function fecharMes() {
-    setModalFechar(false)
-    setFechando(true)
-    setErro('')
-    try {
-      const r = await window.api.patrimonio.fechar({ usuario: usuario?.nome || usuario?.usuario || 'sistema' })
-      if (!r?.sucesso) setErro('Erro ao fechar: ' + (r?.erro || 'desconhecido'))
-      await carregar()
-    } catch (e) {
-      setErro('Erro ao fechar: ' + e.message)
-    } finally {
-      setFechando(false)
-    }
-  }
-
-  const comLucro = historico.filter((h) => h.lucro_periodo !== null && h.lucro_periodo !== undefined)
-  const melhor = comLucro.length ? comLucro.reduce((a, b) => (b.lucro_periodo > a.lucro_periodo ? b : a)) : null
-  const pior = comLucro.length ? comLucro.reduce((a, b) => (b.lucro_periodo < a.lucro_periodo ? b : a)) : null
-
-  // ── Sazonalidade — empresa (vendas por mês) ──
-  const vendasMensaisOrd = [...vendasMensais].sort((a, b) => a.mes.localeCompare(b.mes))
-  const mesesEmpresa = agruparPorMesDoAno(
-    vendasMensais.map((m) => ({ mes: m.mes, valor: m.valor_total, quantidade: m.quantidade_vendas })),
-    'valor', 'quantidade',
-  )
-  const empresaComDado = mesesEmpresa.filter((m) => m.anosObservados > 0)
-  const empresaElegiveis = mesesEmpresa.filter((m) => m.elegivel)
-  const mediaBaseEmpresa = empresaComDado.length
-    ? empresaComDado.reduce((s, m) => s + m.mediaValor, 0) / empresaComDado.length
-    : 0
-  const altaEmpresa = empresaElegiveis.length
-    ? empresaElegiveis.reduce((a, b) => (b.mediaValor > a.mediaValor ? b : a))
-    : null
-  const baixaEmpresa = empresaElegiveis.length
-    ? empresaElegiveis.reduce((a, b) => (b.mediaValor < a.mediaValor ? b : a))
-    : null
-
-  // ── Sazonalidade — contas a receber geradas por mês ──
-  const contasReceberMensalOrd = [...contasReceberMensal].sort((a, b) => a.mes.localeCompare(b.mes))
-  const mesesCR = agruparPorMesDoAno(
-    contasReceberMensal.map((m) => ({ mes: m.mes, valor: m.valor_gerado, quantidade: m.quantidade })),
-    'valor', 'quantidade',
-  )
-  const crComDado = mesesCR.filter((m) => m.anosObservados > 0)
-  const crElegiveis = mesesCR.filter((m) => m.elegivel)
-  const mediaBaseCR = crComDado.length
-    ? crComDado.reduce((s, m) => s + m.mediaValor, 0) / crComDado.length
-    : 0
-  const picoCR = crElegiveis.length
-    ? crElegiveis.reduce((a, b) => (b.mediaValor > a.mediaValor ? b : a))
-    : null
-
-  // ── Sazonalidade — por produto ──
-  const produtosMap = {}
-  for (const r of sazonalidade) {
-    if (!produtosMap[r.codigo]) {
-      produtosMap[r.codigo] = { codigo: r.codigo, descricao: r.descricao, unidade: r.unidade, linhas: [] }
-    }
-    produtosMap[r.codigo].linhas.push(r)
-  }
-  const produtosSaz = Object.values(produtosMap).map((p) => {
-    const buckets = agruparPorMesDoAno(p.linhas, 'valor_venda', 'quantidade')
-    const elegiveis = buckets.filter((b) => b.elegivel)
-    const somaMediaQtd = buckets.reduce((s, b) => s + b.mediaQtd, 0)
-    const pico = elegiveis.length ? elegiveis.reduce((a, b) => (b.mediaQtd > a.mediaQtd ? b : a)) : null
-    const percentualPico = pico && somaMediaQtd > 0 ? (pico.mediaQtd / somaMediaQtd) * 100 : null
-    return {
-      ...p,
-      qtdeTotal: p.linhas.reduce((s, l) => s + (l.quantidade || 0), 0),
-      valorTotal: p.linhas.reduce((s, l) => s + (l.valor_venda || 0), 0),
-      mesesComVenda: p.linhas.length,
-      linhasOrdenadas: [...p.linhas].sort((a, b) => a.mes.localeCompare(b.mes)),
-      pico,
-      percentualPico,
-    }
-  })
-  const {
-    ordenados: produtosSazOrd,
-    coluna: colProdSaz,
-    direcao: dirProdSaz,
-    alternar: alternarProdSaz,
-  } = useOrdenacao(produtosSaz, {
-    colunaInicial: 'descricao',
-    acessores: {
-      mes_forte: (p) => p.pico?.nome || '',
-      qtde_total: (p) => p.qtdeTotal,
-      meses_com_venda: (p) => p.mesesComVenda,
-    },
-  })
-
-  const primeiroMesComDado = vendasMensaisOrd[0]?.mes
-
-  if (loading) return <Carregando />
-
-  // Contas ainda não unificadas em um banco só (previsto pra setembro/2026) —
-  // até lá o Caixa/Banco calculado aqui fica incompleto, então o fechamento
-  // de agora não deve ser tratado como o marco zero real.
-  const antesDaUnificacao = new Date() < new Date('2026-09-01')
-
-  return (
-    <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
-      {antesDaUnificacao && (
-        <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 'var(--radius-md)', background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E', fontSize: 12.5, lineHeight: 1.5 }}>
-          <strong>Aguardando unificação da conta bancária (previsão: setembro).</strong> Até lá o Caixa/Banco
-          nesta tela fica incompleto, porque nem tudo passa por uma conta só ainda. Use só pra acompanhar —
-          o primeiro "Fechar o mês" que vale como marco zero é depois de pagar tudo e unificar a conta.
-        </div>
-      )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 560, lineHeight: 1.5 }}>
-          Patrimônio = estoque a custo + contas a receber + caixa/banco − contas a pagar.
-          O lucro real de cada mês é a variação desse número em relação ao fechamento anterior.
-        </div>
-        <button
-          onClick={() => setModalFechar(true)}
-          disabled={fechando || jaFechouHoje}
-          title={jaFechouHoje ? 'Já existe um fechamento hoje' : 'Trava um registro permanente com os números de hoje'}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 16px',
-            background: jaFechouHoje ? 'var(--gray-200)' : 'var(--blue-700)',
-            color: jaFechouHoje ? 'var(--text-muted)' : '#fff',
-            border: 'none', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 600,
-            cursor: jaFechouHoje || fechando ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
-          }}
-        >
-          <PiggyBank size={14} /> {jaFechouHoje ? 'Já fechado hoje' : fechando ? 'Fechando...' : 'Fechar o mês'}
-        </button>
-      </div>
-
-      {erro && (
-        <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 'var(--radius-md)', background: '#fef2f2', border: '1px solid #fecaca', color: '#B91C1C', fontSize: 13 }}>
-          {erro}
-        </div>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 20 }}>
-        <CardMetrica label='Estoque (a custo)' value={fmt(atual?.estoqueCusto)} color='var(--blue-700)' />
-        <CardMetrica label='Contas a receber' value={fmt(atual?.receberAberto)} color='#15803D' />
-        <CardMetrica label='Caixa / banco' value={fmt(atual?.caixaBanco)} color='#0D9488' />
-        <CardMetrica label='Contas a pagar' value={fmt(atual?.pagarAberto)} color='#B91C1C' />
-        <CardMetrica label='Patrimônio atual' value={fmt(atual?.patrimonio)} color='#7C3AED' />
-      </div>
-
-      {comLucro.length > 0 && (
-        <div style={{ display: 'flex', gap: 16, marginBottom: 16, fontSize: 12, flexWrap: 'wrap' }}>
-          <span style={{ color: 'var(--text-secondary)' }}>
-            Melhor mês: <strong style={{ color: '#15803D' }}>{fmtDate(melhor.data_fechamento)} ({fmt(melhor.lucro_periodo)})</strong>
-          </span>
-          <span style={{ color: 'var(--text-secondary)' }}>
-            Pior mês: <strong style={{ color: '#B91C1C' }}>{fmtDate(pior.data_fechamento)} ({fmt(pior.lucro_periodo)})</strong>
-          </span>
-        </div>
-      )}
-
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: 'var(--gray-50)', borderBottom: '2px solid var(--border)' }}>
-              {['FECHAMENTO', 'ESTOQUE', 'A RECEBER', 'A PAGAR', 'CAIXA/BANCO', 'PATRIMÔNIO', 'LUCRO DO PERÍODO'].map((h) => (
-                <th key={h} style={{ padding: '8px 12px', textAlign: h === 'FECHAMENTO' ? 'left' : 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {historico.length === 0 && (
-              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>Nenhum fechamento registrado ainda.</td></tr>
-            )}
-            {historico.map((h) => (
-              <tr key={h.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ padding: '7px 12px', fontWeight: 500 }}>{fmtDate(h.data_fechamento)}</td>
-                <td style={{ padding: '7px 12px', textAlign: 'right' }}>{fmt(h.estoque_custo)}</td>
-                <td style={{ padding: '7px 12px', textAlign: 'right' }}>{fmt(h.contas_receber_aberto)}</td>
-                <td style={{ padding: '7px 12px', textAlign: 'right' }}>{fmt(h.contas_pagar_aberto)}</td>
-                <td style={{ padding: '7px 12px', textAlign: 'right' }}>{fmt(h.caixa_banco)}</td>
-                <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 600, color: '#7C3AED' }}>{fmt(h.patrimonio)}</td>
-                <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 700, color: h.lucro_periodo == null ? 'var(--text-muted)' : h.lucro_periodo >= 0 ? '#15803D' : '#B91C1C' }}>
-                  {h.lucro_periodo == null ? '—' : fmt(h.lucro_periodo)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* ── SAZONALIDADE ────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 32, marginBottom: 6 }}>
-        <Calendar size={16} color='var(--text-secondary)' />
-        <div style={{ fontSize: 14, fontWeight: 600 }}>Sazonalidade</div>
-      </div>
-      <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 680, lineHeight: 1.5, marginBottom: 18 }}>
-        Baseado no histórico real de vendas do sistema{primeiroMesComDado ? ` (dado contínuo a partir de ${mesLabel(primeiroMesComDado)})` : ''}.
-        Só apontamos "mês forte/fraco" quando o mesmo mês do ano já se repetiu em pelo menos 2 anos diferentes —
-        com só 1 ano de histórico, o "pico" seria só o único mês que existe no banco, não um padrão real da loja.
-        Até lá, os números abaixo são só o que já aconteceu, mês a mês.
-      </div>
-
-      {/* Alta/baixa da empresa */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Vendas por mês — alta e baixa da empresa</div>
-        {altaEmpresa || baixaEmpresa ? (
-          <div style={{ display: 'flex', gap: 20, marginBottom: 14, fontSize: 12, flexWrap: 'wrap' }}>
-            {altaEmpresa && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)' }}>
-                <TrendingUp size={13} color='#15803D' />
-                Mês de alta: <strong style={{ color: '#15803D' }}>
-                  {altaEmpresa.nome} ({fmt(altaEmpresa.mediaValor)} em média
-                  {mediaBaseEmpresa > 0 ? `, ${(((altaEmpresa.mediaValor - mediaBaseEmpresa) / mediaBaseEmpresa) * 100).toFixed(0)}% acima da média` : ''})
-                </strong>
-                <span style={{ color: 'var(--text-muted)' }}>— {altaEmpresa.anosObservados} anos observados</span>
-              </span>
-            )}
-            {baixaEmpresa && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)' }}>
-                <TrendingDown size={13} color='#B91C1C' />
-                Mês de baixa: <strong style={{ color: '#B91C1C' }}>
-                  {baixaEmpresa.nome} ({fmt(baixaEmpresa.mediaValor)} em média
-                  {mediaBaseEmpresa > 0 ? `, ${(((baixaEmpresa.mediaValor - mediaBaseEmpresa) / mediaBaseEmpresa) * 100).toFixed(0)}% da média` : ''})
-                </strong>
-                <span style={{ color: 'var(--text-muted)' }}>— {baixaEmpresa.anosObservados} anos observados</span>
-              </span>
-            )}
-          </div>
-        ) : (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
-            Ainda em observação — nenhum mês do ano se repetiu em 2 anos diferentes ainda. Volte aqui depois de um ciclo anual completo.
-          </div>
-        )}
-        {vendasMensaisOrd.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Nenhuma venda registrada ainda.</div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  <th style={{ padding: '6px 10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>MÊS</th>
-                  <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>Nº VENDAS</th>
-                  <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>VALOR TOTAL</th>
-                </tr>
-              </thead>
-              <tbody>
-                {vendasMensaisOrd.map((m) => (
-                  <tr key={m.mes} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '6px 10px', fontWeight: 500 }}>{mesLabel(m.mes)}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right' }}>{m.quantidade_vendas}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--blue-700)' }}>{fmt(m.valor_total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Contas a receber por mês */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Contas a receber geradas por mês</div>
-        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 10, maxWidth: 640, lineHeight: 1.4 }}>
-          Quanto de venda parcelada/fiado foi gerado em cada mês — não é saldo em aberto, é volume de crédito concedido.
-          Mês que gera mais conta a receber é mês que compromete mais caixa futuro (lucro no papel, caixa que ainda não entrou).
-        </div>
-        {picoCR && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
-            <TrendingUp size={13} color='#B91C1C' />
-            Mês que mais gera conta a receber: <strong style={{ color: '#B91C1C' }}>
-              {picoCR.nome} ({fmt(picoCR.mediaValor)} em média
-              {mediaBaseCR > 0 ? `, ${(((picoCR.mediaValor - mediaBaseCR) / mediaBaseCR) * 100).toFixed(0)}% acima da média` : ''})
-            </strong>
-            <span style={{ color: 'var(--text-muted)' }}>— {picoCR.anosObservados} anos observados</span>
-          </div>
-        )}
-        {contasReceberMensalOrd.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Nenhuma conta a receber registrada ainda.</div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  <th style={{ padding: '6px 10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>MÊS</th>
-                  <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>Nº DOCUMENTOS</th>
-                  <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>VALOR GERADO</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contasReceberMensalOrd.map((m) => (
-                  <tr key={m.mes} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '6px 10px', fontWeight: 500 }}>{mesLabel(m.mes)}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right' }}>{m.quantidade}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: '#B91C1C' }}>{fmt(m.valor_gerado)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Sazonalidade por produto */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>Venda por produto, mês a mês ({produtosSazOrd.length})</div>
-          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>Clique numa linha pra ver o detalhe mês a mês e a sugestão de compra.</div>
-        </div>
-        {produtosSazOrd.length === 0 ? (
-          <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>Nenhuma venda registrada ainda.</div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-            <thead>
-              <tr>
-                {[
-                  { label: 'Código', chave: 'codigo' },
-                  { label: 'Descrição', chave: 'descricao' },
-                  { label: 'Meses c/ venda', chave: 'meses_com_venda' },
-                  { label: 'Qtde total', chave: 'qtde_total' },
-                  { label: 'Mês forte', chave: 'mes_forte' },
-                ].map((h) => (
-                  <ThOrdenavel
-                    key={h.chave}
-                    label={h.label}
-                    chave={h.chave}
-                    colunaAtual={colProdSaz}
-                    direcao={dirProdSaz}
-                    onOrdenar={alternarProdSaz}
-                    style={{ padding: '8px 12px', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textAlign: h.chave === 'descricao' || h.chave === 'codigo' ? 'left' : 'right', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}
-                  />
-                ))}
-                <th style={{ padding: '8px 12px', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }} />
-              </tr>
-            </thead>
-            <tbody>
-              {produtosSazOrd.map((p) => {
-                const aberto = produtoExpandido === p.codigo
-                const maxQtdMes = Math.max(...p.linhasOrdenadas.map((l) => l.quantidade || 0), 1)
-                return (
-                  <Fragment key={p.codigo}>
-                    <tr
-                      onClick={() => setProdutoExpandido(aberto ? null : p.codigo)}
-                      style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>{p.codigo}</td>
-                      <td style={{ padding: '8px 12px', fontWeight: 500 }}>{p.descricao}</td>
-                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>{p.mesesComVenda}</td>
-                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>{p.qtdeTotal.toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td>
-                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                        {p.pico ? (
-                          <span style={{ background: 'var(--green-50)', color: 'var(--green-500)', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>
-                            {p.pico.nome} ({(p.percentualPico || 0).toFixed(0)}%)
-                          </span>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>
-                        )}
-                      </td>
-                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                        {aberto ? <ChevronDown size={14} color='var(--text-muted)' /> : <ChevronRight size={14} color='var(--text-muted)' />}
-                      </td>
-                    </tr>
-                    {aberto && (
-                      <tr>
-                        <td colSpan={6} style={{ padding: '14px 20px', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
-                          {p.linhasOrdenadas.map((l) => (
-                            <BarraHorizontal
-                              key={l.mes}
-                              label={mesLabel(l.mes)}
-                              value={l.quantidade || 0}
-                              max={maxQtdMes}
-                              color='var(--blue-400)'
-                            />
-                          ))}
-                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.5 }}>
-                            {p.pico ? (
-                              <>
-                                Historicamente vende mais em <strong>{p.pico.nome}</strong> — média de{' '}
-                                <strong>{p.pico.mediaQtd.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} {p.unidade}</strong>{' '}
-                                (baseado em {p.pico.anosObservados} anos), {(p.percentualPico || 0).toFixed(0)}% da venda média anual do produto
-                                concentrada nesse mês. Vale garantir estoque de pelo menos{' '}
-                                <strong>{Math.ceil(p.pico.mediaQtd)} {p.unidade}</strong> antes desse mês chegar.
-                              </>
-                            ) : (
-                              <>Ainda não há um mês do ano com 2 anos de histórico pra esse produto — o gráfico acima é só o que já vendeu, mês a mês.</>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {modalFechar && (
-        <ModalConfirmacao
-          titulo='Fechar o mês?'
-          mensagem='Vai gravar um registro permanente com o estoque, a receber, a pagar e o caixa/banco de hoje, e calcular o lucro real do período em relação ao último fechamento. Não muda mais depois de gravado.'
-          icone={PiggyBank}
-          corIcone='#7C3AED'
-          corFundoIcone='#F3E8FF'
-          botoes={[
-            { label: 'Cancelar', variante: 'secundaria', onClick: () => setModalFechar(false) },
-            { label: 'Fechar o mês', variante: 'primaria', onClick: fecharMes, autoFocus: true },
-          ]}
-          onFechar={() => setModalFechar(false)}
-        />
-      )}
-    </div>
-  )
-}
-
 // ── PLANO DE CONTAS ──────────────────────────────────────────────────────────
 function RelPlanoContas() {
   const [contas, setContas] = useState([])
@@ -3664,7 +3173,7 @@ function RelPlanoContas() {
 }
 
 // ── COMPONENTE PRINCIPAL ──────────────────────────────────────────────────────
-export default function Relatorios({ paginaAtiva, usuario }) {
+export default function Relatorios({ paginaAtiva }) {
   const abaInicial = abas.find((a) => a.id === paginaAtiva)?.id || 'rel-vendas'
   const [abaAtiva, setAbaAtiva] = useState(abaInicial)
 
@@ -3756,8 +3265,6 @@ export default function Relatorios({ paginaAtiva, usuario }) {
         return <RelFinanceiro />
       case 'rel-plano-contas':
         return <RelPlanoContas />
-      case 'rel-lucro-real':
-        return <RelLucroReal usuario={usuario} />
       default:
         return (
           <div

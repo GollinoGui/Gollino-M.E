@@ -493,7 +493,9 @@ export default function App() {
           onClose={() => setBuscaAberta(false)}
         />
       )}
-      <Assistente caixaAberto={caixaAberto} onNavigate={setPagina} usuario={usuario} pagina={pagina} />
+      {pagina === 'dashboard' && (
+        <Assistente caixaAberto={caixaAberto} onNavigate={setPagina} usuario={usuario} pagina={pagina} />
+      )}
       <AtalhosTecla />
       {modaisGlobais}
     </div>

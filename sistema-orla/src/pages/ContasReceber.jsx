@@ -420,19 +420,539 @@ function ModalOpcoesRelatorioBaixa({ recebidas, onFechar, onGerar }) {
   )
 }
 
+// ── Aba "Faturamento" ──────────────────────────────────────────
+// Foco em duas perguntas do dono: quanto entrou (vendas do período, à vista
+// x a prazo) e o que a carteira de contas a receber já devolveu em caixa
+// (recebido no período, por forma) x o que ainda falta receber (saldo em
+// aberto — este último é sempre "hoje", não faz sentido prender ao período).
+function calcPeriodo(tipo) {
+  const hoje = new Date()
+  const hojeStr = hoje.toISOString().slice(0, 10)
+  if (tipo === 'hoje') return { ini: hojeStr, fim: hojeStr }
+  if (tipo === 'semana') {
+    const d = new Date(hoje)
+    d.setDate(d.getDate() - 6)
+    return { ini: d.toISOString().slice(0, 10), fim: hojeStr }
+  }
+  if (tipo === 'mes') {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
+    return { ini: d.toISOString().slice(0, 10), fim: hojeStr }
+  }
+  const d = new Date(hoje.getFullYear(), 0, 1)
+  return { ini: d.toISOString().slice(0, 10), fim: hojeStr }
+}
+
+const PERIODOS_FATURAMENTO = [
+  { chave: 'hoje', label: 'Hoje' },
+  { chave: 'semana', label: '7 dias' },
+  { chave: 'mes', label: 'Este mês' },
+  { chave: 'ano', label: 'Este ano' },
+  { chave: 'custom', label: 'Personalizado' },
+]
+
+// ── Modal de detalhe: "de que compra é esse dinheiro?" ──────────────────
+// Documento em contas_receber pode ser tipo_docto='VD' (nasceu de uma venda
+// no sistema — busca os itens) ou outro tipo (ex: 'AB', saldo de abertura
+// importado na migração, sem venda vinculada) — nesse caso avisa em vez de
+// fingir que achou algo.
+function ModalDetalheDocumento({ nroDocto, contaResumo, pagamentoContexto, onClose }) {
+  const [venda, setVenda] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelado = false
+    setLoading(true)
+    window.api.vendas
+      .buscar(nroDocto)
+      .then((v) => {
+        if (!cancelado) setVenda(v)
+      })
+      .catch((err) => console.error('Erro ao buscar venda:', err))
+      .finally(() => {
+        if (!cancelado) setLoading(false)
+      })
+    return () => {
+      cancelado = true
+    }
+  }, [nroDocto])
+
+  const itens = venda?.itens || []
+  const totalItens = itens.reduce((s, i) => s + (i.valor_total || 0), 0)
+  const temPago = contaResumo?.valor_pagamento != null
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'rgba(0,0,0,0.35)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 220,
+      }}
+    >
+      <div
+        style={{
+          background: 'var(--surface)',
+          borderRadius: 14,
+          border: '1px solid var(--border-md)',
+          width: 580,
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '0 16px 40px rgba(0,0,0,0.14)',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ background: '#185FA5', padding: '16px 20px' }}>
+          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginBottom: 2 }}>
+            {contaResumo?.nome_cliente || venda?.nome_cliente || '—'}
+            {contaResumo?.codigo_cliente ? ` (#${contaResumo.codigo_cliente})` : ''}
+          </div>
+          <div style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>Documento {nroDocto}</div>
+        </div>
+
+        <div style={{ padding: '18px 20px', overflowY: 'auto', flex: 1 }}>
+          {pagamentoContexto && (
+            <div
+              style={{
+                background: '#EAFBF0',
+                border: '1px solid #B7E4C7',
+                borderRadius: 8,
+                padding: '10px 14px',
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: '#22863A', fontWeight: 600, marginBottom: 2 }}>
+                Pago em {fmtDate(pagamentoContexto.data_pagamento)} · {pagamentoContexto.forma_recebimento || 'forma não informada'}
+              </div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#22863A' }}>
+                {fmt(pagamentoContexto.valor_pagamento)}
+              </div>
+              {pagamentoContexto.valor_desconto > 0 && (
+                <div style={{ fontSize: 11, color: '#C53030', marginTop: 2 }}>
+                  Desconto concedido: {fmt(pagamentoContexto.valor_desconto)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {contaResumo?.valor_docto != null && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: temPago ? 'repeat(3,1fr)' : '1fr',
+                gap: 10,
+                marginBottom: 18,
+              }}
+            >
+              <Kpi label='Valor do documento' value={fmt(contaResumo.valor_docto)} color='var(--text-primary)' />
+              {temPago && (
+                <>
+                  <Kpi label='Pago até agora' value={fmt(contaResumo.valor_pagamento)} color='#22863A' />
+                  <Kpi
+                    label='Em aberto'
+                    value={fmt(contaResumo.valor_docto - contaResumo.valor_pagamento)}
+                    color='#B7791F'
+                  />
+                </>
+              )}
+            </div>
+          )}
+
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: 0.3 }}>
+            ITENS DA VENDA
+          </div>
+
+          {loading ? (
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+              Carregando...
+            </div>
+          ) : !venda ? (
+            <div
+              style={{
+                padding: 16,
+                color: 'var(--text-muted)',
+                fontSize: 13,
+                background: 'var(--gray-50)',
+                borderRadius: 8,
+              }}
+            >
+              <div style={{ textAlign: contaResumo?.observacao ? 'left' : 'center' }}>
+                Esse documento não está vinculado a uma venda no sistema.
+              </div>
+              {contaResumo?.observacao && (
+                <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                  <strong style={{ color: 'var(--text-muted)' }}>Observação do lançamento:</strong> {contaResumo.observacao}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                Venda #{venda.orcamento} · {fmtDate(venda.data)}
+                {venda.usuario_cadastro ? ` · ${venda.usuario_cadastro}` : ''}
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    {['Produto', 'Un.', 'Qtd', 'Valor unit.', 'Total'].map((h, i) => (
+                      <th key={h} style={{ ...thStyle, textAlign: i >= 2 ? 'right' : 'left' }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {itens.map((it) => (
+                    <tr key={it.id}>
+                      <td style={tdStyle}>{it.descricao || it.desc_produto || it.codigo_produto}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{it.unidade || '-'}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{it.quantidade}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{fmt(it.preco_unitario)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600 }}>{fmt(it.valor_total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ background: 'var(--gray-50)', borderTop: '2px solid var(--border-md)', fontWeight: 700 }}>
+                    <td colSpan={4} style={{ ...tdStyle, fontSize: 12 }}>
+                      TOTAL DOS ITENS
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{fmt(totalItens)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </>
+          )}
+        </div>
+
+        <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-md)', display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={onClose}
+            style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-muted)' }}
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Kpi({ label, value, color }) {
+  return (
+    <div
+      style={{
+        background: 'var(--gray-50)',
+        borderRadius: 8,
+        padding: '10px 14px',
+        border: '1px solid var(--border-md)',
+      }}
+    >
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 600, color }}>{value}</div>
+    </div>
+  )
+}
+
+function AbaFaturamento() {
+  const [periodo, setPeriodo] = useState('mes')
+  const mesAtual = calcPeriodo('mes')
+  const [dataInicioCustom, setDataInicioCustom] = useState(mesAtual.ini)
+  const [dataFimCustom, setDataFimCustom] = useState(mesAtual.fim)
+
+  const auto = periodo !== 'custom' ? calcPeriodo(periodo) : null
+  const dataInicio = auto ? auto.ini : dataInicioCustom
+  const dataFim = auto ? auto.fim : dataFimCustom
+
+  const [recebimentos, setRecebimentos] = useState([])
+  const [vendasPeriodo, setVendasPeriodo] = useState([])
+  const [chequesPorDocto, setChequesPorDocto] = useState({})
+  const [totalEmAbertoGeral, setTotalEmAbertoGeral] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [detalhe, setDetalhe] = useState(null)
+
+  async function carregar() {
+    setLoading(true)
+    try {
+      const [pagtos, vds, aberto, chqs] = await Promise.all([
+        window.api.contasReceber.listarPagamentos({ dataInicio, dataFim }),
+        window.api.vendas.listar({ dataInicio, dataFim, situacao: 'N' }),
+        window.api.contasReceber.totalAberto(),
+        window.api.cheques.listar({ tipo: 'R' }),
+      ])
+      setRecebimentos(pagtos || [])
+      setVendasPeriodo(vds || [])
+      setTotalEmAbertoGeral(aberto?.total || 0)
+      // cheque recebido na venda vira "Cheques a receber" com nro_docto = orçamento
+      // (ver Vendas.jsx) — usado só pra saber se o cheque já era bom pra depositar
+      // no dia da venda (à vista) ou é pré-datado (a prazo).
+      const mapa = {}
+      ;(chqs || []).forEach((c) => {
+        if (c.nro_docto) mapa[c.nro_docto] = c
+      })
+      setChequesPorDocto(mapa)
+    } catch (err) {
+      console.error('Erro ao carregar faturamento:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    carregar()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataInicio, dataFim])
+
+  const totalRecebidoPeriodo = recebimentos.reduce((s, r) => s + (r.valor_pagamento || 0), 0)
+  const qtdContasRecebidas = new Set(recebimentos.map((r) => r.contas_receber_id)).size
+
+  const porForma = {}
+  recebimentos.forEach((r) => {
+    const f = r.forma_recebimento || 'Não informado'
+    porForma[f] = (porForma[f] || 0) + (r.valor_pagamento || 0)
+  })
+
+  // valor_pago_* (dinheiro/cartão/pix/...) não são preenchidos pelo fluxo
+  // atual de venda — quem carrega o que foi pago na hora x o que foi pra
+  // conta é valor_entrada (pago no ato) e valor_restante (vira contas a
+  // receber), setados em Vendas.jsx ao finalizar. Ver checagem em produção
+  // antes desta versão: valor_pago_contas_receber ficava sempre 0.
+  //
+  // Cheque é um caso à parte dentro de valor_entrada: só é "à vista" de
+  // verdade se já pode ser depositado no dia da venda (já assinado, valor
+  // certo). Cheque pré-datado (vencimento depois da venda) é a mesma
+  // lógica de "pegar e pagar depois" da carteira — o dinheiro não está na
+  // mão ainda — então reclassifica esse valor de à vista pra a prazo.
+  const totalVendasPeriodo = vendasPeriodo.reduce((s, v) => s + (v.valor_total || 0), 0)
+  const totalChequePreDatado = vendasPeriodo.reduce((s, v) => {
+    if (!(v.valor_pago_cheque > 0)) return s
+    const cheque = chequesPorDocto[v.orcamento]
+    const preDatado = cheque?.data_vencimento && v.data && cheque.data_vencimento > v.data
+    return preDatado ? s + v.valor_pago_cheque : s
+  }, 0)
+  const totalVistaBruto = vendasPeriodo.reduce((s, v) => s + (v.valor_entrada ?? (v.valor_total - (v.valor_restante || 0))), 0)
+  const totalVista = totalVistaBruto - totalChequePreDatado
+  const totalPrazo = vendasPeriodo.reduce((s, v) => s + (v.valor_restante || 0), 0) + totalChequePreDatado
+
+  const recebimentosOrdenados = [...recebimentos].sort((a, b) =>
+    (b.data_pagamento || '').localeCompare(a.data_pagamento || ''),
+  )
+
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ padding: '14px 16px 12px', borderBottom: '1px solid var(--border-md)' }}>
+        <div style={{ display: 'flex', gap: 7, marginBottom: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          {PERIODOS_FATURAMENTO.map((p) => (
+            <button
+              key={p.chave}
+              onClick={() => setPeriodo(p.chave)}
+              style={{
+                height: 32,
+                padding: '0 14px',
+                borderRadius: 8,
+                fontSize: 12.5,
+                border: periodo === p.chave ? '2px solid #185FA5' : '1px solid var(--border-md)',
+                background: periodo === p.chave ? '#EBF3FC' : 'var(--surface)',
+                color: periodo === p.chave ? '#185FA5' : 'var(--text-secondary)',
+                fontWeight: periodo === p.chave ? 600 : 400,
+              }}
+            >
+              {p.label}
+            </button>
+          ))}
+          {periodo === 'custom' && (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>De</label>
+                <input
+                  type='date'
+                  value={dataInicioCustom}
+                  onChange={(e) => setDataInicioCustom(e.target.value)}
+                  style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13 }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Até</label>
+                <input
+                  type='date'
+                  value={dataFimCustom}
+                  onChange={(e) => setDataFimCustom(e.target.value)}
+                  style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13 }}
+                />
+              </div>
+            </>
+          )}
+          <button
+            onClick={carregar}
+            style={{
+              height: 32,
+              padding: '0 10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              border: '1px solid var(--border-md)',
+              borderRadius: 8,
+              fontSize: 12,
+              color: 'var(--text-muted)',
+            }}
+            title='Atualizar'
+          >
+            <RefreshCw size={13} />
+          </button>
+        </div>
+
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: 0.3 }}>
+          VENDAS DO PERÍODO
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 14 }}>
+          <Kpi label={`Total vendido (${vendasPeriodo.length} venda${vendasPeriodo.length === 1 ? '' : 's'})`} value={fmt(totalVendasPeriodo)} color='var(--text-primary)' />
+          <Kpi label='Vendido à vista' value={fmt(totalVista)} color='#22863A' />
+          <Kpi label='Vendido a prazo' value={fmt(totalPrazo)} color='#185FA5' />
+        </div>
+        {totalChequePreDatado > 0 && (
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: -8, marginBottom: 14 }}>
+            Inclui {fmt(totalChequePreDatado)} em cheque pré-datado, contado como a prazo (não como à vista).
+          </div>
+        )}
+
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: 0.3 }}>
+          CONTAS A RECEBER
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
+          <Kpi label='Recebido no período' value={fmt(totalRecebidoPeriodo)} color='#22863A' />
+          <Kpi label='Contas recebidas no período' value={String(qtdContasRecebidas)} color='var(--text-primary)' />
+          <Kpi label='Ainda falta receber (hoje)' value={fmt(totalEmAbertoGeral)} color='#B7791F' />
+        </div>
+
+        {Object.keys(porForma).length > 0 && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+            {Object.entries(porForma).map(([forma, valor]) => (
+              <div
+                key={forma}
+                style={{ background: 'var(--gray-50)', borderRadius: 8, padding: '7px 12px', border: '1px solid var(--border-md)' }}
+              >
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{forma}: </span>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: '#185FA5' }}>{fmt(valor)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>Carregando...</div>
+        ) : recebimentosOrdenados.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>
+            Nenhum recebimento no período.
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                {['Data pagto.', 'Documento', 'Cliente', 'Forma', 'Valor recebido'].map((h) => (
+                  <th
+                    key={h}
+                    style={{
+                      ...thStyle,
+                      textAlign: h === 'Valor recebido' ? 'right' : 'left',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {recebimentosOrdenados.map((r) => (
+                <tr
+                  key={r.id}
+                  onClick={() =>
+                    setDetalhe({
+                      nroDocto: r.nro_docto,
+                      contaResumo: {
+                        valor_docto: r.valor_docto,
+                        nome_cliente: r.nome_cliente,
+                        codigo_cliente: r.codigo_cliente,
+                        observacao: r.observacao,
+                      },
+                      pagamentoContexto: {
+                        data_pagamento: r.data_pagamento,
+                        forma_recebimento: r.forma_recebimento,
+                        valor_pagamento: r.valor_pagamento,
+                        valor_desconto: r.valor_desconto,
+                      },
+                    })
+                  }
+                  style={{ cursor: 'pointer', transition: 'background 0.08s' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  title='Ver detalhes da venda'
+                >
+                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtDate(r.data_pagamento)}</td>
+                  <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12, color: '#185FA5', textDecoration: 'underline' }}>
+                    {r.nro_docto}
+                  </td>
+                  <td style={tdStyle}>
+                    {r.nome_cliente || '—'} (#{r.codigo_cliente})
+                  </td>
+                  <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{r.forma_recebimento || '—'}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600, color: '#22863A' }}>
+                    {fmt(r.valor_pagamento)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ background: 'var(--gray-50)', borderTop: '2px solid var(--border-md)', fontWeight: 700 }}>
+                <td colSpan={4} style={{ ...tdStyle, fontSize: 12 }}>
+                  TOTAL — {recebimentosOrdenados.length} recebimento(s)
+                </td>
+                <td style={{ ...tdStyle, textAlign: 'right', color: '#22863A' }}>{fmt(totalRecebidoPeriodo)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        )}
+      </div>
+
+      {detalhe && (
+        <ModalDetalheDocumento
+          nroDocto={detalhe.nroDocto}
+          contaResumo={detalhe.contaResumo}
+          pagamentoContexto={detalhe.pagamentoContexto}
+          onClose={() => setDetalhe(null)}
+        />
+      )}
+    </div>
+  )
+}
+
 export default function ContasReceber({ usuario }) {
+  const [abaAtiva, setAbaAtiva] = useState('Contas')
   const [dados, setDados] = useState([])
   const [loading, setLoading] = useState(true)
   const [busca, setBusca] = useState('')
-  const [filtroStatus, setFiltroStatus] = useState('todos')
+  const [filtroStatus, setFiltroStatus] = useState('aberto')
   const [selecionadas, setSelecionadas] = useState([])
   const [loteRecebimento, setLoteRecebimento] = useState(null)
   const [sucesso, setSucesso] = useState('')
   const [modalPrejuizo, setModalPrejuizo] = useState(false)
   const [aguardandoAprovacao, setAguardandoAprovacao] = useState(false)
   const [opcoesRelatorioBaixa, setOpcoesRelatorioBaixa] = useState(null) // recebidas | null
+  const [detalheDocumento, setDetalheDocumento] = useState(null)
+  const [dadosTotais, setDadosTotais] = useState([])
 
   // ── Carrega do banco ─────────────────────────────────────────
+  // dados = respeita o filtro de status (o que a TABELA mostra). dadosTotais
+  // = sempre todas as situações (exceto cancelada) — os cards do topo (Em
+  // aberto/Recebido/Total vendido a prazo) não podem depender de qual filtro
+  // está selecionado, senão "Total vendido a prazo" olhando só pro filtro
+  // "Aberto" vira mentira (mostra só uma fatia do que já foi vendido, não o
+  // total real).
   async function carregar() {
     setLoading(true)
     try {
@@ -442,8 +962,15 @@ export default function ContasReceber({ usuario }) {
       if (filtroStatus === 'prejuizo') filtros.situacao = 'X'
       if (busca) filtros.cliente = busca
 
-      const result = await window.api.contasReceber.listar(filtros)
+      const filtrosTotais = {}
+      if (busca) filtrosTotais.cliente = busca
+
+      const [result, totais] = await Promise.all([
+        window.api.contasReceber.listar(filtros),
+        window.api.contasReceber.listar(filtrosTotais),
+      ])
       setDados(result)
+      setDadosTotais(totais)
     } catch (err) {
       console.error('Erro ao carregar contas a receber:', err)
     } finally {
@@ -455,8 +982,7 @@ export default function ContasReceber({ usuario }) {
     carregar()
   }, [filtroStatus])
 
-  // Busca local (já filtra pelo banco quando muda status)
-  const filtrados = dados.filter((c) => {
+  const buscaLocal = (c) => {
     if (!busca) return true
     const b = busca.toLowerCase()
     return (
@@ -464,24 +990,53 @@ export default function ContasReceber({ usuario }) {
       (c.nro_docto || '').includes(busca) ||
       (c.codigo_cliente || '').includes(busca)
     )
-  })
+  }
 
-  // Totalizadores
-  const totalEmAberto = filtrados
+  // Busca local (já filtra pelo banco quando muda status)
+  const filtrados = dados.filter(buscaLocal)
+
+  // totaisFiltrados ignora o dropdown de status (só respeita a busca) — é a
+  // base dos 3 cards do topo, pra "Total vendido a prazo" continuar sendo o
+  // total de verdade mesmo com a tabela mostrando só "Aberto".
+  const totaisFiltrados = dadosTotais.filter(buscaLocal)
+
+  // Totalizadores (cards do topo)
+  const totalEmAberto = totaisFiltrados
     .filter((c) => c.situacao_docto === 'A')
     .reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
 
-  const totalPago = filtrados
-    .filter((c) => c.situacao_docto === 'P')
+  // Inclui recebimentos parciais em contas ainda abertas — antes só contava
+  // documento 100% quitado (situacao_docto==='P'), então um pagamento
+  // parcial recente ficava fora do "Recebido" mostrado ao dono.
+  const totalPago = totaisFiltrados
+    .filter((c) => c.situacao_docto !== 'C')
     .reduce((s, c) => s + (c.valor_pagamento || 0), 0)
 
-  const totalDocto = filtrados
+  const totalDocto = totaisFiltrados
     .filter((c) => c.situacao_docto !== 'C')
     .reduce((s, c) => s + (c.valor_docto || 0), 0)
 
-  // "Pago" de todas as linhas filtradas (inclui parciais), pros relatórios —
-  // diferente de totalPago acima, que é só o que já foi 100% baixado.
+  // Parte de conta baixada por prejuízo (situacao_docto==='X') que nunca foi
+  // paga — sem esse card, "Total vendido a prazo" continua incluindo esse
+  // valor (a venda aconteceu de verdade), mas ele some de "Em aberto" (só
+  // olha 'A') sem aparecer em "Recebido" (só entra o que foi pago antes da
+  // baixa, se houve). Com o card, a identidade fecha:
+  // Total vendido a prazo = Em aberto + Recebido + Prejuízo.
+  const totalPrejuizo = totaisFiltrados
+    .filter((c) => c.situacao_docto === 'X')
+    .reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
+
+  // Totais das linhas atualmente na TABELA (respeitam o filtro de status),
+  // usados só nos relatórios Excel/PDF — o "TOTAL GERAL" do PDF tem que
+  // bater com as linhas impressas nele, diferente dos cards do topo (sempre
+  // gerais, ver totaisFiltrados acima).
   const totalPagoFiltrados = filtrados.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
+  const totalDoctoTabela = filtrados
+    .filter((c) => c.situacao_docto !== 'C')
+    .reduce((s, c) => s + (c.valor_docto || 0), 0)
+  const totalEmAbertoTabela = filtrados
+    .filter((c) => c.situacao_docto === 'A')
+    .reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
 
   const { ordenados, coluna, direcao, alternar } = useOrdenacao(filtrados, {
     acessores: {
@@ -524,9 +1079,9 @@ export default function ContasReceber({ usuario }) {
       Documento: '',
       Cliente: 'TOTAL GERAL',
       Vencimento: '',
-      'Valor (R$)': totalDocto.toFixed(2).replace('.', ','),
+      'Valor (R$)': totalDoctoTabela.toFixed(2).replace('.', ','),
       'Pago (R$)': totalPagoFiltrados.toFixed(2).replace('.', ','),
-      'Em Aberto (R$)': totalEmAberto.toFixed(2).replace('.', ','),
+      'Em Aberto (R$)': totalEmAbertoTabela.toFixed(2).replace('.', ','),
       Situação: '',
     })
     exportarCSV(linhas, `contas_receber_${new Date().toISOString().slice(0, 10)}`)
@@ -560,7 +1115,7 @@ export default function ContasReceber({ usuario }) {
         return `<td colspan="2">Subtotal</td><td class="num">${fmtMoedaBR(subDocto)}</td><td class="num">${fmtMoedaBR(subPago)}</td><td class="num">${fmtMoedaBR(subAberto)}</td><td></td>`
       },
       montarTotalGeral: () =>
-        `<td colspan="2">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDocto)}</td><td class="num">${fmtMoedaBR(totalPagoFiltrados)}</td><td class="num">${fmtMoedaBR(totalEmAberto)}</td><td></td>`,
+        `<td colspan="2">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDoctoTabela)}</td><td class="num">${fmtMoedaBR(totalPagoFiltrados)}</td><td class="num">${fmtMoedaBR(totalEmAbertoTabela)}</td><td></td>`,
     })
     await gerarPdfRelatorio(html, `contas_receber_${new Date().toISOString().slice(0, 10)}`)
   }
@@ -829,6 +1384,47 @@ export default function ContasReceber({ usuario }) {
         />
       )}
 
+      {detalheDocumento && (
+        <ModalDetalheDocumento
+          nroDocto={detalheDocumento.nroDocto}
+          contaResumo={detalheDocumento.contaResumo}
+          onClose={() => setDetalheDocumento(null)}
+        />
+      )}
+
+      {/* ── Abas ── */}
+      <div
+        style={{
+          display: 'flex',
+          borderBottom: '1px solid var(--border-md)',
+          background: 'var(--surface)',
+          flexShrink: 0,
+          padding: '0 16px',
+        }}
+      >
+        {['Contas', 'Faturamento'].map((aba) => (
+          <button
+            key={aba}
+            onClick={() => setAbaAtiva(aba)}
+            style={{
+              padding: '11px 14px',
+              fontSize: 13,
+              fontWeight: abaAtiva === aba ? 600 : 400,
+              color: abaAtiva === aba ? '#185FA5' : 'var(--text-secondary)',
+              borderBottom: abaAtiva === aba ? '2px solid #185FA5' : '2px solid transparent',
+              marginBottom: -1,
+              transition: 'all 0.12s',
+            }}
+          >
+            {aba}
+          </button>
+        ))}
+      </div>
+
+      {abaAtiva === 'Faturamento' ? (
+        <AbaFaturamento />
+      ) : (
+        <>
       {/* ── TOPO: busca + filtros + totais ── */}
       <div
         style={{ padding: '14px 16px 10px', borderBottom: '1px solid var(--border-md)' }}
@@ -898,14 +1494,15 @@ export default function ContasReceber({ usuario }) {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3,1fr)',
+            gridTemplateColumns: 'repeat(4,1fr)',
             gap: 10,
           }}
         >
           {[
             { label: 'Em aberto', value: fmt(totalEmAberto), color: '#185FA5' },
             { label: 'Recebido', value: fmt(totalPago), color: '#22863A' },
-            { label: 'Total faturado', value: fmt(totalDocto), color: 'var(--text-primary)' },
+            { label: 'Prejuízo', value: fmt(totalPrejuizo), color: '#C53030' },
+            { label: 'Total vendido a prazo', value: fmt(totalDocto), color: 'var(--text-primary)' },
           ].map((c) => (
             <div
               key={c.label}
@@ -964,7 +1561,8 @@ export default function ContasReceber({ usuario }) {
               <col style={{ width: 100 }} />
               <col style={{ width: 36 }} />
               <col />
-              <col style={{ width: 90 }} />
+              <col style={{ width: 85 }} />
+              <col style={{ width: 85 }} />
               <col style={{ width: 90 }} />
               <col style={{ width: 85 }} />
               <col style={{ width: 95 }} />
@@ -979,6 +1577,7 @@ export default function ContasReceber({ usuario }) {
                   { label: 'Seq', chave: 'seq_docto' },
                   { label: 'Cliente', chave: 'nome_cliente' },
                   { label: 'Data', chave: 'data_docto' },
+                  { label: 'Data pagto.', chave: 'data_pagamento' },
                   { label: 'Vencimento', chave: 'data_vencimento' },
                   { label: 'Valor doc.', chave: 'valor_docto' },
                   { label: 'Pago', chave: 'valor_pagamento' },
@@ -1049,7 +1648,15 @@ export default function ContasReceber({ usuario }) {
                         ...tdStyle,
                         fontFamily: 'monospace',
                         fontSize: 12,
+                        color: '#185FA5',
+                        textDecoration: 'underline',
+                        cursor: 'pointer',
                       }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDetalheDocumento({ nroDocto: c.nro_docto, contaResumo: c })
+                      }}
+                      title='Ver detalhes da venda'
                     >
                       {c.nro_docto}
                     </td>
@@ -1083,6 +1690,16 @@ export default function ContasReceber({ usuario }) {
                     </td>
                     <td style={{ ...tdStyle, fontSize: 12 }}>
                       {fmtDate(c.data_docto)}
+                    </td>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        fontSize: 12,
+                        color: c.data_pagamento ? '#22863A' : 'var(--text-muted)',
+                        fontWeight: c.data_pagamento ? 500 : 400,
+                      }}
+                    >
+                      {c.data_pagamento ? fmtDate(c.data_pagamento) : '-'}
                     </td>
                     <td
                       style={{
@@ -1181,6 +1798,8 @@ export default function ContasReceber({ usuario }) {
           <Trash2 size={14} /> {podeExcluirDireto ? 'Excluir (prejuízo)' : 'Pedir exclusão'}
         </button>
       </div>
+        </>
+      )}
     </div>
   )
 }

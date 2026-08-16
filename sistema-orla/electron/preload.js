@@ -88,6 +88,7 @@ contextBridge.exposeInMainWorld('api', {
     buscar: (orcamento) => ipcRenderer.invoke('vendas:buscar', orcamento),
     salvar: (dados) => ipcRenderer.invoke('vendas:salvar', dados),
     cancelar: (dados) => ipcRenderer.invoke('vendas:cancelar', dados),
+    atualizarImposto: (dados) => ipcRenderer.invoke('vendas:atualizarImposto', dados),
     devolver: (dados) => ipcRenderer.invoke('vendas:devolver', dados),
   },
 
@@ -258,6 +259,7 @@ contextBridge.exposeInMainWorld('api', {
     sazonalidadeProdutos: () => ipcRenderer.invoke('relatorios:sazonalidadeProdutos'),
     vendasMensais: () => ipcRenderer.invoke('relatorios:vendasMensais'),
     contasReceberMensal: () => ipcRenderer.invoke('relatorios:contasReceberMensal'),
+    vendasDetalhadas: (f) => ipcRenderer.invoke('relatorios:vendasDetalhadas', f),
     extrato: (f) => ipcRenderer.invoke('relatorios:extrato', f),
   },
 
