@@ -270,6 +270,7 @@ CREATE TABLE IF NOT EXISTS contas_pagar (
   data_vencimento TEXT,
   data_pagamento TEXT,
   valor_docto DOUBLE PRECISION DEFAULT 0,
+  valor_fatura_cheia DOUBLE PRECISION,
   valor_pagamento DOUBLE PRECISION DEFAULT 0,
   valor_desconto DOUBLE PRECISION DEFAULT 0,
   valor_acrescimo DOUBLE PRECISION DEFAULT 0,
@@ -694,12 +695,27 @@ CREATE TABLE IF NOT EXISTS gastos_operacionais (
   tipo TEXT NOT NULL CHECK (tipo IN ('FIXO', 'VARIAVEL')),
   descricao TEXT NOT NULL,
   valor DOUBLE PRECISION NOT NULL DEFAULT 0,
+  valor_fatura_cheia DOUBLE PRECISION,
+  usar_valor_manual BOOLEAN NOT NULL DEFAULT false,
   mes_referencia TEXT,
   codigo_fornecedor TEXT,
   situacao TEXT NOT NULL DEFAULT 'A',
   usuario TEXT,
   data_atualizacao TEXT,
   hora_atualizacao TEXT
+);
+
+-- Confirmação manual de pagamento por mês de um gasto fixo (ver
+-- banco/migracao_gastos_operacionais_pagamento_manual.sql pro script
+-- completo com RLS) — alternativa à reconciliação automática com Contas a
+-- Pagar, pra gasto sem fornecedor vinculado ou pago por fora do sistema.
+CREATE TABLE IF NOT EXISTS gastos_operacionais_pagamentos (
+  id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  gasto_id INTEGER NOT NULL REFERENCES gastos_operacionais(id) ON DELETE CASCADE,
+  mes_referencia TEXT NOT NULL,
+  data_pagamento TEXT NOT NULL,
+  usuario TEXT,
+  UNIQUE (gasto_id, mes_referencia)
 );
 
 -- ============================================================
@@ -735,3 +751,4 @@ CREATE INDEX IF NOT EXISTS idx_vendas_itens_codigo_produto ON vendas_itens(codig
 CREATE INDEX IF NOT EXISTS idx_pedidos_compra_itens_numero ON pedidos_compra_itens(numero);
 CREATE INDEX IF NOT EXISTS idx_lancamentos_extras_tipo_situacao ON lancamentos_extras(tipo, situacao);
 CREATE INDEX IF NOT EXISTS idx_gastos_operacionais_tipo_mes ON gastos_operacionais(tipo, mes_referencia, situacao);
+CREATE INDEX IF NOT EXISTS idx_gastos_operacionais_pagamentos_mes ON gastos_operacionais_pagamentos(mes_referencia);

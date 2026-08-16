@@ -170,6 +170,11 @@ function ModalConfirmarPagamento({ contas, onClose, onConfirm }) {
                     Venc. {fmtDate(c.data_vencimento)}
                     {c.nro_docto ? ` · Doc: ${c.nro_docto}` : ''}
                   </div>
+                  {c.valor_fatura_cheia && (
+                    <div style={{ color: '#B7791F', fontSize: 11, fontWeight: 500, marginTop: 2 }}>
+                      ⚠ Fatura total é {fmt(c.valor_fatura_cheia)} — isto aqui é só a parte da loja
+                    </div>
+                  )}
                 </div>
                 <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                   {fmt(c.valor_docto)}
@@ -338,6 +343,7 @@ function ModalNova({ onClose, onSalvar }) {
     observacao: '',
     nro_docto: '',
     valor_docto: '',
+    valor_fatura_cheia: '',
     data_vencimento: '',
     codigo_forma_pagamento: '',
   })
@@ -708,6 +714,35 @@ function ModalNova({ onClose, onSalvar }) {
             </select>
           </div>
         </div>
+        <div style={{ marginBottom: 16 }}>
+          <label
+            style={{
+              fontSize: 11,
+              color: 'var(--text-muted)',
+              display: 'block',
+              marginBottom: 4,
+            }}
+          >
+            Valor cheio da fatura (opcional)
+          </label>
+          <input
+            value={form.valor_fatura_cheia}
+            onChange={f('valor_fatura_cheia')}
+            type='number'
+            step='0.01'
+            style={{
+              width: '100%',
+              height: 36,
+              padding: '0 10px',
+              borderRadius: 8,
+              border: '1px solid var(--border-md)',
+            }}
+            placeholder='Só se a conta acima já for a metade/fatia da loja'
+          />
+          <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+            Não afeta o caixa — é só pra lembrar o valor total da fatura quando "Valor (R$)" já é a parte da loja numa conta dividida (ex: internet, celular).
+          </div>
+        </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button
             onClick={onClose}
@@ -979,6 +1014,7 @@ export default function ContasPagar({ usuario }) {
         observacao: form.observacao,
         nro_docto: form.nro_docto,
         valor_docto: parseFloat(form.valor_docto),
+        valor_fatura_cheia: form.valor_fatura_cheia ? parseFloat(form.valor_fatura_cheia) : null,
         data_vencimento: form.data_vencimento,
         data_docto: new Date().toISOString().slice(0, 10),
         codigo_forma_pagamento: form.codigo_forma_pagamento,
@@ -1315,6 +1351,11 @@ export default function ContasPagar({ usuario }) {
                       }}
                     >
                       {fmt(c.valor_docto)}
+                      {c.valor_fatura_cheia && (
+                        <div style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-muted)' }}>
+                          fatura cheia: {fmt(c.valor_fatura_cheia)}
+                        </div>
+                      )}
                     </td>
                     <td style={{ ...tdStyle, fontSize: 12, color: 'var(--text-muted)' }}>
                       {fmtDate(c.data_pagamento)}

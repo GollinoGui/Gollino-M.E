@@ -1216,6 +1216,20 @@ function limitesDoMes(mesReferencia) {
   return { ini, fim }
 }
 
+// Fração dos dias do mês 'mesReferencia' que caem dentro de [dataInicio,
+// dataFim]. Um mês inteiro selecionado dá 1 (comportamento antigo, sem
+// mudança); um período parcial (ex: "mês atual" visto no meio do mês, ou
+// "hoje"/"esta semana") dá menos que 1 — usado pra não ratear o gasto fixo
+// do mês inteiro em cima de só alguns dias de receita.
+function fracaoDoMesNoPeriodo(mesReferencia, dataInicio, dataFim) {
+  const { ini: iniMes, fim: fimMes } = limitesDoMes(mesReferencia)
+  const iniCoberto = dataInicio > iniMes ? dataInicio : iniMes
+  const fimCoberto = dataFim < fimMes ? dataFim : fimMes
+  const diasCobertos = (new Date(`${fimCoberto}T00:00:00`) - new Date(`${iniCoberto}T00:00:00`)) / 86400000 + 1
+  const diasNoMes = (new Date(`${fimMes}T00:00:00`) - new Date(`${iniMes}T00:00:00`)) / 86400000 + 1
+  return Math.max(0, Math.min(1, diasCobertos / diasNoMes))
+}
+
 const gastosOperacionais = {
   async listar(mesReferencia) {
     const [{ data: fixos, error: e1 }, { data: variaveis, error: e2 }] = await Promise.all([
@@ -1246,9 +1260,24 @@ const gastosOperacionais = {
       }
     }
 
+    // Confirmação manual de pagamento (gastos_operacionais_pagamentos) —
+    // alternativa à reconciliação automática, um registro por gasto+mês.
+    let pagamentosPorGasto = {}
+    const idsFixos = (fixos || []).map((g) => g.id)
+    if (idsFixos.length) {
+      const { data: pagamentos, error: e4 } = await supabase
+        .from('gastos_operacionais_pagamentos')
+        .select('gasto_id, data_pagamento, usuario')
+        .in('gasto_id', idsFixos)
+        .eq('mes_referencia', mesReferencia)
+      if (e4) throw new Error(e4.message)
+      for (const p of pagamentos || []) pagamentosPorGasto[p.gasto_id] = p
+    }
+
     const fixosComConciliacao = (fixos || []).map((g) => ({
       ...g,
       conta_pagar_vinculada: g.codigo_fornecedor ? (contasPorFornecedor[g.codigo_fornecedor] || null) : null,
+      pagamento_manual: pagamentosPorGasto[g.id] || null,
     }))
     return [...fixosComConciliacao, ...(variaveis || [])].sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR', { sensitivity: 'base' }))
   },
@@ -1258,6 +1287,8 @@ const gastosOperacionais = {
       tipo: dados.tipo,
       descricao: dados.descricao,
       valor: Number(dados.valor) || 0,
+      valor_fatura_cheia: dados.valor_fatura_cheia ? Number(dados.valor_fatura_cheia) : null,
+      usar_valor_manual: !!dados.usar_valor_manual,
       mes_referencia: dados.tipo === 'VARIAVEL' ? dados.mes_referencia : null,
       codigo_fornecedor: dados.tipo === 'FIXO' ? (dados.codigo_fornecedor || null) : null,
       usuario: dados.usuario || '',
@@ -1273,6 +1304,22 @@ const gastosOperacionais = {
 
   async excluir(id) {
     const { error } = await supabase.from('gastos_operacionais').update({ situacao: 'C' }).eq('id', id)
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+
+  // Marca/desmarca "pago" à mão pra um gasto fixo num mês — usado quando
+  // não há (ou não serve) a reconciliação automática com Contas a Pagar.
+  async marcarPago({ gastoId, mesReferencia, usuario }) {
+    const { error } = await supabase.from('gastos_operacionais_pagamentos')
+      .upsert({ gasto_id: gastoId, mes_referencia: mesReferencia, data_pagamento: hoje(), usuario: usuario || '' }, { onConflict: 'gasto_id,mes_referencia' })
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
+
+  async desmarcarPago({ gastoId, mesReferencia }) {
+    const { error } = await supabase.from('gastos_operacionais_pagamentos')
+      .delete().eq('gasto_id', gastoId).eq('mes_referencia', mesReferencia)
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
@@ -1316,7 +1363,7 @@ const gastosOperacionais = {
       this.despesasCategoriaMes(mesReferencia),
     ])
     const totalFixos = gastos.filter((g) => g.tipo === 'FIXO')
-      .reduce((s, g) => s + (g.conta_pagar_vinculada?.valor_docto ?? g.valor ?? 0), 0)
+      .reduce((s, g) => s + ((g.conta_pagar_vinculada && !g.usar_valor_manual) ? g.conta_pagar_vinculada.valor_docto : (g.valor ?? 0)), 0)
     const totalVariaveis = gastos.filter((g) => g.tipo === 'VARIAVEL')
       .reduce((s, g) => s + (g.valor || 0), 0)
     const totalDespesasCategoria = despesasCategoria.reduce((s, d) => s + (d.total || 0), 0)
@@ -1762,7 +1809,14 @@ const relatorios = {
     }
     const meses = Object.keys(receitaPorMes)
     const gastosPorMes = Object.fromEntries(
-      await Promise.all(meses.map(async (mes) => [mes, await gastosOperacionais.totalDoMes(mes)])),
+      await Promise.all(meses.map(async (mes) => {
+        const totalMes = await gastosOperacionais.totalDoMes(mes)
+        // Se o período pedido cobre só uma fatia do mês (ex: "mês atual" no
+        // dia 16, ou "hoje"/"esta semana"), rateia só a fatia proporcional
+        // do gasto fixo — senão um período curto carrega o custo fixo do mês
+        // inteiro e todo resultado sai negativo mesmo em venda lucrativa.
+        return [mes, totalMes * fracaoDoMesNoPeriodo(mes, dataInicio, dataFim)]
+      })),
     )
 
     return (itens || []).map((it) => {

@@ -1,0 +1,18 @@
+-- Rodar uma única vez no SQL Editor do Supabase (Dashboard > SQL Editor).
+--
+-- Cobre o caso do Contador Nelcard: a loja paga a fatura CHEIA (R$ 983) pro
+-- fornecedor — esse valor está certo em Contas a Pagar, bate com o extrato
+-- bancário, não deve ser mexido — mas depois recebe de volta por fora do
+-- sistema (reembolso do Elter/Fábio Jr por uma fatia que não é da loja).
+-- É diferente do caso Internet/Celular, onde cada um paga a sua parte
+-- direto (sem adiantamento nem reembolso).
+--
+-- Como a reconciliação automática do Ponto de Equilíbrio sempre usa o valor
+-- da conta vinculada (valor_docto) quando ela existe, não tinha como o
+-- "Valor mensal" digitado no gasto fixo vencer essa conta — mesmo editando,
+-- o valor da conta sempre prevalecia. usar_valor_manual é o escape: quando
+-- marcado, o Ponto de Equilíbrio ignora a conta vinculada e usa sempre o
+-- "Valor mensal" do gasto fixo (o custo real da loja, já líquido de
+-- reembolso), mesmo que exista conta lançada/paga esse mês. Contas a Pagar
+-- continua mostrando o valor cheio normalmente — nada muda lá.
+ALTER TABLE gastos_operacionais ADD COLUMN IF NOT EXISTS usar_valor_manual BOOLEAN NOT NULL DEFAULT false;

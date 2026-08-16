@@ -243,6 +243,8 @@ contextBridge.exposeInMainWorld('api', {
     salvar: (dados) => ipcRenderer.invoke('gastosOperacionais:salvar', dados),
     excluir: (id) => ipcRenderer.invoke('gastosOperacionais:excluir', id),
     despesasCategoriaMes: (mesReferencia) => ipcRenderer.invoke('gastosOperacionais:despesasCategoriaMes', mesReferencia),
+    marcarPago: (dados) => ipcRenderer.invoke('gastosOperacionais:marcarPago', dados),
+    desmarcarPago: (dados) => ipcRenderer.invoke('gastosOperacionais:desmarcarPago', dados),
   },
 
   // REAJUSTES DE PREÇO

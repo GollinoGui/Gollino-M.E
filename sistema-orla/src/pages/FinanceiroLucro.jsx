@@ -511,6 +511,8 @@ function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial, fornecedor
     tipo: gastoInicial?.tipo || 'FIXO',
     descricao: gastoInicial?.descricao || '',
     valor: gastoInicial?.valor ?? '',
+    valor_fatura_cheia: gastoInicial?.valor_fatura_cheia ?? '',
+    usar_valor_manual: gastoInicial?.usar_valor_manual || false,
   })
   const [fornecedorSelecionado, setFornecedorSelecionado] = useState(() =>
     gastoInicial?.codigo_fornecedor
@@ -551,6 +553,26 @@ function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial, fornecedor
         <div style={{ marginBottom: 6 }}>
           <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Valor mensal (R$) *</label>
           <input value={form.valor} onChange={f('valor')} type='number' min='0' step='0.01' style={{ width: '100%', height: 36, padding: '0 10px' }} />
+          {gastoInicial?.conta_pagar_vinculada && !form.usar_valor_manual ? (
+            <div style={{ fontSize: 10.5, color: '#B7791F', marginTop: 4 }}>
+              ⚠ Esse mês tem uma conta lançada em Contas a Pagar pra esse fornecedor ({fmt(gastoInicial.conta_pagar_vinculada.valor_docto)}) — enquanto ela existir, é esse valor que conta aqui, não o que você digitar neste campo. Marque a opção abaixo se o valor real da loja for outro (ex: parte reembolsada por fora), ou corrija a conta lá se o valor dela é que está errado.
+            </div>
+          ) : gastoInicial?.conta_pagar_vinculada && form.usar_valor_manual ? (
+            <div style={{ fontSize: 10.5, color: '#805AD5', marginTop: 4 }}>
+              A conta lançada esse mês é de {fmt(gastoInicial.conta_pagar_vinculada.valor_docto)}, mas você marcou pra usar este valor manual mesmo assim — é ele que vai contar no Ponto de Equilíbrio.
+            </div>
+          ) : (
+            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+              O que a loja realmente paga — é o que entra na conta de equilíbrio.
+            </div>
+          )}
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Valor cheio da fatura (opcional)</label>
+          <input value={form.valor_fatura_cheia} onChange={f('valor_fatura_cheia')} type='number' min='0' step='0.01' style={{ width: '100%', height: 36, padding: '0 10px' }} placeholder='Só se essa conta for dividida com outra pessoa' />
+          <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+            Não entra em nenhuma conta — é só referência pra conferir a fatura.
+          </div>
         </div>
 
         {form.tipo === 'FIXO' && (
@@ -584,6 +606,14 @@ function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial, fornecedor
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
               Pra mostrar aqui se já foi pago esse mês em Contas a Pagar.
             </div>
+            {fornecedorSelecionado && (
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 10, fontSize: 11, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                <input type='checkbox' checked={form.usar_valor_manual}
+                  onChange={(e) => setForm((p) => ({ ...p, usar_valor_manual: e.target.checked }))}
+                  style={{ marginTop: 2 }} />
+                <span>Sempre usar o "Valor mensal" digitado acima, mesmo com conta lançada esse mês (ex: a loja paga a fatura cheia mas parte volta por fora, tipo reembolso)</span>
+              </label>
+            )}
           </div>
         )}
 
@@ -602,6 +632,7 @@ function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial, fornecedor
               tipo: form.tipo,
               descricao: form.descricao.trim(),
               valor: Number(form.valor),
+              valor_fatura_cheia: form.valor_fatura_cheia ? Number(form.valor_fatura_cheia) : null,
               mes_referencia: mesReferencia,
               codigo_fornecedor: form.tipo === 'FIXO' ? (fornecedorSelecionado?.codigo || null) : null,
             })}
@@ -617,7 +648,7 @@ function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial, fornecedor
 
 // ── Lista de gastos (fixos | variáveis) com total. Fixos linkados a um
 // fornecedor mostram o selo de conciliação com Contas a Pagar do mês. ──
-function ListaGastos({ titulo, itens, total, onEditar, onExcluir, vazio, fornecedoresLista }) {
+function ListaGastos({ titulo, itens, total, onEditar, onExcluir, onMarcarPago, onDesmarcarPago, vazio, fornecedoresLista }) {
   return (
     <div style={{ flex: 1, minWidth: 240 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
@@ -632,7 +663,7 @@ function ListaGastos({ titulo, itens, total, onEditar, onExcluir, vazio, fornece
           const fornecedorNome = g.codigo_fornecedor
             ? fornecedoresLista?.find((fo) => fo.codigo === g.codigo_fornecedor)?.nome
             : null
-          const valorExibido = conta ? conta.valor_docto : g.valor
+          const valorExibido = (conta && !g.usar_valor_manual) ? conta.valor_docto : g.valor
           return (
             <div key={g.id} style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
@@ -657,6 +688,34 @@ function ListaGastos({ titulo, itens, total, onEditar, onExcluir, vazio, fornece
                         — não lançado esse mês{g.codigo_fornecedor ? ` (${fornecedorNome ? fornecedorNome + ' ' : ''}#${g.codigo_fornecedor})` : ''}
                       </span>
                     )}
+                    {conta && g.usar_valor_manual && (
+                      <span style={{ color: '#805AD5', fontWeight: 600, marginLeft: 6 }}>
+                        · contando {fmt(g.valor)} (valor manual, não o da conta)
+                      </span>
+                    )}
+                  </div>
+                )}
+                {g.tipo === 'FIXO' && !conta && (
+                  <div style={{ fontSize: 10.5, marginTop: 2 }}>
+                    {g.pagamento_manual ? (
+                      <>
+                        <span style={{ color: 'var(--green-500)', fontWeight: 600 }}>
+                          ✅ pago {fmtDate(g.pagamento_manual.data_pagamento)}{g.pagamento_manual.usuario ? ` · ${g.pagamento_manual.usuario}` : ''}
+                        </span>
+                        <button onClick={() => onDesmarcarPago(g)} style={{ marginLeft: 6, color: 'var(--text-muted)', textDecoration: 'underline', background: 'transparent', fontSize: 10.5, cursor: 'pointer' }}>
+                          desmarcar
+                        </button>
+                      </>
+                    ) : (
+                      <button onClick={() => onMarcarPago(g)} style={{ color: 'var(--blue-700)', fontWeight: 600, background: 'transparent', fontSize: 10.5, padding: 0, cursor: 'pointer' }}>
+                        Marcar como pago
+                      </button>
+                    )}
+                  </div>
+                )}
+                {g.valor_fatura_cheia != null && (
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                    fatura cheia: {fmt(g.valor_fatura_cheia)}
                   </div>
                 )}
               </div>
@@ -746,11 +805,31 @@ function PontoDeEquilibrio({ usuario }) {
     mostrarSucesso('Gasto removido.')
   }
 
+  async function marcarPagoGasto(g) {
+    await window.api.gastosOperacionais.marcarPago({
+      gastoId: g.id,
+      mesReferencia: mesSelecionado,
+      usuario: usuario?.usuario || usuario?.nome || 'sistema',
+    })
+    await carregar()
+    mostrarSucesso('Marcado como pago!')
+  }
+
+  async function desmarcarPagoGasto(g) {
+    await window.api.gastosOperacionais.desmarcarPago({ gastoId: g.id, mesReferencia: mesSelecionado })
+    await carregar()
+    mostrarSucesso('Pagamento desmarcado.')
+  }
+
   const fixos = gastos.filter((g) => g.tipo === 'FIXO')
   const variaveis = gastos.filter((g) => g.tipo === 'VARIAVEL')
   // Fixo reconciliado usa o valor real lançado em Contas a Pagar esse mês
   // (mais preciso); sem reconciliação, usa o valor orçado digitado aqui.
-  const totalFixos = fixos.reduce((s, g) => s + (g.conta_pagar_vinculada?.valor_docto ?? g.valor ?? 0), 0)
+  // usar_valor_manual força o valor digitado mesmo com conta vinculada —
+  // caso do gasto pago cheio mas parcialmente reembolsado por fora do
+  // sistema (ex: Contador Nelcard), onde o valor da conta não é o custo
+  // real da loja.
+  const totalFixos = fixos.reduce((s, g) => s + ((g.conta_pagar_vinculada && !g.usar_valor_manual) ? g.conta_pagar_vinculada.valor_docto : (g.valor ?? 0)), 0)
   const totalVariaveis = variaveis.reduce((s, g) => s + (g.valor || 0), 0)
   const totalDespesasCategoria = despesasCategoria.reduce((s, d) => s + (d.total || 0), 0)
   const gastosDoMes = totalFixos + totalVariaveis + totalDespesasCategoria
@@ -811,7 +890,8 @@ function PontoDeEquilibrio({ usuario }) {
           {/* GASTOS DO MÊS */}
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', margin: '16px 0' }}>
             <ListaGastos titulo={`Fixos (${fixos.length})`} itens={fixos} total={totalFixos}
-              onEditar={setModalGasto} onExcluir={excluirGasto} vazio='Nenhum gasto fixo cadastrado.' fornecedoresLista={fornecedoresLista} />
+              onEditar={setModalGasto} onExcluir={excluirGasto} onMarcarPago={marcarPagoGasto} onDesmarcarPago={desmarcarPagoGasto}
+              vazio='Nenhum gasto fixo cadastrado.' fornecedoresLista={fornecedoresLista} />
             <ListaGastos titulo={`Variáveis (${variaveis.length})`} itens={variaveis} total={totalVariaveis}
               onEditar={setModalGasto} onExcluir={excluirGasto} vazio={`Nenhum gasto variável lançado em ${mesLabel(mesSelecionado)}.`} fornecedoresLista={fornecedoresLista} />
           </div>

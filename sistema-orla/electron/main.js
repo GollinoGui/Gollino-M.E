@@ -309,6 +309,8 @@ handle('gastosOperacionais:listar', (_, mesReferencia) => db.gastosOperacionais.
 handle('gastosOperacionais:salvar', (_, dados) => db.gastosOperacionais.salvar(dados))
 handle('gastosOperacionais:excluir', (_, id) => db.gastosOperacionais.excluir(id))
 handle('gastosOperacionais:despesasCategoriaMes', (_, mesReferencia) => db.gastosOperacionais.despesasCategoriaMes(mesReferencia))
+handle('gastosOperacionais:marcarPago', (_, dados) => db.gastosOperacionais.marcarPago(dados))
+handle('gastosOperacionais:desmarcarPago', (_, dados) => db.gastosOperacionais.desmarcarPago(dados))
 
 // --- REAJUSTES DE PREÇO ---
 handle('reajustesPreco:listar', (_, filtros) => db.reajustesPreco.listar(filtros))
