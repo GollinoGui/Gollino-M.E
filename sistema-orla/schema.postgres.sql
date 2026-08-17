@@ -124,7 +124,8 @@ CREATE TABLE IF NOT EXISTS produtos (
   usuario TEXT,
   data_atualizacao TEXT,
   hora_atualizacao TEXT,
-  status_registro TEXT DEFAULT 'A'
+  status_registro TEXT DEFAULT 'A',
+  versao INTEGER NOT NULL DEFAULT 1
 );
 
 -- ============================================================

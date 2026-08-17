@@ -322,13 +322,24 @@ const produtos = {
     return data
   },
 
+  // Grava via RPC com trava otimista: manda a versão que a tela carregou
+  // (dados.versao) e o Postgres só grava se ninguém mudou o produto desde
+  // então. Ver banco/migracao_produtos_versionamento_otimista.sql.
   async salvar(dados) {
-    const { id, ...resto } = dados
-    const { error } = await supabase
-      .from('produtos')
-      .upsert({ ...resto, data_atualizacao: hoje(), hora_atualizacao: agora() }, { onConflict: 'codigo' })
+    const { id, versao, ...resto } = dados
+    const { data, error } = await supabase.rpc('produtos_salvar', {
+      p_produto: resto,
+      p_versao_esperada: versao ?? null,
+    })
     if (error) return { sucesso: false, erro: error.message }
-    return { sucesso: true }
+    if (data?.conflito) {
+      return {
+        sucesso: false,
+        conflito: true,
+        erro: 'Este produto foi alterado por outra pessoa enquanto você editava. Os dados foram recarregados — confira e salve novamente.',
+      }
+    }
+    return { sucesso: true, versao: data?.versao }
   },
 
   async excluir(codigo) {

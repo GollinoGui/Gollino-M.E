@@ -219,6 +219,12 @@ export default function Produtos({ usuario }) {
         aliquota_cofins: parseFloat(form.aliquota_cofins) || 0,
       })
       if (r?.sucesso === false) {
+        if (r.conflito) {
+          alert(r.erro)
+          const atual = await window.api.produtos.buscar(form.codigo)
+          if (atual) setForm(formParaExibir(atual))
+          return
+        }
         alert('Erro ao salvar: ' + (r.erro || 'desconhecido'))
         return
       }
