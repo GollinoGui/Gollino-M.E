@@ -9,9 +9,18 @@ import ThOrdenavel from '../components/ThOrdenavel'
 import ModalConfirmacao from '../components/ModalConfirmacao'
 import { useOrdenacao } from '../utils/ordenacao'
 import { fmtQtd } from '../utils/formatQtd'
+import { corGastoFixo } from '../utils/coresGastoFixo'
 
 const fmt = (v) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtPct = (v) => `${(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`
+
+// Valor real de uma conta vinculada: em aberto, usa o valor do documento
+// (melhor estimativa); paga, usa o que realmente saiu do caixa
+// (valor_pagamento) — já líquido de qualquer "outra parte pagou" registrado
+// como desconto no pagamento parcial em Contas a Pagar. Mesma fórmula do
+// backend (ver database.js), pra bater o total mostrado com o usado no
+// rateio de Vendas Detalhadas.
+const valorRealConta = (conta) => (conta.situacao_docto === 'P' ? (conta.valor_pagamento ?? conta.valor_docto) : conta.valor_docto)
 const fmtDate = (d) => (d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-')
 const fmtCompacto = (v) => (v || 0).toLocaleString('pt-BR', { notation: 'compact', maximumFractionDigits: 1 })
 
@@ -555,7 +564,9 @@ function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial, fornecedor
           <input value={form.valor} onChange={f('valor')} type='number' min='0' step='0.01' style={{ width: '100%', height: 36, padding: '0 10px' }} />
           {gastoInicial?.conta_pagar_vinculada && !form.usar_valor_manual ? (
             <div style={{ fontSize: 10.5, color: '#B7791F', marginTop: 4 }}>
-              ⚠ Esse mês tem uma conta lançada em Contas a Pagar pra esse fornecedor ({fmt(gastoInicial.conta_pagar_vinculada.valor_docto)}) — enquanto ela existir, é esse valor que conta aqui, não o que você digitar neste campo. Marque a opção abaixo se o valor real da loja for outro (ex: parte reembolsada por fora), ou corrija a conta lá se o valor dela é que está errado.
+              ⚠ Esse mês tem uma conta lançada em Contas a Pagar pra esse fornecedor — o que conta aqui é {fmt(valorRealConta(gastoInicial.conta_pagar_vinculada))} (
+              {gastoInicial.conta_pagar_vinculada.situacao_docto === 'P' ? 'valor realmente pago' : 'valor da fatura, ainda em aberto'}
+              ), não o que você digitar neste campo. Se pagou parcial em Contas a Pagar confirmando "a outra parte pagou", isso já vem líquido sozinho. Marque a opção abaixo só se precisar de um valor manual diferente (ex: paga cheio e é reembolsada por fora), ou corrija a conta lá se o valor dela é que está errado.
             </div>
           ) : gastoInicial?.conta_pagar_vinculada && form.usar_valor_manual ? (
             <div style={{ fontSize: 10.5, color: '#805AD5', marginTop: 4 }}>
@@ -633,6 +644,7 @@ function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial, fornecedor
               descricao: form.descricao.trim(),
               valor: Number(form.valor),
               valor_fatura_cheia: form.valor_fatura_cheia ? Number(form.valor_fatura_cheia) : null,
+              usar_valor_manual: form.tipo === 'FIXO' ? form.usar_valor_manual : false,
               mes_referencia: mesReferencia,
               codigo_fornecedor: form.tipo === 'FIXO' ? (fornecedorSelecionado?.codigo || null) : null,
             })}
@@ -663,11 +675,12 @@ function ListaGastos({ titulo, itens, total, onEditar, onExcluir, onMarcarPago, 
           const fornecedorNome = g.codigo_fornecedor
             ? fornecedoresLista?.find((fo) => fo.codigo === g.codigo_fornecedor)?.nome
             : null
-          const valorExibido = (conta && !g.usar_valor_manual) ? conta.valor_docto : g.valor
+          const valorExibido = (conta && !g.usar_valor_manual) ? valorRealConta(conta) : g.valor
           return (
             <div key={g.id} style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
               borderTop: i > 0 ? '1px solid var(--border)' : 'none', background: 'var(--surface)',
+              borderLeft: g.codigo_fornecedor ? `3px solid ${corGastoFixo(g.id)}` : '3px solid transparent',
             }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13 }}>{g.descricao}</div>
@@ -829,7 +842,7 @@ function PontoDeEquilibrio({ usuario }) {
   // caso do gasto pago cheio mas parcialmente reembolsado por fora do
   // sistema (ex: Contador Nelcard), onde o valor da conta não é o custo
   // real da loja.
-  const totalFixos = fixos.reduce((s, g) => s + ((g.conta_pagar_vinculada && !g.usar_valor_manual) ? g.conta_pagar_vinculada.valor_docto : (g.valor ?? 0)), 0)
+  const totalFixos = fixos.reduce((s, g) => s + ((g.conta_pagar_vinculada && !g.usar_valor_manual) ? valorRealConta(g.conta_pagar_vinculada) : (g.valor ?? 0)), 0)
   const totalVariaveis = variaveis.reduce((s, g) => s + (g.valor || 0), 0)
   const totalDespesasCategoria = despesasCategoria.reduce((s, d) => s + (d.total || 0), 0)
   const gastosDoMes = totalFixos + totalVariaveis + totalDespesasCategoria
@@ -1486,11 +1499,9 @@ function Patrimonio({ usuario }) {
 }
 
 // ── VENDAS DETALHADAS — extrato técnico, uma linha por item vendido ─────────
-// Markup % = (preço − custo) / custo, olhando só o produto. Resultado já
-// desconta a fatia de custo fixo do mês (rateada proporcional à receita da
-// venda naquele mês) — por isso "markup alto" e "resultado bom" nem sempre
-// coincidem: uma venda pequena de alta margem ainda carrega sua fatia de
-// aluguel/salário do mês.
+// Markup % é uma taxa fixa definida pelo Elter (não vem do custo/preço do
+// item — ver MARKUP_FIXO_VENDAS_DETALHADAS no backend). Resultado = preço de
+// venda × essa taxa fixa.
 function CelulaImposto({ linha, onSalvar }) {
   const [editando, setEditando] = useState(false)
   const [valor, setValor] = useState(linha.imposto_percentual ?? '')
@@ -1591,7 +1602,11 @@ function VendasDetalhadas() {
   const totalCusto = filtradas.reduce((s, l) => s + (l.custo_compra || 0), 0)
   const totalPreco = filtradas.reduce((s, l) => s + (l.preco_venda || 0), 0)
   const totalResultado = filtradas.reduce((s, l) => s + (l.resultado || 0), 0)
-  const markupMedioPonderado = totalCusto > 0 ? ((totalPreco - totalCusto) / totalCusto) * 100 : null
+  // Markup % agora é uma taxa fixa (ver MARKUP_FIXO_VENDAS_DETALHADAS no
+  // backend) e Resultado = preço de venda × essa taxa — então o total
+  // ponderado é só totalResultado / totalPreco, e bate com o valor de cada
+  // linha (não é mais derivado de custo_compra).
+  const markupMedioPonderado = totalPreco > 0 ? (totalResultado / totalPreco) * 100 : null
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
@@ -1689,7 +1704,7 @@ function VendasDetalhadas() {
                   <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: (l.resultado || 0) >= 0 ? '#22863A' : '#C53030' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, justifyContent: 'flex-end' }}>
                       {(l.resultado || 0) < 0 && (
-                        <span title='Esse item não está contribuindo o suficiente pra cobrir a conta fixa da loja neste mês.' style={{ display: 'inline-flex' }}>
+                        <span title='Resultado negativo nessa linha.' style={{ display: 'inline-flex' }}>
                           <AlertTriangle size={12} />
                         </span>
                       )}

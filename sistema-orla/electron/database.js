@@ -1216,21 +1216,19 @@ function limitesDoMes(mesReferencia) {
   return { ini, fim }
 }
 
-// Fração dos dias do mês 'mesReferencia' que caem dentro de [dataInicio,
-// dataFim]. Um mês inteiro selecionado dá 1 (comportamento antigo, sem
-// mudança); um período parcial (ex: "mês atual" visto no meio do mês, ou
-// "hoje"/"esta semana") dá menos que 1 — usado pra não ratear o gasto fixo
-// do mês inteiro em cima de só alguns dias de receita.
-function fracaoDoMesNoPeriodo(mesReferencia, dataInicio, dataFim) {
-  const { ini: iniMes, fim: fimMes } = limitesDoMes(mesReferencia)
-  const iniCoberto = dataInicio > iniMes ? dataInicio : iniMes
-  const fimCoberto = dataFim < fimMes ? dataFim : fimMes
-  const diasCobertos = (new Date(`${fimCoberto}T00:00:00`) - new Date(`${iniCoberto}T00:00:00`)) / 86400000 + 1
-  const diasNoMes = (new Date(`${fimMes}T00:00:00`) - new Date(`${iniMes}T00:00:00`)) / 86400000 + 1
-  return Math.max(0, Math.min(1, diasCobertos / diasNoMes))
-}
-
 const gastosOperacionais = {
+  // Fornecedores que são gasto fixo do Ponto de Equilíbrio — usado em Contas
+  // a Pagar pra colorir a linha e ligar visualmente as duas telas, e pra
+  // saber quando oferecer o fluxo de "a outra parte já pagou?" ao confirmar
+  // um pagamento parcial.
+  async fornecedoresFixos() {
+    const { data, error } = await supabase.from('gastos_operacionais')
+      .select('id, codigo_fornecedor, descricao')
+      .eq('tipo', 'FIXO').eq('situacao', 'A').not('codigo_fornecedor', 'is', null)
+    if (error) throw new Error(error.message)
+    return data || []
+  },
+
   async listar(mesReferencia) {
     const [{ data: fixos, error: e1 }, { data: variaveis, error: e2 }] = await Promise.all([
       supabase.from('gastos_operacionais').select('*').eq('tipo', 'FIXO').eq('situacao', 'A'),
@@ -1354,21 +1352,6 @@ const gastosOperacionais = {
     }))
   },
 
-  // Total de custo fixo do mês (fixos + variáveis + despesas por categoria),
-  // mesma fórmula que o Ponto de Equilíbrio calcula no frontend — usado pra
-  // ratear custo fixo por venda em relatorios.vendasDetalhadas.
-  async totalDoMes(mesReferencia) {
-    const [gastos, despesasCategoria] = await Promise.all([
-      this.listar(mesReferencia),
-      this.despesasCategoriaMes(mesReferencia),
-    ])
-    const totalFixos = gastos.filter((g) => g.tipo === 'FIXO')
-      .reduce((s, g) => s + ((g.conta_pagar_vinculada && !g.usar_valor_manual) ? g.conta_pagar_vinculada.valor_docto : (g.valor ?? 0)), 0)
-    const totalVariaveis = gastos.filter((g) => g.tipo === 'VARIAVEL')
-      .reduce((s, g) => s + (g.valor || 0), 0)
-    const totalDespesasCategoria = despesasCategoria.reduce((s, d) => s + (d.total || 0), 0)
-    return totalFixos + totalVariaveis + totalDespesasCategoria
-  },
 }
 
 // ============================================================
@@ -1700,6 +1683,12 @@ const manutencao = {
 // ============================================================
 // RELATÓRIOS GERENCIAIS
 // ============================================================
+
+// Taxa fixa (%) usada na coluna "Markup %" de Vendas Detalhadas — definida
+// pelo Elter, não é calculada a partir de custo/preço do item. Resultado da
+// linha = preço de venda × esta taxa.
+const MARKUP_FIXO_VENDAS_DETALHADAS = 14.1757
+
 const relatorios = {
   async inventario() {
     const { data, error } = await supabase.rpc('relatorio_inventario')
@@ -1776,11 +1765,11 @@ const relatorios = {
     return { saldoInicial: saldoInicial || 0, movimentos }
   },
 
-  // Lista técnica de vendas, uma linha por item vendido, com custo/preço
-  // gravados no momento da venda (vendas_itens.preco_custo/preco_unitario),
-  // markup do produto e resultado líquido já descontando a fatia de custo
-  // fixo do mês (rateada proporcional à receita da venda naquele mês) —
-  // usada na aba "Vendas Detalhadas" de Financeiro > Lucro Real.
+  // Lista técnica de vendas, uma linha por item vendido, com custo gravado
+  // no momento da venda (vendas_itens.preco_custo) — usada na aba "Vendas
+  // Detalhadas" de Financeiro > Lucro Real. Markup% é uma taxa fixa definida
+  // pelo Elter (não é calculada a partir do custo/preço do item), e
+  // Resultado = preço de venda × essa taxa fixa.
   async vendasDetalhadas(dataInicio, dataFim) {
     const { data: vendasCab, error: e1 } = await supabase
       .from('vendas')
@@ -1800,32 +1789,10 @@ const relatorios = {
       .in('orcamento', vendasCab.map((v) => v.orcamento))
     if (e2) throw new Error(e2.message)
 
-    // Receita por mês (base do rateio) e gastos fixos de cada mês envolvido.
-    const receitaPorMes = {}
-    for (const it of itens || []) {
-      const mes = vendaPorOrcamento[it.orcamento]?.data?.slice(0, 7)
-      if (!mes) continue
-      receitaPorMes[mes] = (receitaPorMes[mes] || 0) + (it.valor_total || 0)
-    }
-    const meses = Object.keys(receitaPorMes)
-    const gastosPorMes = Object.fromEntries(
-      await Promise.all(meses.map(async (mes) => {
-        const totalMes = await gastosOperacionais.totalDoMes(mes)
-        // Se o período pedido cobre só uma fatia do mês (ex: "mês atual" no
-        // dia 16, ou "hoje"/"esta semana"), rateia só a fatia proporcional
-        // do gasto fixo — senão um período curto carrega o custo fixo do mês
-        // inteiro e todo resultado sai negativo mesmo em venda lucrativa.
-        return [mes, totalMes * fracaoDoMesNoPeriodo(mes, dataInicio, dataFim)]
-      })),
-    )
-
     return (itens || []).map((it) => {
       const venda = vendaPorOrcamento[it.orcamento] || {}
-      const mes = venda.data?.slice(0, 7)
       const custoCompra = (it.preco_custo || 0) * (it.quantidade || 0)
       const precoVenda = it.valor_total || 0
-      const receitaMes = receitaPorMes[mes] || 0
-      const custoFixoAlocado = receitaMes > 0 ? (precoVenda / receitaMes) * (gastosPorMes[mes] || 0) : 0
       return {
         orcamento: it.orcamento,
         data: venda.data,
@@ -1836,9 +1803,8 @@ const relatorios = {
         quantidade: it.quantidade,
         custo_compra: custoCompra,
         preco_venda: precoVenda,
-        markup_percentual: it.preco_custo > 0 ? ((it.preco_unitario - it.preco_custo) / it.preco_custo) * 100 : null,
-        custo_fixo_alocado: custoFixoAlocado,
-        resultado: (precoVenda - custoCompra) - custoFixoAlocado,
+        markup_percentual: MARKUP_FIXO_VENDAS_DETALHADAS,
+        resultado: precoVenda * (MARKUP_FIXO_VENDAS_DETALHADAS / 100),
         numero_nfe: venda.numero_nfe,
         imposto_percentual: venda.imposto_percentual,
       }

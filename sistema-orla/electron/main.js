@@ -305,6 +305,7 @@ handle('lancamentosExtras:pagar', (_, { id, usuario }) => db.lancamentosExtras.p
 handle('lancamentosExtras:cancelar', (_, id) => db.lancamentosExtras.cancelar(id))
 
 // --- GASTOS OPERACIONAIS ---
+handle('gastosOperacionais:fornecedoresFixos', () => db.gastosOperacionais.fornecedoresFixos())
 handle('gastosOperacionais:listar', (_, mesReferencia) => db.gastosOperacionais.listar(mesReferencia))
 handle('gastosOperacionais:salvar', (_, dados) => db.gastosOperacionais.salvar(dados))
 handle('gastosOperacionais:excluir', (_, id) => db.gastosOperacionais.excluir(id))

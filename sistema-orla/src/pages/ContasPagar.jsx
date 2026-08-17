@@ -3,6 +3,7 @@ import { Search, Plus, DollarSign, RefreshCw } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
 import { BotoesRelatorio } from '../components/BotoesRelatorio'
 import { useOrdenacao } from '../utils/ordenacao'
+import { corGastoFixo } from '../utils/coresGastoFixo'
 import {
   exportarCSV,
   agruparPorPessoa,
@@ -56,7 +57,7 @@ function StatusBadge({ status }) {
 // várias contas selecionadas (cada uma quitada pelo próprio valor do
 // documento). É a etapa de "conferir antes de pagar": lista as contas
 // resumidas e só efetiva ao clicar em Pagar de novo, aqui dentro.
-function ModalConfirmarPagamento({ contas, onClose, onConfirm }) {
+function ModalConfirmarPagamento({ contas, onClose, onConfirm, fornecedorFixoMap }) {
   const unico = contas.length === 1
   const totalDocumentos = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
   const [forma, setForma] = useState('')
@@ -67,15 +68,30 @@ function ModalConfirmarPagamento({ contas, onClose, onConfirm }) {
   const [salvando, setSalvando] = useState(false)
 
   const valorFinal = unico ? parseFloat(valorUnico) || 0 : totalDocumentos
-  const valorValido = unico ? parseFloat(valorUnico) > 0 : true
+  const valorMaximo = unico ? contas[0].valor_docto || 0 : Infinity
+  const valorExcedeConta = unico && parseFloat(valorUnico) > valorMaximo
+  const valorValido = unico ? parseFloat(valorUnico) > 0 && !valorExcedeConta : true
   const podeConfirmar = !!forma && valorValido
+  const gastoFixo = unico ? fornecedorFixoMap?.get(contas[0].codigo_fornecedor) : null
+  const restante = unico ? Math.max(0, (contas[0].valor_docto || 0) - valorFinal) : 0
+  const ehPagamentoParcialDeFixo = !!gastoFixo && restante > 0.01
 
   async function handleConfirm() {
     if (!podeConfirmar) return
     setSalvando(true)
+    let descontoOutraParte = 0
+    if (ehPagamentoParcialDeFixo) {
+      const outroPagou = await window.api.dialog.confirm(
+        `Você está pagando ${fmt(valorFinal)} de uma conta de ${fmt(contas[0].valor_docto)} (${gastoFixo.descricao}).\n\n` +
+        `A outra parte (${fmt(restante)}) já foi paga por fora, direto ao fornecedor?\n\n` +
+        `Clique OK pra marcar essa conta como totalmente paga, sem esse restante sair do caixa da loja. Clique Cancelar se a outra parte ainda não pagou — a conta fica em aberto com o saldo restante.`,
+      )
+      if (outroPagou) descontoOutraParte = restante
+    }
     const pagamentos = contas.map((c) => ({
       id: c.id,
       valor_pagamento: unico ? valorFinal : c.valor_docto || 0,
+      valor_desconto: unico ? descontoOutraParte : 0,
     }))
     await onConfirm(pagamentos, forma, data)
     setSalvando(false)
@@ -238,14 +254,28 @@ function ModalConfirmarPagamento({ contas, onClose, onConfirm }) {
                   onChange={(e) => setValorUnico(e.target.value)}
                   type='number'
                   step='0.01'
+                  max={valorMaximo}
                   style={{
                     width: '100%',
                     height: 36,
                     padding: '0 10px',
                     borderRadius: 8,
-                    border: '1px solid var(--border-md)',
+                    border: `1px solid ${valorExcedeConta ? '#C53030' : ehPagamentoParcialDeFixo ? corGastoFixo(gastoFixo.id) : 'var(--border-md)'}`,
                   }}
                 />
+                {valorExcedeConta && (
+                  <div style={{ fontSize: 11, color: '#C53030', marginTop: 6 }}>
+                    Valor não pode passar de {fmt(valorMaximo)} — o total da conta.
+                  </div>
+                )}
+                {!valorExcedeConta && gastoFixo && (
+                  <div style={{ fontSize: 11, color: ehPagamentoParcialDeFixo ? corGastoFixo(gastoFixo.id) : '#B7791F', marginTop: 6 }}>
+                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: corGastoFixo(gastoFixo.id), marginRight: 6 }} />
+                    {ehPagamentoParcialDeFixo
+                      ? `Pagando só a parte da loja — falta ${fmt(restante)}. Ao clicar em Pagar, vou perguntar se essa outra parte já foi paga por fora.`
+                      : `Essa conta é o gasto fixo "${gastoFixo.descricao}" e é dividida com outra pessoa. Pra pagar só a parte da loja, apague o valor acima e digite a parte dela.`}
+                  </div>
+                )}
               </div>
             ) : (
               <div>
@@ -778,7 +808,11 @@ function ModalNova({ onClose, onSalvar }) {
 }
 
 export default function ContasPagar({ usuario }) {
-  const podeGerenciar = (usuario?.nivel ?? 0) >= 2
+  // Criar/excluir conta continua nível 2 (Elter/admin). Confirmar pagamento
+  // de uma conta já lançada é liberado a partir do nível 1 (Rosângela) —
+  // decisão deliberada e escopada: ver banco/migracao_contas_pagar_pagar_nivel1.sql.
+  const podeCriarConta = (usuario?.nivel ?? 0) >= 2
+  const podePagarConta = (usuario?.nivel ?? 0) >= 1
   const [dados, setDados] = useState([])
   const [loading, setLoading] = useState(true)
   const [busca, setBusca] = useState('')
@@ -787,6 +821,13 @@ export default function ContasPagar({ usuario }) {
   const [lotePagamento, setLotePagamento] = useState(null)
   const [modalNova, setModalNova] = useState(false)
   const [sucesso, setSucesso] = useState('')
+  const [fornecedorFixoMap, setFornecedorFixoMap] = useState(new Map())
+
+  useEffect(() => {
+    window.api.gastosOperacionais.fornecedoresFixos()
+      .then((lista) => setFornecedorFixoMap(new Map((lista || []).map((g) => [g.codigo_fornecedor, g]))))
+      .catch((err) => console.error('Erro ao carregar gastos fixos:', err))
+  }, [])
 
   async function carregar() {
     setLoading(true)
@@ -932,6 +973,7 @@ export default function ContasPagar({ usuario }) {
           id: p.id,
           forma,
           valor_pagamento: p.valor_pagamento,
+          valor_desconto: p.valor_desconto || 0,
           data_pagamento: data,
           usuario: usuario?.usuario || 'sistema',
         })
@@ -1032,7 +1074,7 @@ export default function ContasPagar({ usuario }) {
 
   // A seleção já só admite contas ABERTO/VENCIDO (ver toggleSel), então aqui
   // só falta checar permissão e se há algo selecionado.
-  const podePagar = podeGerenciar && selecionadas.length > 0
+  const podePagar = podePagarConta && selecionadas.length > 0
   const contasSelecionadas = dados.filter((c) => selecionadas.includes(c.id))
 
   return (
@@ -1070,6 +1112,7 @@ export default function ContasPagar({ usuario }) {
           contas={lotePagamento}
           onClose={() => setLotePagamento(null)}
           onConfirm={confirmarPagamento}
+          fornecedorFixoMap={fornecedorFixoMap}
         />
       )}
       {modalNova && (
@@ -1139,7 +1182,7 @@ export default function ContasPagar({ usuario }) {
           >
             <RefreshCw size={13} />
           </button>
-          {podeGerenciar && (
+          {podeCriarConta && (
             <button
               onClick={() => setModalNova(true)}
               style={{
@@ -1265,6 +1308,7 @@ export default function ContasPagar({ usuario }) {
                 const sit = getSituacao(c)
                 const vencido = sit === 'VENCIDO'
                 const selecionavel = sit === 'ABERTO' || sit === 'VENCIDO'
+                const gastoFixo = fornecedorFixoMap.get(c.codigo_fornecedor)
                 return (
                   <tr
                     key={c.id}
@@ -1275,10 +1319,12 @@ export default function ContasPagar({ usuario }) {
                         : vencido
                           ? '#FFF5F5'
                           : 'transparent',
+                      borderLeft: gastoFixo ? `3px solid ${corGastoFixo(gastoFixo.id)}` : '3px solid transparent',
                       cursor: selecionavel ? 'pointer' : 'default',
                       opacity: selecionavel ? 1 : 0.7,
                       transition: 'background 0.08s',
                     }}
+                    title={gastoFixo ? `Gasto fixo do Ponto de Equilíbrio: ${gastoFixo.descricao}` : undefined}
                     onMouseEnter={(e) => {
                       if (!sel && selecionavel)
                         e.currentTarget.style.background = vencido
@@ -1390,7 +1436,7 @@ export default function ContasPagar({ usuario }) {
         </span>
         <BotoesRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} abrirParaCima />
         <div style={{ flex: 1 }} />
-        {podeGerenciar && (
+        {podePagarConta && (
           <button
             disabled={!podePagar}
             onClick={() => podePagar && setLotePagamento(contasSelecionadas)}

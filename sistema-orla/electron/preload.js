@@ -239,6 +239,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // GASTOS OPERACIONAIS
   gastosOperacionais: {
+    fornecedoresFixos: () => ipcRenderer.invoke('gastosOperacionais:fornecedoresFixos'),
     listar: (mesReferencia) => ipcRenderer.invoke('gastosOperacionais:listar', mesReferencia),
     salvar: (dados) => ipcRenderer.invoke('gastosOperacionais:salvar', dados),
     excluir: (id) => ipcRenderer.invoke('gastosOperacionais:excluir', id),
