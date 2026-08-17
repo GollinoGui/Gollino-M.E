@@ -54,23 +54,19 @@ function EstoqueBadge({ qtd, unidade }) {
   )
 }
 
-function clampDesconto(v) {
-  const n = parseFloat(v)
-  if (isNaN(n)) return 0
-  return Math.min(100, Math.max(0, n))
-}
-
 function ModalItem({ produto, onConfirm, onClose }) {
   const precoOriginal = produto.preco_venda_vista || produto.preco_vista || 0
   const fracionavel = UNIDADES_FRACIONAVEIS.has(produto.unidade)
   const [qty, setQty] = useState('1')
   const [precoStr, setPrecoStr] = useState(precoOriginal.toFixed(2).replace('.', ','))
   const [precoAntesEdicao, setPrecoAntesEdicao] = useState(null)
-  const [desc, setDesc] = useState('0')
-  const descAplicado = clampDesconto(desc)
+  const [descStr, setDescStr] = useState('0')
   const preco = parseQtd(precoStr)
   const precoAlterado = Math.abs(preco - precoOriginal) > 0.001
-  const total = parseQtd(qty) * preco * (1 - descAplicado / 100)
+  const subtotal = parseQtd(qty) * preco
+  const descInformado = parseQtd(descStr)
+  const descAplicado = Math.min(Math.max(descInformado, 0), subtotal)
+  const total = subtotal - descAplicado
   const podeConfirmar = parseQtd(qty) > 0 && preco > 0
 
   return (
@@ -186,14 +182,13 @@ function ModalItem({ produto, onConfirm, onClose }) {
                 marginBottom: 4,
               }}
             >
-              Desconto %
+              Desconto R$
             </label>
             <input
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              type='number'
-              min='0'
-              max='100'
+              value={descStr}
+              onChange={(e) => setDescStr(maskQtd(e.target.value))}
+              inputMode='decimal'
+              placeholder='0,00'
               style={{
                 width: '100%',
                 height: 36,
@@ -202,9 +197,9 @@ function ModalItem({ produto, onConfirm, onClose }) {
                 border: '1px solid var(--border-md)',
               }}
             />
-            {(parseFloat(desc) < 0 || parseFloat(desc) > 100) && (
+            {(descInformado < 0 || descInformado > subtotal) && (
               <div style={{ fontSize: 11, color: '#C53030', marginTop: 3 }}>
-                Desconto deve ser entre 0% e 100% — será aplicado {descAplicado}%.
+                Desconto deve ser entre {fmt(0)} e {fmt(subtotal)} — será aplicado {fmt(descAplicado)}.
               </div>
             )}
           </div>
@@ -841,9 +836,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
           unidade: item.unidade || 'UN',
           preco_unitario: item.preco_venda_vista || item.preco_vista || 0,
           preco_custo: item.preco_custo_atual || 0,
-          valor_desconto: item.desconto
-            ? (item.qty * (item.preco_venda_vista || 0) * item.desconto) / 100
-            : 0,
+          valor_desconto: item.desconto || 0,
           valor_acrescimo: 0,
           valor_total: item.total,
         })),
@@ -1202,7 +1195,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
                   {fmt(item.preco_venda_vista || item.preco_vista || 0)}
                   {item.desconto > 0 && (
                     <span style={{ color: '#22863A', marginLeft: 4 }}>
-                      -{item.desconto}%
+                      -{fmt(item.desconto)}
                     </span>
                   )}
                 </div>
