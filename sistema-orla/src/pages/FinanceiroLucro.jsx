@@ -4,7 +4,7 @@ import {
   ArrowUpRight, ArrowDownRight, PlusCircle, CreditCard,
   Target, Plus, Trash2, Pencil, Search,
   PiggyBank, Calendar, ChevronDown, ChevronRight, Table2, AlertTriangle,
-  Calculator, Percent, Gauge,
+  Calculator, Percent, Gauge, Lightbulb,
 } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
 import ModalConfirmacao from '../components/ModalConfirmacao'
@@ -2014,6 +2014,13 @@ function CalculadoraProdutos() {
   const [margemDesejadaInput, setMargemDesejadaInput] = useState('')
   const [markupDesejadoInput, setMarkupDesejadoInput] = useState('')
 
+  // Modo explicado: liga por padrão (pra quem tá aprendendo); fica salvo no
+  // aparelho, então quem já entendeu desliga uma vez e não vê mais.
+  const [modoExplicado, setModoExplicado] = useState(() => localStorage.getItem('gollino_calc_produtos_modo_explicado') !== '0')
+  useEffect(() => {
+    localStorage.setItem('gollino_calc_produtos_modo_explicado', modoExplicado ? '1' : '0')
+  }, [modoExplicado])
+
   useEffect(() => {
     window.api.produtos.listar({ situacao: 'A', busca: busca || undefined })
       .then((data) => setProdutosLista((data || []).slice(0, 50)))
@@ -2146,6 +2153,24 @@ function CalculadoraProdutos() {
         Nada aqui grava no sistema, é só simulação.
       </div>
 
+      <div style={{ marginBottom: 16 }}>
+        <button
+          type='button'
+          onClick={() => setModoExplicado((v) => !v)}
+          title='Mostra, em cada seção, o que os números significam na prática'
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px', borderRadius: 99, cursor: 'pointer',
+            border: `1px solid ${modoExplicado ? 'var(--blue-600)' : 'var(--border-md)'}`,
+            background: modoExplicado ? 'var(--blue-50)' : 'var(--surface)',
+            color: modoExplicado ? 'var(--blue-700)' : 'var(--text-secondary)',
+            fontSize: 12, fontWeight: 500,
+          }}
+        >
+          <Lightbulb size={13} />
+          {modoExplicado ? 'Explicações ativadas' : 'Ativar explicações'}
+        </button>
+      </div>
+
       <div style={{ position: 'relative', maxWidth: 420, marginBottom: 20 }}>
         <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
         <input
@@ -2197,6 +2222,19 @@ function CalculadoraProdutos() {
             <CardMetrica label='Markup' value={fmtPct(markupHojePct)} color='var(--blue-700)' sub='(Preço − Custo) / Custo' />
             <CardMetrica label='Margem de contribuição/un' value={fmt(contribUnitHoje)} color={contribUnitHoje >= 0 ? 'var(--green-500)' : 'var(--red-500)'} sub={`já líquida da taxa de cartão (${taxaCartaoPct}%)`} />
           </div>
+
+          {modoExplicado && (
+            <div style={{ marginBottom: 24, padding: '12px 16px', background: 'var(--blue-50)', border: '1px solid var(--blue-100)', borderRadius: 8, fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-secondary)' }}>
+              <strong>Como ler isso:</strong> você compra esse produto por {fmt(custoAtual)} e vende por {fmt(precoVista)}. De cada
+              R$ 1,00 de venda, <strong>{fmtPct(margemBrutaHojePct)} é margem</strong> — lucro bruto medido em cima do preço final;
+              o resto cobre o que você pagou pelo produto. Olhando pelo ângulo do custo, esse mesmo lucro é um{' '}
+              <strong>markup de {fmtPct(markupHojePct)}</strong> em cima do que você pagou — é a mesma venda, só medida de dois jeitos
+              diferentes (margem sobre o preço, markup sobre o custo); não são números que se somam nem se comparam diretamente.
+              Descontando também a taxa de cartão ({taxaCartaoPct}%), sobra <strong>{fmt(contribUnitHoje)}</strong> de lucro líquido por
+              unidade vendida — isso ainda não paga aluguel, salário e outras despesas fixas da loja, que são cobertas à parte no
+              Ponto de Equilíbrio (aba Visão Geral).
+            </div>
+          )}
 
           {/* RITMO DE VENDAS */}
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2290,6 +2328,14 @@ function CalculadoraProdutos() {
                 </div>
               </div>
             </div>
+
+            {modoExplicado && (
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: -6, marginBottom: 16, maxWidth: 640, lineHeight: 1.5 }}>
+                Lembrete: <strong>margem</strong> é % sobre o preço de venda; <strong>markup</strong> é % sobre o custo de compra. Pra
+                chegar no mesmo preço final, o número de markup é sempre maior que o de margem (ex: 30% de margem equivale a ~42,9%
+                de markup) — não use os dois como se fossem o mesmo valor.
+              </div>
+            )}
 
             <div style={{ overflowX: 'auto', marginBottom: 14 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 440 }}>
