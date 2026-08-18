@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { MessageCircle, X, Send, Bot, ChevronDown, Check, Ban } from 'lucide-react'
 import ModalConfirmacao from './ModalConfirmacao'
 import { fmtQtd } from '../utils/formatQtd'
+import { hojeLocal } from '../utils/data'
 
 const hora = new Date().getHours()
 const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
@@ -334,7 +335,7 @@ export default function Assistente({ caixaAberto, onNavigate, usuario, pagina })
         0,
       )
 
-      const hoje = new Date().toISOString().slice(0, 10)
+      const hoje = hojeLocal()
       const nCrVenc = (cr || []).filter((r) => r.data_vencimento <= hoje).length
       const nCpVenc = (cp || []).filter((p) => p.data_vencimento <= hoje).length
       const total =

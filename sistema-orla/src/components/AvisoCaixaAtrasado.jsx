@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { AlertTriangle, FolderOpen } from 'lucide-react'
 import ModalRelatorioCaixa from './ModalRelatorioCaixa'
 import { montarHistoricoSessao } from '../utils/caixaHistorico'
+import { hojeLocal } from '../utils/data'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -45,7 +46,7 @@ export default function AvisoCaixaAtrasado({ status, usuario, onFechado }) {
           ...resumo,
           ...resultado.resumo,
           usuarioFechamento: usuario?.nome || 'sistema',
-          dataFechamento: new Date().toISOString().slice(0, 10),
+          dataFechamento: hojeLocal(),
           horaFechamento: new Date().toTimeString().slice(0, 8),
         },
         historico: snapshotHistorico,

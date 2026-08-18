@@ -15,9 +15,12 @@ import {
   Search,
   History,
   Ban,
+  HelpCircle,
 } from 'lucide-react'
 import ModalAcessoNegado from '../components/ModalAcessoNegado'
 import ModalCancelarVenda from '../components/ModalCancelarVenda'
+import ModalTutorial from '../components/ModalTutorial'
+import { hojeLocal, localDateStr } from '../utils/data'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -235,11 +238,12 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
   const [contasVencendo, setContasVencendo] = useState([])
   const [contasPagarAlerta, setContasPagarAlerta] = useState([])
   const [produtosBaixo, setProdutosBaixo] = useState([])
-  const [totalClientes, setTotalClientes] = useState(0)
   const [totalProdutos, setTotalProdutos] = useState(0)
+  const [caixaAtual, setCaixaAtual] = useState(null)
   const [cancelandoId, setCancelandoId] = useState(null)
   const [vendaParaCancelar, setVendaParaCancelar] = useState(null)
   const [acessoNegado, setAcessoNegado] = useState(null)
+  const [tutorialAberto, setTutorialAberto] = useState(false)
 
   // Busca de vendas antigas (fora do período "hoje") — pra achar e cancelar vendas de teste
   const [buscaAntigaAberta, setBuscaAntigaAberta] = useState(false)
@@ -259,7 +263,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
       setResumo(res)
 
       // Vendas de hoje (últimas 5)
-      const dataHoje = new Date().toISOString().slice(0, 10)
+      const dataHoje = hojeLocal()
       const vendas = await window.api.vendas.listar({
         dataInicio: dataHoje,
         dataFim: dataHoje,
@@ -289,14 +293,18 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
       })
       setProdutosBaixo(prods.slice(0, 3))
 
-      // Totais de clientes e produtos
-      const clientes = await window.api.clientes.listar({})
-      setTotalClientes(clientes.length)
-
       const todosProds = await window.api.produtos.listar({
         situacao: 'A',
       })
       setTotalProdutos(todosProds.length)
+
+      // Dinheiro esperado na gaveta agora (sessão de caixa aberta)
+      if (caixaAberto) {
+        const ca = await window.api.caixa.resumoAtual()
+        setCaixaAtual(ca)
+      } else {
+        setCaixaAtual(null)
+      }
     } catch (err) {
       console.error('Erro ao carregar dashboard:', err)
     } finally {
@@ -360,7 +368,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
     for (let i = 6; i >= 0; i--) {
       const d = new Date(hoje7)
       d.setDate(d.getDate() - i)
-      const key = d.toISOString().slice(0, 10)
+      const key = localDateStr(d)
       const encontrado = resumo.grafico7dias.find((g) => g.data === key)
       const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
       dias.push({
@@ -375,7 +383,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
   // ── Urgência das contas a receber ─────────────────────────────
   function urgenciaVencimento(dataVenc) {
     if (!dataVenc) return 'baixa'
-    const hoje2 = new Date().toISOString().slice(0, 10)
+    const hoje2 = hojeLocal()
     if (dataVenc <= hoje2) return 'alta'
     const diff = Math.ceil((new Date(dataVenc) - new Date(hoje2)) / 86400000)
     if (diff <= 2) return 'media'
@@ -384,7 +392,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
 
   function labelVencimento(dataVenc) {
     if (!dataVenc) return ''
-    const hoje2 = new Date().toISOString().slice(0, 10)
+    const hoje2 = hojeLocal()
     if (dataVenc < hoje2) return 'Vencido'
     if (dataVenc === hoje2) return 'Hoje'
     const diff = Math.ceil((new Date(dataVenc) - new Date(hoje2)) / 86400000)
@@ -393,6 +401,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
   }
 
   const totalHoje = resumo.entradasCaixa || 0
+  const valorEmCaixa = caixaAberto ? (caixaAtual?.dinheiroEsperado ?? 0) : 0
   const dias = montarGrafico()
   const maxValor = Math.max(...dias.map((d) => d.valor), META_DIARIA)
 
@@ -483,6 +492,12 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
           orcamento={vendaParaCancelar}
           onFechar={() => setVendaParaCancelar(null)}
           onConfirmar={executarCancelamentoVenda}
+        />
+      )}
+      {tutorialAberto && (
+        <ModalTutorial
+          onFechar={() => setTutorialAberto(false)}
+          onNavigate={onNavigate}
         />
       )}
 
@@ -609,6 +624,25 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                   {p.label}
                 </button>
               ))}
+              <button
+                className='period-btn'
+                onClick={() => setTutorialAberto(true)}
+                title='Onde eu vejo cada informação no sistema'
+                style={{
+                  padding: '7px 14px',
+                  fontSize: 12,
+                  borderRadius: 20,
+                  background: 'rgba(255,255,255,0.08)',
+                  color: 'var(--surface)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginLeft: 4,
+                }}
+              >
+                <HelpCircle size={13} /> Tutorial
+              </button>
             </div>
           </div>
 
@@ -624,11 +658,11 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
           >
             {[
               {
-                label: 'Faturamento',
-                value: resumo.vendas.total,
+                label: 'Valor em caixa',
+                value: valorEmCaixa,
                 isCurrency: true,
-                sub: `${resumo.vendas.qtde} vendas no período`,
-                nav: 'rel-vendas',
+                sub: caixaAberto ? 'dinheiro esperado na gaveta' : 'caixa fechado',
+                nav: 'abrir-caixa',
               },
               {
                 label: 'A receber',
@@ -638,18 +672,18 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                 nav: 'contas-receber',
               },
               {
+                label: 'A pagar',
+                value: resumo.contasPagar.total,
+                isCurrency: true,
+                sub: 'em aberto',
+                nav: 'contas-pagar',
+              },
+              {
                 label: 'Produtos',
                 value: totalProdutos,
                 isCurrency: false,
                 sub: `${resumo.estoqueBaixo} com estoque baixo`,
                 nav: 'produtos',
-              },
-              {
-                label: 'Clientes',
-                value: totalClientes,
-                isCurrency: false,
-                sub: 'cadastrados',
-                nav: 'clientes',
               },
             ].map((card, i) => (
               <button
@@ -694,6 +728,9 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                     lineHeight: 1,
                     marginBottom: 6,
                     letterSpacing: '-0.5px',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                   }}
                   key={animKey}
                 >
@@ -710,7 +747,15 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
                     <AnimatedNumber value={card.value} integer />
                   )}
                 </div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: 'rgba(255,255,255,0.5)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {card.sub}
                 </div>
               </button>
@@ -1827,7 +1872,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
 
             {contasPagarAlerta.map((c, i) => {
               const vencido =
-                c.data_vencimento <= new Date().toISOString().slice(0, 10)
+                c.data_vencimento <= hojeLocal()
               return (
                 <div
                   key={i}

@@ -4,12 +4,14 @@ import {
   ArrowUpRight, ArrowDownRight, PlusCircle, CreditCard,
   Target, Plus, Trash2, Pencil, Search,
   PiggyBank, Calendar, ChevronDown, ChevronRight, Table2, AlertTriangle,
+  Calculator, Percent, Gauge,
 } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
 import ModalConfirmacao from '../components/ModalConfirmacao'
 import { useOrdenacao } from '../utils/ordenacao'
 import { fmtQtd } from '../utils/formatQtd'
 import { corGastoFixo } from '../utils/coresGastoFixo'
+import { hojeLocal, localDateStr } from '../utils/data'
 
 const fmt = (v) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtPct = (v) => `${(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`
@@ -68,6 +70,15 @@ function mesAtualStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+// Diferença inclusiva em meses entre dois 'YYYY-MM' (mesmo mês = 1). Usado
+// pra tirar a média mensal real de vendas — inclui meses sem venda nenhuma
+// no denominador, senão a média fica inflada.
+function mesesEntre(mesIni, mesFim) {
+  const [y1, m1] = mesIni.split('-').map(Number)
+  const [y2, m2] = mesFim.split('-').map(Number)
+  return Math.max(1, (y2 - y1) * 12 + (m2 - m1) + 1)
+}
+
 // Primeiro e último dia do mês 'YYYY-MM', pra reaproveitar financeiro.resumoPeriodo
 function limitesDoMes(mesStr) {
   const [y, m] = mesStr.split('-').map(Number)
@@ -77,7 +88,7 @@ function limitesDoMes(mesStr) {
 }
 
 function diaAtual() {
-  const hoje = new Date().toISOString().slice(0, 10)
+  const hoje = hojeLocal()
   return { ini: hoje, fim: hoje }
 }
 
@@ -532,9 +543,9 @@ function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial, fornecedor
   const [mostrarFornecedores, setMostrarFornecedores] = useState(false)
   const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }))
   const valido = form.descricao.trim() && Number(form.valor) > 0
-  const fornecedoresFiltrados = (
-    buscaFornecedor ? fornecedoresLista.filter((fo) => fo.nome.toLowerCase().includes(buscaFornecedor.toLowerCase())) : fornecedoresLista
-  ).slice(0, 8)
+  const fornecedoresFiltrados = buscaFornecedor
+    ? fornecedoresLista.filter((fo) => fo.nome.toLowerCase().includes(buscaFornecedor.toLowerCase()))
+    : []
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
@@ -602,7 +613,7 @@ function ModalGasto({ onClose, onSalvar, mesReferencia, gastoInicial, fornecedor
                 remover
               </button>
             )}
-            {mostrarFornecedores && !fornecedorSelecionado && fornecedoresFiltrados.length > 0 && (
+            {mostrarFornecedores && buscaFornecedor && !fornecedorSelecionado && fornecedoresFiltrados.length > 0 && (
               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border-md)', borderRadius: 8, boxShadow: '0 8px 20px rgba(0,0,0,0.12)', zIndex: 30, maxHeight: 180, overflowY: 'auto' }}>
                 {fornecedoresFiltrados.map((fo) => (
                   <div key={fo.codigo} onClick={() => { setFornecedorSelecionado(fo); setMostrarFornecedores(false) }}
@@ -795,7 +806,7 @@ function PontoDeEquilibrio({ usuario }) {
 
   useEffect(() => {
     window.api.produtos.listar({ situacao: 'A', busca: buscaProduto || undefined })
-      .then((data) => setProdutosLista((data || []).slice(0, 8)))
+      .then((data) => setProdutosLista((data || []).slice(0, 50)))
       .catch(() => setProdutosLista([]))
   }, [buscaProduto])
 
@@ -1084,7 +1095,7 @@ function Patrimonio({ usuario }) {
 
   useEffect(() => { carregar() }, [])
 
-  const hoje = new Date().toISOString().slice(0, 10)
+  const hoje = hojeLocal()
   const jaFechouHoje = historico.some((h) => h.data_fechamento === hoje)
 
   async function fecharMes() {
@@ -1501,7 +1512,8 @@ function Patrimonio({ usuario }) {
 // ── VENDAS DETALHADAS — extrato técnico, uma linha por item vendido ─────────
 // Markup % é uma taxa fixa definida pelo Elter (não vem do custo/preço do
 // item — ver MARKUP_FIXO_VENDAS_DETALHADAS no backend). Resultado = preço de
-// venda × essa taxa fixa.
+// venda × essa taxa fixa (número sintético). Lucro bruto = (preço de venda −
+// custo de compra) − resultado.
 function CelulaImposto({ linha, onSalvar }) {
   const [editando, setEditando] = useState(false)
   const [valor, setValor] = useState(linha.imposto_percentual ?? '')
@@ -1602,6 +1614,7 @@ function VendasDetalhadas() {
   const totalCusto = filtradas.reduce((s, l) => s + (l.custo_compra || 0), 0)
   const totalPreco = filtradas.reduce((s, l) => s + (l.preco_venda || 0), 0)
   const totalResultado = filtradas.reduce((s, l) => s + (l.resultado || 0), 0)
+  const totalLucroBruto = filtradas.reduce((s, l) => s + (l.lucro_bruto || 0), 0)
   // Markup % agora é uma taxa fixa (ver MARKUP_FIXO_VENDAS_DETALHADAS no
   // backend) e Resultado = preço de venda × essa taxa — então o total
   // ponderado é só totalResultado / totalPreco, e bate com o valor de cada
@@ -1609,8 +1622,8 @@ function VendasDetalhadas() {
   const markupMedioPonderado = totalPreco > 0 ? (totalResultado / totalPreco) * 100 : null
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, margin: 20, marginBottom: 0, padding: '16px 20px' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, margin: 20, marginBottom: 0, padding: '16px 20px', flexShrink: 0 }}>
         <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           {[
             ['hoje', 'Hoje'],
@@ -1655,7 +1668,7 @@ function VendasDetalhadas() {
       </div>
 
       {loading ? <Carregando /> : (
-        <div style={{ margin: '16px 20px 20px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto' }}>
+        <div style={{ margin: '16px 20px 20px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', flex: 1, minHeight: 0 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <thead>
               <tr>
@@ -1669,6 +1682,7 @@ function VendasDetalhadas() {
                   { label: 'Preço de venda', chave: 'preco_venda' },
                   { label: 'Markup %', chave: 'markup_percentual' },
                   { label: 'Resultado', chave: 'resultado' },
+                  { label: 'Lucro bruto', chave: 'lucro_bruto' },
                 ].map((h) => (
                   <ThOrdenavel
                     key={h.chave}
@@ -1681,15 +1695,16 @@ function VendasDetalhadas() {
                       padding: '9px 12px', fontSize: 11, fontWeight: 500, color: 'var(--text-muted)',
                       textAlign: ['orcamento', 'data', 'cliente', 'produto'].includes(h.chave) ? 'left' : 'right',
                       background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap',
+                      position: 'sticky', top: 0, zIndex: 1,
                     }}
                   />
                 ))}
-                <th style={{ padding: '9px 12px', fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', textAlign: 'right', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>Imposto</th>
+                <th style={{ padding: '9px 12px', fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', textAlign: 'right', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 1 }}>Imposto</th>
               </tr>
             </thead>
             <tbody>
               {ordenados.length === 0 && (
-                <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Nenhuma venda no período.</td></tr>
+                <tr><td colSpan={11} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Nenhuma venda no período.</td></tr>
               )}
               {ordenados.map((l, i) => (
                 <tr key={`${l.orcamento}-${l.codigo_produto}-${i}`} style={{ borderBottom: '1px solid var(--border)' }}>
@@ -1698,7 +1713,10 @@ function VendasDetalhadas() {
                   <td style={{ padding: '8px 12px' }}>{l.cliente}</td>
                   <td style={{ padding: '8px 12px', fontWeight: 500 }}>{l.produto}</td>
                   <td style={{ padding: '8px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtQtd(l.quantidade, l.unidade)}</td>
-                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmt(l.custo_compra)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {fmt(l.custo_compra)}{' '}
+                    <span style={{ opacity: 0.5, fontSize: 11 }}>({fmt(l.custo_unitario)})</span>
+                  </td>
                   <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmt(l.preco_venda)}</td>
                   <td style={{ padding: '8px 12px', textAlign: 'right' }}>{l.markup_percentual == null ? '—' : fmtPct(l.markup_percentual)}</td>
                   <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: (l.resultado || 0) >= 0 ? '#22863A' : '#C53030' }}>
@@ -1709,6 +1727,16 @@ function VendasDetalhadas() {
                         </span>
                       )}
                       {fmt(l.resultado)}
+                    </span>
+                  </td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: (l.lucro_bruto || 0) >= 0 ? '#22863A' : '#C53030' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, justifyContent: 'flex-end' }}>
+                      {(l.lucro_bruto || 0) < 0 && (
+                        <span title='Vendido abaixo do custo de compra registrado.' style={{ display: 'inline-flex' }}>
+                          <AlertTriangle size={12} />
+                        </span>
+                      )}
+                      {fmt(l.lucro_bruto)}
                     </span>
                   </td>
                   <td style={{ padding: '8px 12px', textAlign: 'right' }}>
@@ -1725,6 +1753,7 @@ function VendasDetalhadas() {
                   <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700 }}>{fmt(totalPreco)}</td>
                   <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700 }}>{markupMedioPonderado == null ? '—' : fmtPct(markupMedioPonderado)}</td>
                   <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: totalResultado >= 0 ? '#22863A' : '#C53030' }}>{fmt(totalResultado)}</td>
+                  <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: totalLucroBruto >= 0 ? '#22863A' : '#C53030' }}>{fmt(totalLucroBruto)}</td>
                   <td />
                 </tr>
               </tfoot>
@@ -1961,8 +1990,470 @@ function VisaoGeral({ usuario }) {
   )
 }
 
+// ── CALCULADORA DE PRODUTOS — mesa de teste por produto: não grava nada,
+// só simula. Responde três perguntas: (1) quanto preciso vender pra ganhar
+// X, (2) o que muda se eu mexer no preço ou no custo de compra (margem,
+// markup e quanto isso tolera de queda/precisa de aumento em vendas), e
+// (3) quanto isso dá em dinheiro num período, usando o ritmo real de vendas
+// do produto (histórico de relatorio_sazonalidade_produtos).
+function CalculadoraProdutos() {
+  const [busca, setBusca] = useState('')
+  const [produtosLista, setProdutosLista] = useState([])
+  const [mostrarLista, setMostrarLista] = useState(false)
+  const [produtoSelecionado, setProdutoSelecionado] = useState(null)
+
+  const [sazonalidade, setSazonalidade] = useState([])
+  const [primeiroMesGeral, setPrimeiroMesGeral] = useState(null)
+  const [taxaCartaoPct, setTaxaCartaoPct] = useState('0')
+
+  const [precoSim, setPrecoSim] = useState('')
+  const [custoSim, setCustoSim] = useState('')
+  const [mesesProjecao, setMesesProjecao] = useState('1')
+  const [metaLucro, setMetaLucro] = useState('')
+  const [modoMeta, setModoMeta] = useState('hoje') // 'hoje' | 'simulado'
+  const [margemDesejadaInput, setMargemDesejadaInput] = useState('')
+  const [markupDesejadoInput, setMarkupDesejadoInput] = useState('')
+
+  useEffect(() => {
+    window.api.produtos.listar({ situacao: 'A', busca: busca || undefined })
+      .then((data) => setProdutosLista((data || []).slice(0, 50)))
+      .catch(() => setProdutosLista([]))
+  }, [busca])
+
+  // Histórico completo por produto (pra ritmo de vendas) e taxa de cartão
+  // efetiva média dos últimos 3 meses (blend real de débito/crédito/parcelado
+  // — mais confiável que somar as taxas cadastradas, que às vezes estão
+  // zeradas). Carrega uma vez só, independente do produto selecionado.
+  useEffect(() => {
+    window.api.relatorios.sazonalidadeProdutos().then((d) => setSazonalidade(d || [])).catch(() => setSazonalidade([]))
+    window.api.relatorios.vendasMensais()
+      .then((d) => { const ord = [...(d || [])].sort((a, b) => a.mes.localeCompare(b.mes)); setPrimeiroMesGeral(ord[0]?.mes || null) })
+      .catch(() => setPrimeiroMesGeral(null))
+    const hoje = new Date()
+    const ini = localDateStr(new Date(hoje.getFullYear(), hoje.getMonth() - 2, 1))
+    const fim = hojeLocal()
+    window.api.financeiro.resumoPeriodo(ini, fim)
+      .then((r) => {
+        const receita = r?.receita_bruta || 0
+        setTaxaCartaoPct(receita > 0 ? ((r.taxa_cartao || 0) / receita * 100).toFixed(2) : '0')
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!produtoSelecionado) return
+    setPrecoSim(String(produtoSelecionado.preco_venda_vista ?? ''))
+    setCustoSim(String(produtoSelecionado.preco_custo_atual ?? ''))
+    setMetaLucro('')
+    setMargemDesejadaInput('')
+    setMarkupDesejadoInput('')
+  }, [produtoSelecionado?.codigo])
+
+  const precoVista = produtoSelecionado?.preco_venda_vista || 0
+  const custoAtual = produtoSelecionado?.preco_custo_atual || 0
+  const estoqueAtual = produtoSelecionado?.estoque_atual || 0
+  const unidade = produtoSelecionado?.unidade || 'un'
+
+  const precoSimNum = Number(precoSim) || 0
+  const custoSimNum = Number(custoSim) || 0
+  const taxaCartaoFrac = (Number(taxaCartaoPct) || 0) / 100
+
+  const margemBrutaHojePct = precoVista > 0 ? ((precoVista - custoAtual) / precoVista) * 100 : 0
+  const markupHojePct = custoAtual > 0 ? ((precoVista - custoAtual) / custoAtual) * 100 : 0
+  const contribUnitHoje = precoVista - custoAtual - precoVista * taxaCartaoFrac
+
+  const margemBrutaSimPct = precoSimNum > 0 ? ((precoSimNum - custoSimNum) / precoSimNum) * 100 : 0
+  const markupSimPct = custoSimNum > 0 ? ((precoSimNum - custoSimNum) / custoSimNum) * 100 : 0
+  const contribUnitSim = precoSimNum - custoSimNum - precoSimNum * taxaCartaoFrac
+
+  const deltaUnit = contribUnitSim - contribUnitHoje
+  const precoMudou = Math.abs(precoSimNum - precoVista) > 0.005
+  const custoMudou = Math.abs(custoSimNum - custoAtual) > 0.005
+  const algoMudou = precoMudou || custoMudou
+
+  // Ritmo de vendas do produto: média mensal real (inclui meses sem venda
+  // no denominador) e quantos meses o estoque atual aguenta nesse ritmo.
+  const linhasProduto = produtoSelecionado
+    ? sazonalidade.filter((l) => String(l.codigo) === String(produtoSelecionado.codigo))
+    : []
+  const totalQtdHistorico = linhasProduto.reduce((s, l) => s + (l.quantidade || 0), 0)
+  const primeiroMesProduto = linhasProduto.length ? [...linhasProduto].map((l) => l.mes).sort()[0] : null
+  const mesesDecorridos = primeiroMesProduto ? mesesEntre(primeiroMesProduto, mesAtualStr()) : 0
+  const mediaMensal = mesesDecorridos > 0 ? totalQtdHistorico / mesesDecorridos : 0
+  const coberturaMeses = mediaMensal > 0 ? estoqueAtual / mediaMensal : null
+
+  // Meta de lucro → unidades necessárias, com a margem de hoje ou a simulada
+  const contribEscolhida = modoMeta === 'simulado' ? contribUnitSim : contribUnitHoje
+  const metaLucroNum = Number(metaLucro) || 0
+  const unidadesMeta = contribEscolhida > 0 && metaLucroNum > 0 ? Math.ceil(metaLucroNum / contribEscolhida) : null
+  const tempoEstimadoMeses = unidadesMeta && mediaMensal > 0 ? unidadesMeta / mediaMensal : null
+
+  // Projeção de ganho/perda extra no período, assumindo que o volume de
+  // vendas se mantém no ritmo histórico (a elasticidade abaixo trata do
+  // caso em que o preço mexe com o volume)
+  const mesesProjecaoNum = Number(mesesProjecao) || 0
+  const ganhoProjetadoTotal = deltaUnit * mediaMensal * mesesProjecaoNum
+
+  // Elasticidade: espelha a fórmula de desconto do CLAUDE.md (desconto% /
+  // (margem% − desconto%)) — pra aumento de preço o sinal inverte, porque o
+  // aumento soma margem em vez de consumir.
+  let elasticidade = null
+  if (precoMudou && precoVista > 0) {
+    const margemContribFracHoje = contribUnitHoje / precoVista
+    const variacaoFrac = (precoSimNum - precoVista) / precoVista
+    if (variacaoFrac > 0) {
+      const denom = margemContribFracHoje + variacaoFrac
+      elasticidade = { tipo: 'aumento', pct: variacaoFrac * 100, toleravelPct: denom > 0 ? (variacaoFrac / denom) * 100 : null }
+    } else {
+      const descontoFrac = -variacaoFrac
+      const denom = margemContribFracHoje - descontoFrac
+      elasticidade = { tipo: 'desconto', pct: descontoFrac * 100, necessarioPct: denom > 0 ? (descontoFrac / denom) * 100 : null, inviavel: denom <= 0 }
+    }
+  }
+
+  function aplicarVariacaoPreco(pct) {
+    if (!precoVista) return
+    setPrecoSim((precoVista * (1 + pct / 100)).toFixed(2))
+  }
+  function aplicarVariacaoCusto(pct) {
+    if (!custoAtual) return
+    setCustoSim((custoAtual * (1 + pct / 100)).toFixed(2))
+  }
+  function aplicarMargemDesejada() {
+    const m = Number(margemDesejadaInput) / 100
+    if (!custoSimNum || !(m < 1)) return
+    setPrecoSim((custoSimNum / (1 - m)).toFixed(2))
+  }
+  function aplicarMarkupDesejado() {
+    const mk = Number(markupDesejadoInput) / 100
+    if (!custoSimNum) return
+    setPrecoSim((custoSimNum * (1 + mk)).toFixed(2))
+  }
+
+  const linhasComparacao = [
+    { label: 'Preço de venda', hoje: precoVista, sim: precoSimNum, f: fmt },
+    { label: 'Custo de compra', hoje: custoAtual, sim: custoSimNum, f: fmt },
+    { label: 'Margem bruta', hoje: margemBrutaHojePct, sim: margemBrutaSimPct, f: fmtPct },
+    { label: 'Markup', hoje: markupHojePct, sim: markupSimPct, f: fmtPct },
+    { label: 'Margem de contribuição / unidade', hoje: contribUnitHoje, sim: contribUnitSim, f: fmt, destaque: true },
+  ]
+
+  return (
+    <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 700, lineHeight: 1.5, marginBottom: 16 }}>
+        Escolha um produto e simule: quanto precisa vender pra bater uma meta de lucro, o que muda se aumentar o preço ou
+        conseguir comprar mais barato, e quanto isso dá em dinheiro num período — usando o ritmo real de vendas do produto.
+        Nada aqui grava no sistema, é só simulação.
+      </div>
+
+      <div style={{ position: 'relative', maxWidth: 420, marginBottom: 20 }}>
+        <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+        <input
+          value={produtoSelecionado ? produtoSelecionado.descricao : busca}
+          onChange={(e) => { setBusca(e.target.value); setProdutoSelecionado(null); setMostrarLista(true) }}
+          onFocus={() => setMostrarLista(true)}
+          placeholder='Buscar produto pra simular...'
+          style={{ width: '100%', height: 38, paddingLeft: 32, borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13.5 }}
+        />
+        {mostrarLista && !produtoSelecionado && produtosLista.length > 0 && (
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border-md)', borderRadius: 8, boxShadow: '0 8px 20px rgba(0,0,0,0.12)', zIndex: 20, maxHeight: 260, overflowY: 'auto' }}>
+            {produtosLista.map((p) => (
+              <div key={p.codigo} onClick={() => { setProdutoSelecionado(p); setMostrarLista(false) }}
+                style={{ padding: '8px 10px', fontSize: 12.5, cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                <div style={{ fontWeight: 500 }}>
+                  <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)', fontWeight: 400 }}>#{p.codigo}</span> {p.descricao}
+                </div>
+                <div style={{ color: 'var(--text-muted)' }}>{fmt(p.preco_venda_vista)} · custo {fmt(p.preco_custo_atual)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {!produtoSelecionado ? (
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+          Busque e selecione um produto acima pra começar a simular.
+        </div>
+      ) : (
+        <>
+          {custoAtual === 0 && (
+            <div style={{ marginBottom: 16, padding: '10px 14px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 8, fontSize: 12, color: 'var(--red-700)' }}>
+              Esse produto está sem custo de compra cadastrado — as margens abaixo não são confiáveis até isso ser corrigido em Produtos.
+            </div>
+          )}
+
+          {/* FICHA ATUAL */}
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Percent size={14} /> Ficha do produto hoje
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 24 }}>
+            <CardMetrica label='Preço à vista' value={fmt(precoVista)} />
+            <CardMetrica label='Preço a prazo' value={fmt(produtoSelecionado.preco_venda_prazo)} />
+            <CardMetrica label='Custo de compra' value={fmt(custoAtual)} />
+            <CardMetrica label='Estoque atual' value={fmtQtd(estoqueAtual, unidade)} />
+            <CardMetrica label='Margem bruta' value={fmtPct(margemBrutaHojePct)} color={margemBrutaHojePct >= 0 ? 'var(--green-500)' : 'var(--red-500)'} sub='(Preço − Custo) / Preço' />
+            <CardMetrica label='Markup' value={fmtPct(markupHojePct)} color='var(--blue-700)' sub='(Preço − Custo) / Custo' />
+            <CardMetrica label='Margem de contribuição/un' value={fmt(contribUnitHoje)} color={contribUnitHoje >= 0 ? 'var(--green-500)' : 'var(--red-500)'} sub={`já líquida da taxa de cartão (${taxaCartaoPct}%)`} />
+          </div>
+
+          {/* RITMO DE VENDAS */}
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Gauge size={14} /> Ritmo de vendas
+          </div>
+          {mediaMensal === 0 ? (
+            <div style={{ marginBottom: 16, padding: '10px 14px', background: 'var(--gray-50)', border: '1px solid var(--border-md)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+              Sem histórico de vendas registrado pra esse produto ainda — as projeções abaixo não conseguem estimar tempo ou volume.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 8 }}>
+              <CardMetrica label='Vendido no histórico' value={fmtQtd(totalQtdHistorico, unidade)} sub={`em ${mesesDecorridos} ${mesesDecorridos === 1 ? 'mês' : 'meses'}`} />
+              <CardMetrica label='Média mensal' value={fmtQtd(mediaMensal, unidade)} color='var(--blue-700)' />
+              <CardMetrica
+                label='Cobertura do estoque atual'
+                value={coberturaMeses != null ? `${coberturaMeses.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} meses` : '—'}
+                color={coberturaMeses != null && coberturaMeses < 1 ? 'var(--red-500)' : 'var(--text-primary)'}
+                sub='estoque atual ÷ média mensal'
+              />
+            </div>
+          )}
+          {primeiroMesGeral && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 24 }}>
+              Baseado no histórico de vendas do sistema (dado contínuo a partir de {mesLabel(primeiroMesGeral)}) — quanto mais recente o produto, menos confiável a média.
+            </div>
+          )}
+
+          {/* SIMULADOR DE PREÇO E CUSTO */}
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>E se eu mudar o preço ou o custo?</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 14 }}>Ajuste os valores abaixo e compare com a situação de hoje.</div>
+
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 14 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Novo preço de venda (R$)</label>
+                <input type='number' min='0' step='0.01' value={precoSim} onChange={(e) => setPrecoSim(e.target.value)}
+                  style={{ width: 140, height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13 }} />
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[-10, -5, 5, 10, 15].map((pct) => (
+                    <button key={pct} type='button' onClick={() => aplicarVariacaoPreco(pct)}
+                      style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 6, border: '1px solid var(--border-md)', color: pct > 0 ? 'var(--green-500)' : 'var(--red-500)', background: 'var(--surface)', cursor: 'pointer' }}>
+                      {pct > 0 ? '+' : ''}{pct}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Novo custo de compra (R$)</label>
+                <input type='number' min='0' step='0.01' value={custoSim} onChange={(e) => setCustoSim(e.target.value)}
+                  style={{ width: 140, height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13 }} />
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[-15, -10, -5, 5, 10].map((pct) => (
+                    <button key={pct} type='button' onClick={() => aplicarVariacaoCusto(pct)}
+                      style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 6, border: '1px solid var(--border-md)', color: pct < 0 ? 'var(--green-500)' : 'var(--red-500)', background: 'var(--surface)', cursor: 'pointer' }}>
+                      {pct > 0 ? '+' : ''}{pct}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Taxa de cartão considerada (%)</label>
+                <input type='number' min='0' step='0.01' value={taxaCartaoPct} onChange={(e) => setTaxaCartaoPct(e.target.value)}
+                  style={{ width: 100, height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13 }} />
+                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>estimada pela média dos últimos 3 meses</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 16, paddingTop: 12, borderTop: '1px dashed var(--border-md)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>...ou definir o preço por uma margem desejada (%)</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input type='number' step='0.1' value={margemDesejadaInput} onChange={(e) => setMargemDesejadaInput(e.target.value)}
+                    placeholder='ex: 35' style={{ width: 90, height: 32, padding: '0 8px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 12.5 }} />
+                  <button type='button' onClick={aplicarMargemDesejada}
+                    style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid var(--blue-600)', color: 'var(--blue-700)', background: 'var(--blue-50)', fontSize: 12, cursor: 'pointer' }}>
+                    Aplicar
+                  </button>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>...ou por um markup desejado (%)</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input type='number' step='0.1' value={markupDesejadoInput} onChange={(e) => setMarkupDesejadoInput(e.target.value)}
+                    placeholder='ex: 60' style={{ width: 90, height: 32, padding: '0 8px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 12.5 }} />
+                  <button type='button' onClick={aplicarMarkupDesejado}
+                    style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid var(--blue-600)', color: 'var(--blue-700)', background: 'var(--blue-50)', fontSize: 12, cursor: 'pointer' }}>
+                    Aplicar
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ overflowX: 'auto', marginBottom: 14 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 440 }}>
+                <thead>
+                  <tr style={{ background: 'var(--gray-50)' }}>
+                    <th style={{ padding: '7px 10px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}> </th>
+                    <th style={{ padding: '7px 10px', textAlign: 'right', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>HOJE</th>
+                    <th style={{ padding: '7px 10px', textAlign: 'right', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>SIMULADO</th>
+                    <th style={{ padding: '7px 10px', textAlign: 'right', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>DIFERENÇA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {linhasComparacao.map((row) => {
+                    const delta = row.sim - row.hoje
+                    return (
+                      <tr key={row.label} style={{ borderTop: '1px solid var(--border)' }}>
+                        <td style={{ padding: '7px 10px', color: 'var(--text-secondary)', fontWeight: row.destaque ? 600 : 400 }}>{row.label}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right' }}>{row.f(row.hoje)}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600 }}>{row.f(row.sim)}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: delta > 0 ? 'var(--green-500)' : delta < 0 ? 'var(--red-500)' : 'var(--text-muted)' }}>
+                          {delta > 0 ? '+' : ''}{row.f(delta)}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {algoMudou && (
+              <div style={{ padding: '10px 14px', background: deltaUnit >= 0 ? 'var(--green-50)' : 'var(--red-50)', border: `1px solid ${deltaUnit >= 0 ? 'var(--green-100)' : 'var(--red-100)'}`, borderRadius: 8, fontSize: 12.5, marginBottom: 16 }}>
+                Cada unidade vendida nesse cenário rende <strong>{fmt(Math.abs(deltaUnit))}</strong> {deltaUnit >= 0 ? 'a mais' : 'a menos'} de margem do que hoje.
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Projetar ganho/perda em quantos meses?</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input type='number' min='0' step='1' value={mesesProjecao} onChange={(e) => setMesesProjecao(e.target.value)}
+                    style={{ width: 70, height: 32, padding: '0 8px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 12.5 }} />
+                  {[1, 3, 6, 12].map((m) => (
+                    <button key={m} type='button' onClick={() => setMesesProjecao(String(m))}
+                      style={{
+                        fontSize: 11, padding: '0 8px', height: 32, borderRadius: 8, cursor: 'pointer',
+                        border: `1px solid ${mesesProjecao === String(m) ? 'var(--blue-600)' : 'var(--border-md)'}`,
+                        background: mesesProjecao === String(m) ? 'var(--blue-50)' : 'var(--surface)',
+                        color: mesesProjecao === String(m) ? 'var(--blue-700)' : 'var(--text-secondary)',
+                      }}>
+                      {m}m
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {algoMudou ? `No ritmo médio (${fmtQtd(mediaMensal, unidade)}/mês), em ${mesesProjecao || 0} meses:` : 'Mude o preço ou custo acima pra ver a projeção.'}
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: ganhoProjetadoTotal >= 0 ? 'var(--green-500)' : 'var(--red-500)' }}>
+                  {algoMudou ? `${ganhoProjetadoTotal >= 0 ? '+' : ''}${fmt(ganhoProjetadoTotal)}` : '—'}
+                </div>
+              </div>
+            </div>
+            {algoMudou && mediaMensal === 0 && (
+              <div style={{ fontSize: 11, color: '#92400E', marginBottom: 10 }}>
+                Sem ritmo de vendas conhecido pra esse produto — a projeção acima fica zerada porque não há base histórica pra estimar volume.
+              </div>
+            )}
+
+            {elasticidade && (
+              <div style={{ padding: '10px 14px', background: 'var(--blue-50)', border: '1px solid var(--blue-100)', borderRadius: 8, fontSize: 12.5, lineHeight: 1.5 }}>
+                {elasticidade.tipo === 'aumento' ? (
+                  elasticidade.toleravelPct != null ? (
+                    <>
+                      Aumento de <strong>{fmtPct(elasticidade.pct)}</strong> no preço: pode vender até{' '}
+                      <strong>{fmtPct(elasticidade.toleravelPct)} a menos</strong> em quantidade e ainda manter o mesmo lucro total de hoje.
+                    </>
+                  ) : (
+                    <>Aumento de {fmtPct(elasticidade.pct)} no preço — não dá pra calcular a tolerância (margem de contribuição atual é zero ou negativa).</>
+                  )
+                ) : elasticidade.inviavel ? (
+                  <>
+                    Desconto de <strong>{fmtPct(elasticidade.pct)}</strong> no preço consome toda a margem de contribuição desse produto (ou mais) —
+                    não existe aumento de vendas que compense. Considere um desconto menor.
+                  </>
+                ) : (
+                  <>
+                    Desconto de <strong>{fmtPct(elasticidade.pct)}</strong> no preço: precisa vender{' '}
+                    <strong>{fmtPct(elasticidade.necessarioPct)} a mais</strong> em quantidade só pra manter o mesmo lucro total de hoje.
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* META DE LUCRO */}
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Target size={14} /> Quanto preciso vender pra ganhar X?
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 14 }}>
+              Só considera o lucro desse produto (margem de contribuição) — não os custos fixos da loja inteira. Pra isso, use o Ponto de Equilíbrio em Visão Geral.
+            </div>
+
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 16 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Lucro que eu quero (R$)</label>
+                <input type='number' min='0' step='10' value={metaLucro} onChange={(e) => setMetaLucro(e.target.value)}
+                  style={{ width: 140, height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13 }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Com qual margem?</label>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[['hoje', 'Preço/custo de hoje'], ['simulado', 'Cenário simulado acima']].map(([v, label]) => (
+                    <button key={v} type='button' onClick={() => setModoMeta(v)}
+                      style={{
+                        height: 34, padding: '0 10px', borderRadius: 8, fontSize: 11.5, cursor: 'pointer',
+                        border: `1px solid ${modoMeta === v ? 'var(--blue-600)' : 'var(--border-md)'}`,
+                        background: modoMeta === v ? 'var(--blue-50)' : 'var(--surface)',
+                        color: modoMeta === v ? 'var(--blue-700)' : 'var(--text-secondary)',
+                      }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {contribEscolhida <= 0 ? (
+              <div style={{ fontSize: 12.5, color: 'var(--red-500)' }}>
+                Nesse cenário a margem de contribuição por unidade é zero ou negativa — vendendo mais você perde mais, não ganha. Ajuste o preço ou o custo antes de simular uma meta.
+              </div>
+            ) : !unidadesMeta ? (
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Informe um valor de lucro pra calcular.</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Unidades necessárias</div>
+                  <div style={{ fontSize: 22, fontWeight: 700 }}>{fmtQtd(unidadesMeta, unidade)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>No ritmo médio, leva</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--blue-700)' }}>
+                    {tempoEstimadoMeses != null ? `~${tempoEstimadoMeses.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} meses` : '—'}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Estoque atual cobre?</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: estoqueAtual >= unidadesMeta ? 'var(--green-500)' : 'var(--red-500)' }}>
+                    {estoqueAtual >= unidadesMeta ? 'Sim' : `Faltam ${fmtQtd(unidadesMeta - estoqueAtual, unidade)}`}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 const ABAS_LUCRO_REAL = [
   { id: 'visao-geral', label: 'Visão Geral', icon: TrendingUp },
+  { id: 'calculadora-produtos', label: 'Calculadora de Produtos', icon: Calculator },
   { id: 'patrimonio', label: 'Patrimônio', icon: PiggyBank },
   { id: 'vendas-detalhadas', label: 'Vendas Detalhadas', icon: Table2 },
 ]
@@ -1995,6 +2486,7 @@ export default function FinanceiroLucro({ usuario }) {
       </div>
       <div style={{ flex: 1, overflow: 'hidden' }}>
         {abaAtiva === 'visao-geral' && <VisaoGeral usuario={usuario} />}
+        {abaAtiva === 'calculadora-produtos' && <CalculadoraProdutos />}
         {abaAtiva === 'patrimonio' && <Patrimonio usuario={usuario} />}
         {abaAtiva === 'vendas-detalhadas' && <VendasDetalhadas />}
       </div>

@@ -15,6 +15,7 @@ import {
   gerarPdfRelatorio,
   fmtMoedaBR,
 } from '../utils/relatorios'
+import { hojeLocal } from '../utils/data'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -40,7 +41,7 @@ function ModalConfirmarRecebimento({ contas, onClose, onConfirm }) {
   )
   const [forma, setForma] = useState(null)
   const [valorInformado, setValorInformado] = useState(totalEmAberto.toFixed(2))
-  const [data, setData] = useState(new Date().toISOString().slice(0, 10))
+  const [data, setData] = useState(hojeLocal())
   const [salvando, setSalvando] = useState(false)
 
   const valorFinal = parseFloat(valorInformado) || 0
@@ -427,7 +428,7 @@ function ModalOpcoesRelatorioBaixa({ recebidas, onFechar, onGerar }) {
 // aberto — este último é sempre "hoje", não faz sentido prender ao período).
 function calcPeriodo(tipo) {
   const hoje = new Date()
-  const hojeStr = hoje.toISOString().slice(0, 10)
+  const hojeStr = hojeLocal()
   if (tipo === 'hoje') return { ini: hojeStr, fim: hojeStr }
   if (tipo === 'semana') {
     const d = new Date(hoje)
@@ -1214,7 +1215,7 @@ export default function ContasReceber({ usuario }) {
       const abertas = (await window.api.contasReceber.listar({ situacao: 'A' })).filter(
         (c) => !isCartaoAutomatico(c),
       )
-      const hoje = new Date().toISOString().slice(0, 10)
+      const hoje = hojeLocal()
 
       if (opcoes.emAbertoCliente) {
         const doCliente = abertas.filter((c) => codigosClientes.has(c.codigo_cliente))

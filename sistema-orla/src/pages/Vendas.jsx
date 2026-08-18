@@ -13,6 +13,7 @@ import ModalAcessoNegado from '../components/ModalAcessoNegado'
 import ModalAviso from '../components/ModalAviso'
 import ModalCancelarVenda from '../components/ModalCancelarVenda'
 import { fmtQtd } from '../utils/formatQtd'
+import { hojeLocal, localDateStr } from '../utils/data'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -300,12 +301,12 @@ function ModalPagamento({ total, clienteAnonimo, onClose, onFinalizar, salvando 
   const [parcelasCartao, setParcelasCartao] = useState(1) // parcelamento na maquininha (só informativo)
   const [chequeNumero, setChequeNumero] = useState('')
   const [chequeBanco, setChequeBanco] = useState('')
-  const [chequeVencimento, setChequeVencimento] = useState(new Date().toISOString().slice(0, 10))
+  const [chequeVencimento, setChequeVencimento] = useState(hojeLocal())
 
   // parcelamento do restante / fiado
   const d30 = new Date(); d30.setDate(d30.getDate() + 30)
   const [numParcelas, setNumParcelas] = useState(1)
-  const [primeiroPgto, setPrimeiroPgto] = useState(d30.toISOString().slice(0, 10))
+  const [primeiroPgto, setPrimeiroPgto] = useState(localDateStr(d30))
   const [nomeFiado, setNomeFiado] = useState('')
   const [telefoneFiado, setTelefoneFiado] = useState('')
 
@@ -815,7 +816,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
       const resultado = await window.api.vendas.salvar({
         codigo_cliente: codigoCliente,
         nome_cliente: clienteSel.nome,
-        data: new Date().toISOString().slice(0, 10),
+        data: hojeLocal(),
         tipo_venda: 'V',
         situacao: 'N',
         valor_total: total,

@@ -202,7 +202,6 @@ function BuscaDropdown({ value, onChange, itens, campoBusca, campoLabel, campoSu
 
   const filtrados = itens
     .filter((it) => correspondeTermos(it[campoBusca], busca))
-    .slice(0, 30)
 
   return (
     <div style={{ position: 'relative' }}>

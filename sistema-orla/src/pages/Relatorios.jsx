@@ -18,6 +18,7 @@ import {
 import ThOrdenavel from '../components/ThOrdenavel'
 import { BotaoGerarRelatorio } from '../components/BotoesRelatorio'
 import StatusBadge from '../components/StatusBadge'
+import { hojeLocal } from '../utils/data'
 import ModalConfirmacao from '../components/ModalConfirmacao'
 import { getSituacao as getSituacaoConta, STATUS_CFG } from '../utils/statusContas'
 import { useOrdenacao } from '../utils/ordenacao'
@@ -1102,7 +1103,7 @@ function RelContasReceber() {
 
   useEffect(() => { carregar('') }, [])
 
-  const hoje = new Date().toISOString().slice(0, 10)
+  const hoje = hojeLocal()
   const abertas = contas.filter((c) => c.situacao_docto === 'A')
   const pagas = contas.filter((c) => c.situacao_docto === 'P')
   const vencidas = abertas.filter((c) => c.data_vencimento < hoje)
@@ -1529,7 +1530,7 @@ function RelContasPagar() {
 
   useEffect(() => { carregar('') }, [])
 
-  const hoje = new Date().toISOString().slice(0, 10)
+  const hoje = hojeLocal()
   const abertas = contas.filter((c) => c.situacao_docto === 'A')
   const pagas = contas.filter((c) => c.situacao_docto === 'P')
   const vencidas = abertas.filter((c) => c.data_vencimento < hoje)
@@ -1993,7 +1994,7 @@ function RelFinanceiro() {
 
   useEffect(() => { carregar() }, [])
 
-  const hoje = new Date().toISOString().slice(0, 10)
+  const hoje = hojeLocal()
 
   const totalVendas = vendas.reduce((s, v) => s + (v.valor_total || 0), 0)
   const totalRecebido = contasReceberPeriodo.reduce(
@@ -3186,7 +3187,7 @@ export default function Relatorios({ paginaAtiva }) {
           fim: d.toISOString().slice(0, 10),
         }
       })()
-      const hoje = new Date().toISOString().slice(0, 10)
+      const hoje = hojeLocal()
       const [vendas, produtos, contasRec, contasPag] = await Promise.all([
         window.api.vendas.listar({ dataInicio: ini, dataFim: fim, situacao: 'N' }),
         window.api.produtos.listar({ situacao: 'A' }),

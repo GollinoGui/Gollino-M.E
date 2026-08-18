@@ -13,6 +13,7 @@ import {
   gerarPdfRelatorio,
   fmtMoedaBR,
 } from '../utils/relatorios'
+import { hojeLocal } from '../utils/data'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -22,7 +23,7 @@ const fmtDate = (d) =>
 function getSituacao(c) {
   if (c.situacao_docto === 'P') return 'PAGO'
   if (c.situacao_docto === 'C') return 'CANCELADO'
-  const hoje = new Date().toISOString().slice(0, 10)
+  const hoje = hojeLocal()
   if (c.data_vencimento && c.data_vencimento < hoje) return 'VENCIDO'
   return 'ABERTO'
 }
@@ -64,7 +65,7 @@ function ModalConfirmarPagamento({ contas, onClose, onConfirm, fornecedorFixoMap
   const [valorUnico, setValorUnico] = useState(
     unico ? (contas[0].valor_docto || 0).toFixed(2) : '',
   )
-  const [data, setData] = useState(new Date().toISOString().slice(0, 10))
+  const [data, setData] = useState(hojeLocal())
   const [salvando, setSalvando] = useState(false)
 
   const valorFinal = unico ? parseFloat(valorUnico) || 0 : totalDocumentos
@@ -419,9 +420,9 @@ function ModalNova({ onClose, onSalvar }) {
   // comportamento de sempre — cobre pagamento avulso a quem não tem
   // fornecedor cadastrado). Só filtra a lista pelo que já foi digitado.
   const buscaFornecedor = form.codigo_fornecedor.trim().toLowerCase()
-  const fornecedoresFiltrados = (
-    buscaFornecedor ? fornecedoresLista.filter((fo) => fo.nome.toLowerCase().includes(buscaFornecedor)) : fornecedoresLista
-  ).slice(0, 30)
+  const fornecedoresFiltrados = buscaFornecedor
+    ? fornecedoresLista.filter((fo) => fo.nome.toLowerCase().includes(buscaFornecedor))
+    : []
 
   // Só as contas-folha (nível 4) servem pra classificar um lançamento — os
   // níveis 2/3 são só agrupadores. O grupo (nível 3) vira o "breadcrumb" pra
@@ -434,9 +435,9 @@ function ModalNova({ onClose, onSalvar }) {
     .map((c) => ({ ...c, grupo: gruposPorNumero[c.numero_conta.split('.').slice(0, -1).join('.')] || '' }))
 
   const buscaConta = form.observacao.trim().toLowerCase()
-  const contasFiltradas = (
-    buscaConta ? contasFolha.filter((c) => c.descricao.toLowerCase().includes(buscaConta)) : contasFolha
-  ).slice(0, 30)
+  const contasFiltradas = buscaConta
+    ? contasFolha.filter((c) => c.descricao.toLowerCase().includes(buscaConta))
+    : contasFolha
 
   async function handleSalvar() {
     setSalvando(true)
@@ -1058,7 +1059,7 @@ export default function ContasPagar({ usuario }) {
         valor_docto: parseFloat(form.valor_docto),
         valor_fatura_cheia: form.valor_fatura_cheia ? parseFloat(form.valor_fatura_cheia) : null,
         data_vencimento: form.data_vencimento,
-        data_docto: new Date().toISOString().slice(0, 10),
+        data_docto: hojeLocal(),
         codigo_forma_pagamento: form.codigo_forma_pagamento,
         situacao_docto: 'A',
         usuario: usuario?.usuario || 'sistema',

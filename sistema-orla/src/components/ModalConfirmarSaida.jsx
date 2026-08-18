@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import ModalRelatorioCaixa from './ModalRelatorioCaixa'
 import { montarHistoricoSessao } from '../utils/caixaHistorico'
+import { hojeLocal } from '../utils/data'
 
 // Exibido quando o usuário tenta fechar o app (X da janela / Alt+F4) com o
 // caixa ainda aberto — ver main.js ('close' interceptado) e App.jsx. Avisa,
@@ -33,7 +34,7 @@ export default function ModalConfirmarSaida({ usuario, onCancelar, onCaixaFechad
           ...resumoAntes,
           ...resultado.resumo,
           usuarioFechamento: usuario?.nome || 'sistema',
-          dataFechamento: new Date().toISOString().slice(0, 10),
+          dataFechamento: hojeLocal(),
           horaFechamento: new Date().toTimeString().slice(0, 8),
         },
         historico: snapshotHistorico,

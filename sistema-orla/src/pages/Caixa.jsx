@@ -19,6 +19,7 @@ import {
   gerarPdfRelatorio,
   fmtMoedaBR,
 } from '../utils/relatorios'
+import { hojeLocal } from '../utils/data'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -218,7 +219,7 @@ export default function Caixa({ caixaAberto, setCaixaAberto, usuario, onNavigate
           ...snapshotResumo,
           ...r,
           usuarioFechamento: usuario?.nome || 'sistema',
-          dataFechamento: new Date().toISOString().slice(0, 10),
+          dataFechamento: hojeLocal(),
           horaFechamento: new Date().toTimeString().slice(0, 8),
         },
         historico: snapshotHistorico,

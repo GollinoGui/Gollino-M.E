@@ -2,6 +2,8 @@
 // + data_vencimento). Compartilhado entre ContasReceber.jsx, Relatorios.jsx e
 // DetalhesCliente.jsx para não haver 3 implementações divergindo com o tempo.
 
+import { hojeLocal } from './data'
+
 export const STATUS_CFG = {
   ABERTO: { bg: '#EBF3FC', color: '#185FA5', label: 'Aberto' },
   PARCIAL: { bg: '#FFF7E6', color: '#B7791F', label: 'Parcial' },
@@ -26,7 +28,7 @@ export function getSituacao(c) {
   if (c.situacao_docto === 'C') return 'CANCELADO'
   if (c.situacao_docto === 'X') return 'PREJUIZO'
   if (isCartaoAutomatico(c)) return 'CARTAO'
-  const hoje = new Date().toISOString().slice(0, 10)
+  const hoje = hojeLocal()
   if (c.data_vencimento && c.data_vencimento < hoje) return 'VENCIDO'
   if ((c.valor_pagamento || 0) > 0) return 'PARCIAL'
   return 'ABERTO'

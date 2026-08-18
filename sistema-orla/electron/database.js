@@ -159,7 +159,7 @@ const clientes = {
     let q = supabase.from('clientes').select('*')
     if (filtros.busca) {
       const b = orValue(`%${filtros.busca}%`)
-      q = q.or(`nome.like.${b},cgc.like.${b},cpf.like.${b},codigo.like.${b}`)
+      q = q.or(`nome.ilike.${b},cgc.ilike.${b},cpf.ilike.${b},codigo.ilike.${b}`)
     }
     if (filtros.situacao) q = q.eq('codigo_situacao_cliente', filtros.situacao)
     const { data, error } = await q.order('nome').limit(500)
@@ -197,7 +197,7 @@ const fornecedores = {
     let q = supabase.from('fornecedores').select('*')
     if (filtros.busca) {
       const b = orValue(`%${filtros.busca}%`)
-      q = q.or(`nome.like.${b},nome_fantasia.like.${b},cnpj.like.${b},cpf.like.${b},codigo.like.${b}`)
+      q = q.or(`nome.ilike.${b},nome_fantasia.ilike.${b},cnpj.ilike.${b},cpf.ilike.${b},codigo.ilike.${b}`)
     }
     if (filtros.situacao) q = q.eq('situacao', filtros.situacao)
     const { data, error } = await q.order('nome').limit(500)
@@ -236,7 +236,7 @@ const historicos = {
     let q = supabase.from('historicos').select('*')
     if (filtros.busca) {
       const b = orValue(`%${filtros.busca}%`)
-      q = q.or(`nome.like.${b},codigo.like.${b}`)
+      q = q.or(`nome.ilike.${b},codigo.ilike.${b}`)
     }
     if (filtros.situacao) q = q.eq('situacao', filtros.situacao)
     const { data, error } = await q.order('nome').limit(500)
@@ -270,7 +270,7 @@ const planoContas = {
     let q = supabase.from('plano_contas').select('*')
     if (filtros.busca) {
       const b = orValue(`%${filtros.busca}%`)
-      q = q.or(`descricao.like.${b},codigo.like.${b},numero_conta.like.${b}`)
+      q = q.or(`descricao.ilike.${b},codigo.ilike.${b},numero_conta.ilike.${b}`)
     }
     if (filtros.situacao) q = q.eq('situacao', filtros.situacao)
     if (filtros.nivel) q = q.eq('nivel', filtros.nivel)
@@ -303,7 +303,7 @@ const produtos = {
     let q = supabase.from('produtos').select('*')
     if (filtros.busca) {
       const b = orValue(`%${filtros.busca}%`)
-      q = q.or(`descricao.like.${b},codigo.like.${b},ean.like.${b},referencia.like.${b}`)
+      q = q.or(`descricao.ilike.${b},codigo.ilike.${b},ean.ilike.${b},referencia.ilike.${b}`)
     }
     if (filtros.grupo) q = q.eq('codigo_grupo', filtros.grupo)
     if (filtros.linha) q = q.eq('codigo_linha', filtros.linha)
@@ -770,7 +770,7 @@ const preVendas = {
     let q = supabase.from('pre_vendas').select('*')
     if (filtros.busca) {
       const b = orValue(`%${filtros.busca}%`)
-      q = q.or(`nome_cliente.like.${b},numero.like.${b}`)
+      q = q.or(`nome_cliente.ilike.${b},numero.ilike.${b}`)
     }
     if (filtros.situacao && filtros.situacao !== 'Todas') q = q.eq('situacao', filtros.situacao.toUpperCase())
     const { data, error } = await q.order('id', { ascending: false }).limit(500)
@@ -983,7 +983,7 @@ const haver = {
     let q = supabase.from('clientes').select('codigo, nome, cpf, cgc, telefone, haver').gt('haver', 0)
     if (busca) {
       const b = orValue(`%${busca}%`)
-      q = q.or(`nome.like.${b},codigo.like.${b},cpf.like.${b},cgc.like.${b}`)
+      q = q.or(`nome.ilike.${b},codigo.ilike.${b},cpf.ilike.${b},cgc.ilike.${b}`)
     }
     const { data, error } = await q.order('haver', { ascending: false })
     if (error) throw new Error(error.message)
@@ -1017,7 +1017,7 @@ const pedidosCompra = {
     if (filtros.situacao && filtros.situacao !== 'todos') q = q.eq('situacao', filtros.situacao)
     if (filtros.busca) {
       const b = orValue(`%${filtros.busca}%`)
-      q = q.or(`fornecedor.like.${b},numero.like.${b}`)
+      q = q.or(`fornecedor.ilike.${b},numero.ilike.${b}`)
     }
     const { data: rows, error } = await q.order('id', { ascending: false }).limit(200)
     if (error) throw new Error(error.message)
@@ -1171,7 +1171,7 @@ const entradasMercadoria = {
     let q = supabase.from('entradas_mercadoria').select('*')
     if (filtros.busca) {
       const b = orValue(`%${filtros.busca}%`)
-      q = q.or(`numero.like.${b},numero_nota.like.${b}`)
+      q = q.or(`numero.ilike.${b},numero_nota.ilike.${b}`)
     }
     const { data, error } = await q.order('id', { ascending: false }).limit(200)
     if (error) throw new Error(error.message)
@@ -1375,7 +1375,7 @@ const cheques = {
     if (filtros.situacao && filtros.situacao !== 'todos') q = q.eq('situacao', filtros.situacao)
     if (filtros.busca) {
       const b = orValue(`%${filtros.busca}%`)
-      q = q.or(`nome_pessoa.like.${b},numero.like.${b}`)
+      q = q.or(`nome_pessoa.ilike.${b},numero.ilike.${b}`)
     }
     if (filtros.dataInicio) q = q.gte('data_vencimento', filtros.dataInicio)
     if (filtros.dataFim) q = q.lte('data_vencimento', filtros.dataFim)
@@ -1424,7 +1424,7 @@ const lancamentosExtras = {
     if (filtros.situacao && filtros.situacao !== 'todos') q = q.eq('situacao', filtros.situacao)
     if (filtros.busca) {
       const b = orValue(`%${filtros.busca}%`)
-      q = q.or(`descricao.like.${b},nome_pessoa.like.${b}`)
+      q = q.or(`descricao.ilike.${b},nome_pessoa.ilike.${b}`)
     }
     if (filtros.dataInicio) q = q.gte('data', filtros.dataInicio)
     if (filtros.dataFim) q = q.lte('data', filtros.dataFim)
@@ -1640,7 +1640,7 @@ const nfe = {
     if (filtros.status === 'sem') q = q.or('numero_nfe.is.null,numero_nfe.eq.')
     if (filtros.busca) {
       const b = orValue(`%${filtros.busca}%`)
-      q = q.or(`orcamento.like.${b},numero_nfe.like.${b}`)
+      q = q.or(`orcamento.ilike.${b},numero_nfe.ilike.${b}`)
     }
     const { data, error } = await q.order('data', { ascending: false }).order('hora_cadastro', { ascending: false }).limit(500)
     if (error) throw new Error(error.message)
@@ -1697,7 +1697,10 @@ const manutencao = {
 
 // Taxa fixa (%) usada na coluna "Markup %" de Vendas Detalhadas — definida
 // pelo Elter, não é calculada a partir de custo/preço do item. Resultado da
-// linha = preço de venda × esta taxa.
+// linha = preço de venda × esta taxa (número sintético, suaviza item com
+// custo desatualizado). "Lucro bruto" = (preço de venda − custo de compra) −
+// resultado — o que sobra da margem real depois de descontar esse valor
+// sintético já contabilizado como "resultado".
 const MARKUP_FIXO_VENDAS_DETALHADAS = 14.1757
 
 const relatorios = {
@@ -1804,6 +1807,7 @@ const relatorios = {
       const venda = vendaPorOrcamento[it.orcamento] || {}
       const custoCompra = (it.preco_custo || 0) * (it.quantidade || 0)
       const precoVenda = it.valor_total || 0
+      const resultado = precoVenda * (MARKUP_FIXO_VENDAS_DETALHADAS / 100)
       return {
         orcamento: it.orcamento,
         data: venda.data,
@@ -1813,9 +1817,11 @@ const relatorios = {
         unidade: it.unidade,
         quantidade: it.quantidade,
         custo_compra: custoCompra,
+        custo_unitario: it.preco_custo || 0,
         preco_venda: precoVenda,
         markup_percentual: MARKUP_FIXO_VENDAS_DETALHADAS,
-        resultado: precoVenda * (MARKUP_FIXO_VENDAS_DETALHADAS / 100),
+        resultado,
+        lucro_bruto: (precoVenda - custoCompra) - resultado,
         numero_nfe: venda.numero_nfe,
         imposto_percentual: venda.imposto_percentual,
       }
