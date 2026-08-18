@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Building2, Save, Upload, Check } from 'lucide-react'
+import { Building2, Save, Upload, Check, RefreshCw } from 'lucide-react'
 import { menus as todosMenus } from '../components/layout/menus'
 
 function fmtPhone(v) {
@@ -90,6 +90,10 @@ export default function Configuracoes() {
   const [backupLoading, setBackupLoading] = useState(false)
   const [restaurandoBackup, setRestaurandoBackup] = useState(false)
 
+  const [versaoAtual, setVersaoAtual] = useState('')
+  const [verificandoUpdate, setVerificandoUpdate] = useState(false)
+  const [updateMsg, setUpdateMsg] = useState('')
+
   const [usuariosList, setUsuariosList] = useState(null)
   const [usuarioSelecionado, setUsuarioSelecionado] = useState(null)
   const [menusOcultosEdicao, setMenusOcultosEdicao] = useState([])
@@ -111,6 +115,47 @@ export default function Configuracoes() {
       setBackupMsg('Erro ao restaurar backup.')
     } finally {
       setRestaurandoBackup(false)
+    }
+  }
+
+  useEffect(() => {
+    window.api?.app?.versao?.().then(setVersaoAtual).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!window.api?.updates) return
+    const offDisponivel = window.api.updates.aoDisponivel((versao) => {
+      setUpdateMsg(`Versão nova encontrada${versao ? ` (${versao})` : ''} — baixando em segundo plano. Você recebe um aviso quando estiver pronta pra instalar.`)
+      setVerificandoUpdate(false)
+    })
+    const offNaoDisponivel = window.api.updates.aoNaoDisponivel(() => {
+      setUpdateMsg('Você já está na versão mais recente.')
+      setVerificandoUpdate(false)
+    })
+    const offBaixado = window.api.updates.aoBaixado(() => {
+      setUpdateMsg('Atualização já baixada — use o aviso "Reiniciar agora" que apareceu na tela pra instalar.')
+      setVerificandoUpdate(false)
+    })
+    const offErro = window.api.updates.aoErro((mensagem) => {
+      setUpdateMsg(`Erro ao verificar atualização: ${mensagem}`)
+      setVerificandoUpdate(false)
+    })
+    return () => {
+      offDisponivel?.()
+      offNaoDisponivel?.()
+      offBaixado?.()
+      offErro?.()
+    }
+  }, [])
+
+  async function verificarAtualizacao() {
+    setVerificandoUpdate(true)
+    setUpdateMsg('Verificando...')
+    try {
+      await window.api.updates.verificarAgora()
+    } catch {
+      setUpdateMsg('Erro ao verificar atualização.')
+      setVerificandoUpdate(false)
     }
   }
 
@@ -510,6 +555,45 @@ export default function Configuracoes() {
 
         {abaAtiva === 'sistema' && (
           <div style={{ maxWidth: 860, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                VERSÃO E ATUALIZAÇÕES
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 13 }}>
+                    Versão instalada: <strong>{versaoAtual || '—'}</strong>
+                  </div>
+                  {updateMsg && (
+                    <div style={{ fontSize: 12, color: updateMsg.startsWith('Erro') ? '#C53030' : 'var(--text-muted)', marginTop: 6 }}>
+                      {updateMsg}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={verificarAtualizacao}
+                  disabled={verificandoUpdate}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '9px 18px',
+                    border: '1px solid var(--border-md)',
+                    borderRadius: 'var(--radius-md)',
+                    fontSize: 13,
+                    color: 'var(--text-primary)',
+                    cursor: verificandoUpdate ? 'wait' : 'pointer',
+                    opacity: verificandoUpdate ? 0.6 : 1,
+                    whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <RefreshCw size={14} />
+                  {verificandoUpdate ? 'Verificando...' : 'Verificar atualização'}
+                </button>
+              </div>
+            </div>
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24 }}>
               <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 8 }}>PREFERÊNCIAS</div>
               <div style={{ fontSize: 13, color: 'var(--text-muted)', fontStyle: 'italic' }}>

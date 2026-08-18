@@ -26,20 +26,33 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('app:solicitarFechamento', listener)
     },
     confirmarSaida: () => ipcRenderer.invoke('app:confirmarSaida'),
+    versao: () => ipcRenderer.invoke('app:versao'),
   },
 
-  // ATUALIZAÇÕES (autoUpdater no main.js envia os eventos; UI é o ModalConfirmacao no React)
+  // ATUALIZAÇÕES (autoUpdater no main.js envia os eventos; UI é o ModalConfirmacao no
+  // React pro popup global, e a aba Sistema em Configurações pro botão manual)
   updates: {
     aoDisponivel: (callback) => {
-      const listener = () => callback()
+      const listener = (_e, versao) => callback(versao)
       ipcRenderer.on('update:disponivel', listener)
       return () => ipcRenderer.removeListener('update:disponivel', listener)
+    },
+    aoNaoDisponivel: (callback) => {
+      const listener = () => callback()
+      ipcRenderer.on('update:naoDisponivel', listener)
+      return () => ipcRenderer.removeListener('update:naoDisponivel', listener)
     },
     aoBaixado: (callback) => {
       const listener = () => callback()
       ipcRenderer.on('update:baixado', listener)
       return () => ipcRenderer.removeListener('update:baixado', listener)
     },
+    aoErro: (callback) => {
+      const listener = (_e, mensagem) => callback(mensagem)
+      ipcRenderer.on('update:erro', listener)
+      return () => ipcRenderer.removeListener('update:erro', listener)
+    },
+    verificarAgora: () => ipcRenderer.invoke('update:verificarAgora'),
     reiniciarAgora: () => ipcRenderer.invoke('update:reiniciarAgora'),
   },
 

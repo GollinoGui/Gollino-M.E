@@ -91,14 +91,18 @@ app.whenReady().then(async () => {
   setupAutoUpdater()
 })
 
-// Auto-update via GitHub Releases — só faz sentido na versão instalada (não em dev)
+// Auto-update via GitHub Releases — só faz sentido na versão instalada (não em dev).
+// Os listeners ficam registrados uma vez só; checkForUpdates() pode ser chamado
+// de novo depois (ver 'update:verificarAgora') que os mesmos eventos disparam.
 function setupAutoUpdater() {
   if (isDev) return
 
-  autoUpdater.checkForUpdates()
+  autoUpdater.on('update-available', (info) => {
+    mainWindow?.webContents.send('update:disponivel', info?.version)
+  })
 
-  autoUpdater.on('update-available', () => {
-    mainWindow?.webContents.send('update:disponivel')
+  autoUpdater.on('update-not-available', () => {
+    mainWindow?.webContents.send('update:naoDisponivel')
   })
 
   autoUpdater.on('update-downloaded', () => {
@@ -107,8 +111,23 @@ function setupAutoUpdater() {
 
   autoUpdater.on('error', (err) => {
     console.error('Erro no auto-update:', err.message)
+    mainWindow?.webContents.send('update:erro', err.message)
   })
+
+  autoUpdater.checkForUpdates()
 }
+
+ipcMain.handle('app:versao', () => app.getVersion())
+
+// Botão "Verificar atualização" em Configurações — mesma checagem do startup,
+// só que sob demanda. Em dev não há o que checar (sem app-update.yml).
+ipcMain.handle('update:verificarAgora', () => {
+  if (isDev) {
+    mainWindow?.webContents.send('update:erro', 'Checagem de atualização não roda em modo de desenvolvimento.')
+    return
+  }
+  autoUpdater.checkForUpdates()
+})
 
 // Popups de atualização são renderizados no React (ver ModalConfirmacao) em
 // vez de dialog.showMessageBox — o clique em "Reiniciar agora" chega aqui.
