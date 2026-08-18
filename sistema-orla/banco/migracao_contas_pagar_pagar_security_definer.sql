@@ -1,0 +1,20 @@
+-- Já aplicada em produção via MCP do Supabase em 2026-08-18 — este arquivo é
+-- só o registro em versionamento, não precisa rodar de novo.
+--
+-- Bug: desde a liberação de nível 1 (Rosângela) em contas_pagar_pagar
+-- (ver migracao_contas_pagar_pagar_nivel1.sql), NENHUM pagamento dela nunca
+-- funcionou — sempre dava "Conta a pagar não encontrada", mesmo com a conta
+-- existindo e em aberto. Causa: a função faz `SELECT ... FOR UPDATE` antes de
+-- pagar, e o Postgres exige que a linha passe também pela política de UPDATE
+-- (tier2_update, nível >= 2) quando há FOR UPDATE — não só pela de SELECT
+-- (tier1_select, nível >= 1). Como a função é SECURITY INVOKER, ela roda com
+-- o nível de quem chama; pra nível 1 a linha "sumia" no travamento antes de
+-- chegar em qualquer outra checagem.
+--
+-- Fix: marcar a função como SECURITY DEFINER, mesmo padrão já usado em
+-- caixa_abrir e contas_receber_baixar_prejuizo — ela passa a rodar com nível
+-- de confiança próprio, mas mantém intactas todas as checagens internas
+-- (nivel_atual() >= 1, situação da conta, valor, usuário pra auditoria).
+-- Não muda a política de UPDATE direto na tabela (continua nível >= 2) nem
+-- dá acesso a mais nada pra Rosângela além de confirmar pagamento.
+ALTER FUNCTION public.contas_pagar_pagar(integer, numeric, numeric, text, text, text) SECURITY DEFINER;
