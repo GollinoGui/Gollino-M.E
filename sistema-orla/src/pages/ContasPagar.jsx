@@ -817,7 +817,11 @@ export default function ContasPagar({ usuario }) {
   const [dados, setDados] = useState([])
   const [loading, setLoading] = useState(true)
   const [busca, setBusca] = useState('')
-  const [filtroStatus, setFiltroStatus] = useState('todos')
+  // Padrão mostra só vencidos+abertos (situacao_docto='A' no banco já cobre os
+  // dois — a distinção é só a data de vencimento). Pagos/cancelados ficam de
+  // fora até o usuário filtrar por eles explicitamente — não somem, só não
+  // poluem a lista à primeira vista.
+  const [filtroStatus, setFiltroStatus] = useState('aberto')
   const [selecionadas, setSelecionadas] = useState([])
   const [lotePagamento, setLotePagamento] = useState(null)
   const [modalNova, setModalNova] = useState(false)
@@ -1161,10 +1165,10 @@ export default function ContasPagar({ usuario }) {
               fontSize: 13,
             }}
           >
-            <option value='todos'>Todos</option>
-            <option value='aberto'>Aberto</option>
+            <option value='aberto'>Em aberto</option>
             <option value='vencido'>Vencido</option>
             <option value='pago'>Pago</option>
+            <option value='todos'>Todos</option>
           </select>
           <button
             onClick={carregar}
