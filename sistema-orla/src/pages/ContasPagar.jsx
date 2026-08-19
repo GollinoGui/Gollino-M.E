@@ -6,9 +6,8 @@ import { useOrdenacao } from '../utils/ordenacao'
 import { corGastoFixo } from '../utils/coresGastoFixo'
 import {
   exportarCSV,
-  agruparPorPessoa,
   buscarEmpresa,
-  gerarHtmlAgrupadoPorPessoa,
+  gerarHtmlListaSimples,
   gerarHtmlSecoes,
   gerarPdfRelatorio,
   fmtMoedaBR,
@@ -889,29 +888,18 @@ export default function ContasPagar({ usuario }) {
     },
   })
 
-  // ── Relatório (Excel/PDF), agrupado por fornecedor e em ordem alfabética ──
+  // ── Relatório (Excel/PDF), em ordem de vencimento ───────────────────────
   function exportarExcel() {
-    const grupos = agruparPorPessoa(filtrados, { codigoKey: 'codigo_fornecedor', nomeKey: 'nome_fornecedor' })
-    const linhas = []
-    for (const g of grupos) {
-      for (const c of g.itens) {
-        linhas.push({
-          Documento: c.nro_docto || '—',
-          Fornecedor: g.codigo ? `${g.nome} (#${g.codigo})` : g.nome,
-          Vencimento: fmtDate(c.data_vencimento),
-          'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
-          Situação: STATUS_CFG[getSituacao(c)].label,
-        })
-      }
-      const subtotal = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
-      linhas.push({
-        Documento: '',
-        Fornecedor: `SUBTOTAL — ${g.codigo ? `${g.nome} (#${g.codigo})` : g.nome}`,
-        Vencimento: '',
-        'Valor (R$)': subtotal.toFixed(2).replace('.', ','),
-        Situação: '',
-      })
-    }
+    const porVencimento = [...filtrados].sort((a, b) =>
+      (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
+    )
+    const linhas = porVencimento.map((c) => ({
+      Documento: c.nro_docto || '—',
+      Fornecedor: c.codigo_fornecedor ? `${c.nome_fornecedor} (#${c.codigo_fornecedor})` : c.nome_fornecedor,
+      Vencimento: fmtDate(c.data_vencimento),
+      'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
+      Situação: STATUS_CFG[getSituacao(c)].label,
+    }))
     const totalGeral = filtrados.reduce((s, c) => s + (c.valor_docto || 0), 0)
     linhas.push({
       Documento: '',
@@ -925,27 +913,26 @@ export default function ContasPagar({ usuario }) {
 
   async function gerarRelatorioPDF() {
     const empresa = await buscarEmpresa()
-    const grupos = agruparPorPessoa(filtrados, { codigoKey: 'codigo_fornecedor', nomeKey: 'nome_fornecedor' })
+    const porVencimento = [...filtrados].sort((a, b) =>
+      (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
+    )
     const colunas = [
       { label: 'Documento' },
+      { label: 'Fornecedor' },
       { label: 'Vencimento' },
       { label: 'Valor', num: true },
       { label: 'Situação' },
     ]
     const totalGeral = filtrados.reduce((s, c) => s + (c.valor_docto || 0), 0)
-    const html = gerarHtmlAgrupadoPorPessoa({
+    const html = gerarHtmlListaSimples({
       empresa,
       titulo: 'Contas a Pagar',
-      subtitulo: `${filtrados.length} conta(s) — gerado em ${fmtDate(new Date().toISOString().slice(0, 10))}`,
+      subtitulo: `${filtrados.length} conta(s), ordenadas por vencimento — gerado em ${fmtDate(new Date().toISOString().slice(0, 10))}`,
       colunas,
-      grupos,
+      linhas: porVencimento,
       montarLinha: (c) =>
-        `<tr><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td>${STATUS_CFG[getSituacao(c)].label}</td></tr>`,
-      montarSubtotal: (g) => {
-        const subtotal = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
-        return `<td colspan="2">Subtotal</td><td class="num">${fmtMoedaBR(subtotal)}</td><td></td>`
-      },
-      montarTotalGeral: () => `<td colspan="2">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalGeral)}</td><td></td>`,
+        `<tr><td>${c.nro_docto || '—'}</td><td>${c.nome_fornecedor || c.codigo_fornecedor || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td>${STATUS_CFG[getSituacao(c)].label}</td></tr>`,
+      montarTotalGeral: () => `<td colspan="3">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalGeral)}</td><td></td>`,
     })
     await gerarPdfRelatorio(html, `contas_pagar_${new Date().toISOString().slice(0, 10)}`)
   }

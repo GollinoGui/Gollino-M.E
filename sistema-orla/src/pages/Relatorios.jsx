@@ -26,9 +26,7 @@ import { fmtQtd } from '../utils/formatQtd'
 import { totalRecebidoSessao } from '../utils/caixaHistorico'
 import {
   exportarCSV,
-  agruparPorPessoa,
   buscarEmpresa,
-  gerarHtmlAgrupadoPorPessoa,
   gerarHtmlListaSimples,
   gerarPdfRelatorio,
   fmtMoedaBR,
@@ -1135,32 +1133,19 @@ function RelContasReceber() {
   })
 
   function exportarExcel() {
-    const grupos = agruparPorPessoa(contas, { codigoKey: 'codigo_cliente', nomeKey: 'nome_cliente' })
-    const linhas = []
-    for (const g of grupos) {
-      for (const c of g.itens) {
-        linhas.push({
-          Documento: c.nro_docto || '—',
-          Seq: c.seq_docto || '—',
-          Cliente: pessoaLabel(g.nome, g.codigo),
-          Vencimento: fmtDate(c.data_vencimento),
-          'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
-          'Pago (R$)': (c.valor_pagamento || 0).toFixed(2).replace('.', ','),
-          'Em Aberto (R$)': ((c.valor_docto || 0) - (c.valor_pagamento || 0)).toFixed(2).replace('.', ','),
-          Situação: situacaoDe(c),
-        })
-      }
-      const subDocto = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
-      const subPago = g.itens.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
-      const subAberto = g.itens.reduce((s, c) => s + ((c.valor_docto || 0) - (c.valor_pagamento || 0)), 0)
-      linhas.push({
-        Documento: '', Seq: '', Cliente: `SUBTOTAL — ${pessoaLabel(g.nome, g.codigo)}`, Vencimento: '',
-        'Valor (R$)': subDocto.toFixed(2).replace('.', ','),
-        'Pago (R$)': subPago.toFixed(2).replace('.', ','),
-        'Em Aberto (R$)': subAberto.toFixed(2).replace('.', ','),
-        Situação: '',
-      })
-    }
+    const porVencimento = [...contas].sort((a, b) =>
+      (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
+    )
+    const linhas = porVencimento.map((c) => ({
+      Documento: c.nro_docto || '—',
+      Seq: c.seq_docto || '—',
+      Cliente: pessoaLabel(c.nome_cliente, c.codigo_cliente),
+      Vencimento: fmtDate(c.data_vencimento),
+      'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
+      'Pago (R$)': (c.valor_pagamento || 0).toFixed(2).replace('.', ','),
+      'Em Aberto (R$)': ((c.valor_docto || 0) - (c.valor_pagamento || 0)).toFixed(2).replace('.', ','),
+      Situação: situacaoDe(c),
+    }))
     const totalDocto = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
     const totalPagoLinhas = contas.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
     linhas.push({
@@ -1175,35 +1160,32 @@ function RelContasReceber() {
 
   async function gerarRelatorioPDF() {
     const empresa = await buscarEmpresa()
-    const grupos = agruparPorPessoa(contas, { codigoKey: 'codigo_cliente', nomeKey: 'nome_cliente' })
+    const porVencimento = [...contas].sort((a, b) =>
+      (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
+    )
     const totalDocto = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
     const totalPagoLinhas = contas.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
     const colunas = [
       { label: 'Documento' },
+      { label: 'Cliente' },
       { label: 'Vencimento' },
       { label: 'Valor', num: true },
       { label: 'Pago', num: true },
       { label: 'Em Aberto', num: true },
       { label: 'Situação' },
     ]
-    const html = gerarHtmlAgrupadoPorPessoa({
+    const html = gerarHtmlListaSimples({
       empresa,
       titulo: 'Contas a Receber',
-      subtitulo: `${contas.length} parcela(s)`,
+      subtitulo: `${contas.length} parcela(s), ordenadas por vencimento`,
       colunas,
-      grupos,
+      linhas: porVencimento,
       montarLinha: (c) => {
         const emAberto = (c.valor_docto || 0) - (c.valor_pagamento || 0)
-        return `<tr><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(c.valor_pagamento || 0)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${situacaoDe(c)}</td></tr>`
-      },
-      montarSubtotal: (g) => {
-        const subDocto = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
-        const subPago = g.itens.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
-        const subAberto = g.itens.reduce((s, c) => s + ((c.valor_docto || 0) - (c.valor_pagamento || 0)), 0)
-        return `<td colspan="2">Subtotal</td><td class="num">${fmtMoedaBR(subDocto)}</td><td class="num">${fmtMoedaBR(subPago)}</td><td class="num">${fmtMoedaBR(subAberto)}</td><td></td>`
+        return `<tr><td>${c.nro_docto || '—'}</td><td>${pessoaLabel(c.nome_cliente, c.codigo_cliente)}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(c.valor_pagamento || 0)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${situacaoDe(c)}</td></tr>`
       },
       montarTotalGeral: () =>
-        `<td colspan="2">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDocto)}</td><td class="num">${fmtMoedaBR(totalPagoLinhas)}</td><td class="num">${fmtMoedaBR(totalAberto)}</td><td></td>`,
+        `<td colspan="3">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDocto)}</td><td class="num">${fmtMoedaBR(totalPagoLinhas)}</td><td class="num">${fmtMoedaBR(totalAberto)}</td><td></td>`,
     })
     await gerarPdfRelatorio(html, 'contas_receber')
   }
@@ -1558,24 +1540,16 @@ function RelContasPagar() {
   })
 
   function exportarExcel() {
-    const grupos = agruparPorPessoa(contas, { codigoKey: 'codigo_fornecedor', nomeKey: 'nome_fornecedor' })
-    const linhas = []
-    for (const g of grupos) {
-      for (const c of g.itens) {
-        linhas.push({
-          Documento: c.nro_docto || '—',
-          Fornecedor: pessoaLabel(g.nome, g.codigo),
-          Vencimento: fmtDate(c.data_vencimento),
-          'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
-          Situação: situacaoDe(c),
-        })
-      }
-      const subtotal = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
-      linhas.push({
-        Documento: '', Fornecedor: `SUBTOTAL — ${pessoaLabel(g.nome, g.codigo)}`, Vencimento: '',
-        'Valor (R$)': subtotal.toFixed(2).replace('.', ','), Situação: '',
-      })
-    }
+    const porVencimento = [...contas].sort((a, b) =>
+      (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
+    )
+    const linhas = porVencimento.map((c) => ({
+      Documento: c.nro_docto || '—',
+      Fornecedor: pessoaLabel(c.nome_fornecedor, c.codigo_fornecedor),
+      Vencimento: fmtDate(c.data_vencimento),
+      'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
+      Situação: situacaoDe(c),
+    }))
     const totalGeral = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
     linhas.push({
       Documento: '', Fornecedor: 'TOTAL GERAL', Vencimento: '',
@@ -1586,27 +1560,26 @@ function RelContasPagar() {
 
   async function gerarRelatorioPDF() {
     const empresa = await buscarEmpresa()
-    const grupos = agruparPorPessoa(contas, { codigoKey: 'codigo_fornecedor', nomeKey: 'nome_fornecedor' })
+    const porVencimento = [...contas].sort((a, b) =>
+      (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
+    )
     const totalGeral = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
     const colunas = [
       { label: 'Documento' },
+      { label: 'Fornecedor' },
       { label: 'Vencimento' },
       { label: 'Valor', num: true },
       { label: 'Situação' },
     ]
-    const html = gerarHtmlAgrupadoPorPessoa({
+    const html = gerarHtmlListaSimples({
       empresa,
       titulo: 'Contas a Pagar',
-      subtitulo: `${contas.length} conta(s)`,
+      subtitulo: `${contas.length} conta(s), ordenadas por vencimento`,
       colunas,
-      grupos,
+      linhas: porVencimento,
       montarLinha: (c) =>
-        `<tr><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td>${situacaoDe(c)}</td></tr>`,
-      montarSubtotal: (g) => {
-        const subtotal = g.itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
-        return `<td colspan="2">Subtotal</td><td class="num">${fmtMoedaBR(subtotal)}</td><td></td>`
-      },
-      montarTotalGeral: () => `<td colspan="2">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalGeral)}</td><td></td>`,
+        `<tr><td>${c.nro_docto || '—'}</td><td>${pessoaLabel(c.nome_fornecedor, c.codigo_fornecedor)}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td>${situacaoDe(c)}</td></tr>`,
+      montarTotalGeral: () => `<td colspan="3">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalGeral)}</td><td></td>`,
     })
     await gerarPdfRelatorio(html, 'contas_pagar')
   }
