@@ -1142,6 +1142,7 @@ const UNIDADES = [
   { codigo: 'RO', label: 'Rolo' },
   { codigo: 'PAR', label: 'Par' },
   { codigo: 'DZ', label: 'Dúzia' },
+  { codigo: 'CT', label: 'Cento' },
   { codigo: 'GL', label: 'Galão' },
 ]
 
