@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, ArrowDownCircle, ArrowUpCircle, Package, RefreshCw, ShoppingCart, ClipboardList, TrendingUp, ChevronRight } from 'lucide-react'
+import { Search, ArrowDownCircle, ArrowUpCircle, Package, RefreshCw, ShoppingCart, ClipboardList, TrendingUp, ChevronRight, Edit2 } from 'lucide-react'
 import ModalAcessoNegado from '../components/ModalAcessoNegado'
 import ModalAviso from '../components/ModalAviso'
 import ModalConfirmacao from '../components/ModalConfirmacao'
@@ -265,6 +265,220 @@ function addMesesClamp(dataStr, n) {
   return `${alvo.getFullYear()}-${String(alvo.getMonth() + 1).padStart(2, '0')}-${String(alvo.getDate()).padStart(2, '0')}`
 }
 
+// Mini-formulário "adicionar item" — usado tanto pra criar uma entrada nova
+// (ModalEntradaMercadoria) quanto pra completar uma já confirmada
+// (ModalCompletarEntrada), por isso extraído em vez de duplicado.
+function ItemEntradaForm({ produtos, onAdicionar }) {
+  const [prodBusca, setProdBusca] = useState(null)
+  const [itemKey, setItemKey] = useState(0)
+  const [tipo, setTipo] = useState('Revenda')
+  const [qtde, setQtde] = useState('')
+  const [precoCusto, setPrecoCusto] = useState('')
+  const [precoVista, setPrecoVista] = useState('')
+  const [precoPrazo, setPrecoPrazo] = useState('')
+  const [rateio, setRateio] = useState('')
+
+  function selecionarProduto(p) {
+    setProdBusca(p)
+    if (p) {
+      setTipo(p.revenda_consumo === 'C' ? 'Uso e Consumo' : 'Revenda')
+      setPrecoCusto((p.preco_custo_atual || 0).toFixed(2))
+      setPrecoVista((p.preco_venda_vista || 0).toFixed(2))
+      setPrecoPrazo((p.preco_venda_prazo || 0).toFixed(2))
+    }
+  }
+
+  function limpar() {
+    setProdBusca(null)
+    setQtde('')
+    setPrecoCusto('')
+    setPrecoVista('')
+    setPrecoPrazo('')
+    setRateio('')
+    setItemKey((k) => k + 1)
+  }
+
+  function addItem() {
+    const q = parseFloat(qtde)
+    if (!prodBusca || !(q > 0)) return
+    const custo = parseFloat(precoCusto) || 0
+    const vista = parseFloat(precoVista) || 0
+    const prazo = parseFloat(precoPrazo) || 0
+    onAdicionar({
+      codigo_produto: prodBusca.codigo,
+      descricao: prodBusca.descricao,
+      unidade: prodBusca.unidade,
+      tipo,
+      quantidade: q,
+      rateio_despesas: parseFloat(rateio) || 0,
+      preco_custo: custo,
+      preco_venda_vista: vista,
+      preco_venda_prazo: prazo,
+      margem_vista: vista > 0 ? (vista - custo) / vista : 0,
+      margem_prazo: prazo > 0 ? (prazo - custo) / prazo : 0,
+    })
+    limpar()
+  }
+
+  return (
+    <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 12 }}>
+      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>ADICIONAR ITEM</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 0.9fr 95px 105px 105px 105px', gap: 8, marginBottom: 8 }}>
+        <div>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Produto</label>
+          <ProdutoDropdown key={itemKey} value='' onChange={selecionarProduto} produtos={produtos} placeholder='Buscar...' />
+        </div>
+        <div>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Tipo</label>
+          <select value={tipo} onChange={(e) => setTipo(e.target.value)} style={{ ...inp, borderRadius: 'var(--radius-md)' }}>
+            <option value='Revenda'>Revenda</option>
+            <option value='Uso e Consumo'>Uso e Consumo</option>
+          </select>
+        </div>
+        <div>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Qtde{prodBusca ? ` (${prodBusca.unidade || 'UN'})` : ''}</label>
+          <input value={qtde} onChange={(e) => setQtde(e.target.value)} type='number' min='0' style={inp} />
+        </div>
+        <div>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Custo (R$)</label>
+          <input value={precoCusto} onChange={(e) => setPrecoCusto(e.target.value)} type='number' min='0' style={inp} />
+        </div>
+        <div>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Preço à vista</label>
+          <input value={precoVista} onChange={(e) => setPrecoVista(e.target.value)} type='number' min='0' style={inp} />
+        </div>
+        <div>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Preço a prazo</label>
+          <input value={precoPrazo} onChange={(e) => setPrecoPrazo(e.target.value)} type='number' min='0' style={inp} />
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
+        <div>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Outras despesas rateadas (R$)</label>
+          <input value={rateio} onChange={(e) => setRateio(e.target.value)} type='number' min='0' style={inp} placeholder='Frete/despesas deste item' />
+        </div>
+        <button onClick={addItem} disabled={!prodBusca || !(parseFloat(qtde) > 0)} style={{ height: 34, padding: '0 14px', background: 'var(--blue-600)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, opacity: prodBusca && parseFloat(qtde) > 0 ? 1 : 0.4 }}>
+          + Adicionar item
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Mini-formulário "adicionar fatura" — mesmo motivo de extração do de cima.
+// `restante` é quem chama decide: no lançamento de uma entrada nova é
+// totalItens-totalFaturas dela mesma; ao completar uma já confirmada, é o
+// saldo considerando o que já estava lançado antes.
+function FaturaEntradaForm({ contasFolha, historicos, restante, onAdicionar, onAdicionarVarias }) {
+  const [contaSel, setContaSel] = useState(null)
+  const [historicoSel, setHistoricoSel] = useState(null)
+  const [faturaKey, setFaturaKey] = useState(0)
+  const [nroDocto, setNroDocto] = useState('')
+  const [vencimento, setVencimento] = useState('')
+  const [valorFatura, setValorFatura] = useState('')
+  const [numParcelas, setNumParcelas] = useState('')
+
+  function limpar() {
+    setContaSel(null)
+    setHistoricoSel(null)
+    setNroDocto('')
+    setVencimento('')
+    setValorFatura('')
+    setFaturaKey((k) => k + 1)
+  }
+
+  function addFatura() {
+    const v = parseFloat(valorFatura)
+    if (!(v > 0) || !vencimento) return
+    onAdicionar({
+      codigo_plano_conta: contaSel?.codigo || null,
+      conta_label: contaSel?.descricao || '',
+      codigo_historico: historicoSel?.codigo || null,
+      historico_label: historicoSel?.nome || '',
+      nro_docto: nroDocto,
+      data_vencimento: vencimento,
+      valor_docto: v,
+    })
+    limpar()
+  }
+
+  // Divide o valor restante em N parcelas mensais a partir do vencimento
+  // informado, repetindo plano de contas/histórico/nº docto já preenchidos.
+  // A última parcela absorve o arredondamento pra bater centavo a centavo.
+  function gerarParcelas() {
+    const n = parseInt(numParcelas)
+    if (!(n > 0) || !vencimento || !(restante > 0)) return
+    const restanteCentavos = Math.round(restante * 100)
+    const baseCentavos = Math.floor(restanteCentavos / n)
+    const novas = Array.from({ length: n }, (_, i) => {
+      const valorCentavos = i < n - 1 ? baseCentavos : restanteCentavos - baseCentavos * (n - 1)
+      return {
+        codigo_plano_conta: contaSel?.codigo || null,
+        conta_label: contaSel?.descricao || '',
+        codigo_historico: historicoSel?.codigo || null,
+        historico_label: historicoSel?.nome || '',
+        nro_docto: nroDocto,
+        data_vencimento: addMesesClamp(vencimento, i),
+        valor_docto: valorCentavos / 100,
+      }
+    })
+    onAdicionarVarias(novas)
+    limpar()
+    setNumParcelas('')
+  }
+
+  return (
+    <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 12 }}>
+      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>ADICIONAR FATURA</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr 110px 150px 120px auto', gap: 8, alignItems: 'end' }}>
+        <div>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Plano de contas</label>
+          <BuscaDropdown key={`conta-${faturaKey}`} value={contaSel} onChange={setContaSel} itens={contasFolha} campoBusca='descricao' campoLabel='descricao' campoSub='grupo' placeholder='Buscar...' />
+        </div>
+        <div>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Histórico</label>
+          <BuscaDropdown key={`hist-${faturaKey}`} value={historicoSel} onChange={setHistoricoSel} itens={historicos} campoBusca='nome' campoLabel='nome' placeholder='Buscar...' />
+        </div>
+        <div>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Nº Docto</label>
+          <input value={nroDocto} onChange={(e) => setNroDocto(e.target.value)} style={inp} />
+        </div>
+        <div>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Vencimento</label>
+          <input value={vencimento} onChange={(e) => setVencimento(e.target.value)} type='date' style={inp} />
+        </div>
+        <div>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Valor (R$)</label>
+          <input value={valorFatura} onChange={(e) => setValorFatura(e.target.value)} type='number' min='0' style={inp} />
+        </div>
+        <button onClick={addFatura} disabled={!(parseFloat(valorFatura) > 0) || !vencimento} style={{ height: 34, padding: '0 12px', background: 'var(--blue-600)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, opacity: parseFloat(valorFatura) > 0 && vencimento ? 1 : 0.4 }}>
+          + Add
+        </button>
+      </div>
+
+      {restante > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '140px auto 1fr', gap: 8, alignItems: 'end', marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
+          <div>
+            <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Nº de parcelas</label>
+            <input value={numParcelas} onChange={(e) => setNumParcelas(e.target.value)} type='number' min='2' style={inp} placeholder='Ex: 3' />
+          </div>
+          <button
+            onClick={gerarParcelas}
+            disabled={!(parseInt(numParcelas) > 0) || !vencimento || !(restante > 0)}
+            title='Usa o Plano de contas, Histórico, Nº Docto e Vencimento (1ª parcela) já preenchidos acima, dividindo o valor restante em parcelas mensais'
+            style={{ height: 34, padding: '0 12px', background: 'var(--gray-700)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, whiteSpace: 'nowrap', opacity: parseInt(numParcelas) > 0 && vencimento && restante > 0 ? 1 : 0.4 }}
+          >
+            Gerar parcelas mensais
+          </button>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            Divide o valor restante ({fmt(restante)}) em N parcelas iguais, uma por mês a partir do Vencimento acima — dá pra editar cada parcela depois de gerada.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Entrada de mercadoria: cabeçalho da nota + N itens (cada um atualiza
 // estoque/custo médio/preço de venda do produto) + N faturas (cada uma vira
 // uma conta a pagar já classificada por plano de contas/histórico). Tudo
@@ -287,25 +501,6 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
 
-  // Mini-formulário "adicionar item"
-  const [prodBusca, setProdBusca] = useState(null)
-  const [itemKey, setItemKey] = useState(0)
-  const [tipo, setTipo] = useState('Revenda')
-  const [qtde, setQtde] = useState('')
-  const [precoCusto, setPrecoCusto] = useState('')
-  const [precoVista, setPrecoVista] = useState('')
-  const [precoPrazo, setPrecoPrazo] = useState('')
-  const [rateio, setRateio] = useState('')
-
-  // Mini-formulário "adicionar fatura"
-  const [contaSel, setContaSel] = useState(null)
-  const [historicoSel, setHistoricoSel] = useState(null)
-  const [faturaKey, setFaturaKey] = useState(0)
-  const [nroDocto, setNroDocto] = useState('')
-  const [vencimento, setVencimento] = useState('')
-  const [valorFatura, setValorFatura] = useState('')
-  const [numParcelas, setNumParcelas] = useState('')
-
   useEffect(() => {
     window.api.produtos.listar({ situacao: 'A' }).then(setProdutos).catch(console.error)
     window.api.fornecedores.listar({ situacao: 'A' }).then(setFornecedores).catch(console.error)
@@ -322,80 +517,8 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
     .filter((c) => c.nivel === 4)
     .map((c) => ({ ...c, grupo: gruposPorNumero[c.numero_conta.split('.').slice(0, -1).join('.')] || '' }))
 
-  function selecionarProduto(p) {
-    setProdBusca(p)
-    if (p) {
-      setTipo(p.revenda_consumo === 'C' ? 'Uso e Consumo' : 'Revenda')
-      setPrecoCusto((p.preco_custo_atual || 0).toFixed(2))
-      setPrecoVista((p.preco_venda_vista || 0).toFixed(2))
-      setPrecoPrazo((p.preco_venda_prazo || 0).toFixed(2))
-    }
-  }
-
-  function limparFormItem() {
-    setProdBusca(null)
-    setQtde('')
-    setPrecoCusto('')
-    setPrecoVista('')
-    setPrecoPrazo('')
-    setRateio('')
-    setItemKey((k) => k + 1)
-  }
-
-  function addItem() {
-    const q = parseFloat(qtde)
-    if (!prodBusca || !(q > 0)) return
-    const custo = parseFloat(precoCusto) || 0
-    const vista = parseFloat(precoVista) || 0
-    const prazo = parseFloat(precoPrazo) || 0
-    setItens((prev) => [
-      ...prev,
-      {
-        codigo_produto: prodBusca.codigo,
-        descricao: prodBusca.descricao,
-        unidade: prodBusca.unidade,
-        tipo,
-        quantidade: q,
-        rateio_despesas: parseFloat(rateio) || 0,
-        preco_custo: custo,
-        preco_venda_vista: vista,
-        preco_venda_prazo: prazo,
-        margem_vista: vista > 0 ? (vista - custo) / vista : 0,
-        margem_prazo: prazo > 0 ? (prazo - custo) / prazo : 0,
-      },
-    ])
-    limparFormItem()
-  }
-
   function removerItem(i) {
     setItens((prev) => prev.filter((_, j) => j !== i))
-  }
-
-  function limparFormFatura() {
-    setContaSel(null)
-    setHistoricoSel(null)
-    setNroDocto('')
-    setVencimento('')
-    setValorFatura('')
-    setFaturaKey((k) => k + 1)
-  }
-
-  function addFatura() {
-    const v = parseFloat(valorFatura)
-    if (!(v > 0) || !vencimento) return
-    setFaturas((prev) => [
-      ...prev,
-      {
-        codigo_plano_conta: contaSel?.codigo || null,
-        conta_label: contaSel?.descricao || '',
-        codigo_historico: historicoSel?.codigo || null,
-        historico_label: historicoSel?.nome || '',
-        nro_docto: nroDocto,
-        data_vencimento: vencimento,
-        valor_docto: v,
-      },
-    ])
-    limparFormFatura()
   }
 
   function removerFatura(i) {
@@ -404,33 +527,6 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
 
   function atualizarFatura(i, campo, valor) {
     setFaturas((prev) => prev.map((f, j) => (j === i ? { ...f, [campo]: valor } : f)))
-  }
-
-  // Divide o valor restante (itens - faturas já lançadas) em N parcelas
-  // mensais a partir do vencimento informado, repetindo plano de contas/
-  // histórico/nº docto já preenchidos no mini-formulário. A última parcela
-  // absorve o arredondamento pra bater centavo a centavo com o total.
-  function gerarParcelas() {
-    const n = parseInt(numParcelas)
-    const restante = totalItens - totalFaturas
-    if (!(n > 0) || !vencimento || !(restante > 0)) return
-    const restanteCentavos = Math.round(restante * 100)
-    const baseCentavos = Math.floor(restanteCentavos / n)
-    const novas = Array.from({ length: n }, (_, i) => {
-      const valorCentavos = i < n - 1 ? baseCentavos : restanteCentavos - baseCentavos * (n - 1)
-      return {
-        codigo_plano_conta: contaSel?.codigo || null,
-        conta_label: contaSel?.descricao || '',
-        codigo_historico: historicoSel?.codigo || null,
-        historico_label: historicoSel?.nome || '',
-        nro_docto: nroDocto,
-        data_vencimento: addMesesClamp(vencimento, i),
-        valor_docto: valorCentavos / 100,
-      }
-    })
-    setFaturas((prev) => [...prev, ...novas])
-    limparFormFatura()
-    setNumParcelas('')
   }
 
   const totalItens = itens.reduce((s, i) => s + i.quantidade * i.preco_custo + i.rateio_despesas, 0)
@@ -506,47 +602,7 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
           </div>
 
           {/* Itens */}
-          <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>ADICIONAR ITEM</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 0.9fr 95px 105px 105px 105px', gap: 8, marginBottom: 8 }}>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Produto</label>
-                <ProdutoDropdown key={itemKey} value='' onChange={selecionarProduto} produtos={produtos} placeholder='Buscar...' />
-              </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Tipo</label>
-                <select value={tipo} onChange={(e) => setTipo(e.target.value)} style={{ ...inp, borderRadius: 'var(--radius-md)' }}>
-                  <option value='Revenda'>Revenda</option>
-                  <option value='Uso e Consumo'>Uso e Consumo</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Qtde{prodBusca ? ` (${prodBusca.unidade || 'UN'})` : ''}</label>
-                <input value={qtde} onChange={(e) => setQtde(e.target.value)} type='number' min='0' style={inp} />
-              </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Custo (R$)</label>
-                <input value={precoCusto} onChange={(e) => setPrecoCusto(e.target.value)} type='number' min='0' style={inp} />
-              </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Preço à vista</label>
-                <input value={precoVista} onChange={(e) => setPrecoVista(e.target.value)} type='number' min='0' style={inp} />
-              </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Preço a prazo</label>
-                <input value={precoPrazo} onChange={(e) => setPrecoPrazo(e.target.value)} type='number' min='0' style={inp} />
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Outras despesas rateadas (R$)</label>
-                <input value={rateio} onChange={(e) => setRateio(e.target.value)} type='number' min='0' style={inp} placeholder='Frete/despesas deste item' />
-              </div>
-              <button onClick={addItem} disabled={!prodBusca || !(parseFloat(qtde) > 0)} style={{ height: 34, padding: '0 14px', background: 'var(--blue-600)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, opacity: prodBusca && parseFloat(qtde) > 0 ? 1 : 0.4 }}>
-                + Adicionar item
-              </button>
-            </div>
-          </div>
+          <ItemEntradaForm produtos={produtos} onAdicionar={(item) => setItens((prev) => [...prev, item])} />
 
           {itens.length > 0 && (
             <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
@@ -576,54 +632,13 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
           )}
 
           {/* Faturas */}
-          <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>ADICIONAR FATURA</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr 110px 150px 120px auto', gap: 8, alignItems: 'end' }}>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Plano de contas</label>
-                <BuscaDropdown key={`conta-${faturaKey}`} value={contaSel} onChange={setContaSel} itens={contasFolha} campoBusca='descricao' campoLabel='descricao' campoSub='grupo' placeholder='Buscar...' />
-              </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Histórico</label>
-                <BuscaDropdown key={`hist-${faturaKey}`} value={historicoSel} onChange={setHistoricoSel} itens={historicos} campoBusca='nome' campoLabel='nome' placeholder='Buscar...' />
-              </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Nº Docto</label>
-                <input value={nroDocto} onChange={(e) => setNroDocto(e.target.value)} style={inp} />
-              </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Vencimento</label>
-                <input value={vencimento} onChange={(e) => setVencimento(e.target.value)} type='date' style={inp} />
-              </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Valor (R$)</label>
-                <input value={valorFatura} onChange={(e) => setValorFatura(e.target.value)} type='number' min='0' style={inp} />
-              </div>
-              <button onClick={addFatura} disabled={!(parseFloat(valorFatura) > 0) || !vencimento} style={{ height: 34, padding: '0 12px', background: 'var(--blue-600)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, opacity: parseFloat(valorFatura) > 0 && vencimento ? 1 : 0.4 }}>
-                + Add
-              </button>
-            </div>
-
-            {itens.length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: '140px auto 1fr', gap: 8, alignItems: 'end', marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
-                <div>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Nº de parcelas</label>
-                  <input value={numParcelas} onChange={(e) => setNumParcelas(e.target.value)} type='number' min='2' style={inp} placeholder='Ex: 3' />
-                </div>
-                <button
-                  onClick={gerarParcelas}
-                  disabled={!(parseInt(numParcelas) > 0) || !vencimento || !(totalItens - totalFaturas > 0)}
-                  title='Usa o Plano de contas, Histórico, Nº Docto e Vencimento (1ª parcela) já preenchidos acima, dividindo o valor restante em parcelas mensais'
-                  style={{ height: 34, padding: '0 12px', background: 'var(--gray-700)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, whiteSpace: 'nowrap', opacity: parseInt(numParcelas) > 0 && vencimento && totalItens - totalFaturas > 0 ? 1 : 0.4 }}
-                >
-                  Gerar parcelas mensais
-                </button>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  Divide o valor restante ({fmt(totalItens - totalFaturas)}) em N parcelas iguais, uma por mês a partir do Vencimento acima — dá pra editar cada parcela depois de gerada.
-                </div>
-              </div>
-            )}
-          </div>
+          <FaturaEntradaForm
+            contasFolha={contasFolha}
+            historicos={historicos}
+            restante={totalItens - totalFaturas}
+            onAdicionar={(f) => setFaturas((prev) => [...prev, f])}
+            onAdicionarVarias={(fs) => setFaturas((prev) => [...prev, ...fs])}
+          />
 
           {faturas.length > 0 && (
             <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
@@ -697,6 +712,194 @@ function ModalEntradaMercadoria({ onClose, onSalvar, numero, usuario }) {
               style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: valido ? 'var(--green-500)' : 'var(--gray-200)', color: valido ? 'var(--surface)' : 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: valido && !salvando ? 'pointer' : 'not-allowed' }}
             >
               {salvando ? 'Confirmando...' : 'Confirmar entrada'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Reabre uma entrada já confirmada pra adicionar itens/faturas que ficaram
+// de fora — nunca edita/remove o que já está lançado (custo médio já
+// aplicado não é revertido). Nível >=250 aplica direto; abaixo disso vira
+// pedido de aprovação (ver aprovacoes/solicitacoes_aprovacao, tipo
+// COMPLETAR_ENTRADA_MERCADORIA, mesmo padrão de ModalBaixarPrejuizo).
+function ModalCompletarEntrada({ numero, itensExistentes, faturasExistentes, podeCompletarDireto, onClose, onConfirmar }) {
+  const [produtos, setProdutos] = useState([])
+  const [planoContas, setPlanoContas] = useState([])
+  const [historicos, setHistoricos] = useState([])
+  const [itensNovos, setItensNovos] = useState([])
+  const [faturasNovas, setFaturasNovas] = useState([])
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState('')
+
+  useEffect(() => {
+    window.api.produtos.listar({ situacao: 'A' }).then(setProdutos).catch(console.error)
+    window.api.planoContas.listar({ situacao: 'A' }).then(setPlanoContas).catch(console.error)
+    window.api.historicos.listar({ situacao: 'A' }).then(setHistoricos).catch(console.error)
+  }, [])
+
+  const gruposPorNumero = Object.fromEntries(
+    planoContas.filter((c) => c.nivel === 3).map((c) => [c.numero_conta, c.descricao]),
+  )
+  const contasFolha = planoContas
+    .filter((c) => c.nivel === 4)
+    .map((c) => ({ ...c, grupo: gruposPorNumero[c.numero_conta.split('.').slice(0, -1).join('.')] || '' }))
+
+  function removerItemNovo(i) {
+    setItensNovos((prev) => prev.filter((_, j) => j !== i))
+  }
+  function removerFaturaNova(i) {
+    setFaturasNovas((prev) => prev.filter((_, j) => j !== i))
+  }
+  function atualizarFaturaNova(i, campo, valor) {
+    setFaturasNovas((prev) => prev.map((f, j) => (j === i ? { ...f, [campo]: valor } : f)))
+  }
+
+  const totalItensExistentes = (itensExistentes || []).reduce((s, i) => s + (i.quantidade || 0) * (i.preco_custo || 0) + (i.rateio_despesas || 0), 0)
+  const totalFaturasExistentes = (faturasExistentes || []).reduce((s, f) => s + (f.valor_docto || 0), 0)
+  const totalItensNovos = itensNovos.reduce((s, i) => s + i.quantidade * i.preco_custo + i.rateio_despesas, 0)
+  const totalFaturasNovas = faturasNovas.reduce((s, f) => s + f.valor_docto, 0)
+  const totalItensGeral = totalItensExistentes + totalItensNovos
+  const totalFaturasGeral = totalFaturasExistentes + totalFaturasNovas
+  // "Restante" pro form de fatura/parcelas considera o que JÁ estava lançado
+  // antes — permite completar itens agora e a fatura só numa próxima chamada
+  // (ou vice-versa), sem forçar as duas coisas na mesma visita.
+  const restante = totalItensGeral - totalFaturasGeral
+  const faturasBatem = faturasNovas.length === 0 || Math.abs(restante) <= 0.01
+  const valido = (itensNovos.length > 0 || faturasNovas.length > 0) && faturasBatem
+
+  async function confirmar() {
+    if (!valido) return
+    setSalvando(true)
+    setErro('')
+    const itensPayload = itensNovos.map(({ conta_label, historico_label, ...i }) => i)
+    const faturasPayload = faturasNovas.map(({ conta_label, historico_label, ...f }) => ({
+      ...f,
+      observacao: [conta_label, historico_label].filter(Boolean).join(' — ') || null,
+    }))
+    const resultado = await onConfirmar({ itensNovos: itensPayload, faturasNovas: faturasPayload })
+    setSalvando(false)
+    if (resultado && !resultado.sucesso) setErro(resultado.erro || 'Não foi possível completar a entrada.')
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
+      <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-md)', width: 820, maxHeight: '88vh', display: 'flex', flexDirection: 'column', padding: 24, boxShadow: '0 16px 40px rgba(0,0,0,0.14)', animation: 'fadeIn 0.15s ease both' }}>
+        <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <Edit2 size={16} style={{ color: 'var(--green-500)' }} />
+          {podeCompletarDireto ? 'Completar entrada' : 'Solicitar complemento de entrada'}
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)' }}>#{numero}</span>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16, flexShrink: 0 }}>
+          {podeCompletarDireto
+            ? 'Adiciona itens e/ou faturas que ficaram de fora quando esta entrada foi confirmada. Não altera o que já está lançado.'
+            : 'Como você não tem permissão pra completar direto, será enviado um pedido de aprovação. Nada muda até que um administrador aprove.'}
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4 }}>
+          <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', marginBottom: 14, fontSize: 12, color: 'var(--text-secondary)' }}>
+            Já lançado nesta entrada: <strong>{itensExistentes?.length || 0} item(ns)</strong>, total {fmt(totalItensExistentes)} · faturas {fmt(totalFaturasExistentes)}
+          </div>
+
+          <ItemEntradaForm produtos={produtos} onAdicionar={(item) => setItensNovos((prev) => [...prev, item])} />
+
+          {itensNovos.length > 0 && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
+              <thead>
+                <tr>
+                  {['Produto', 'Qtde', 'Custo', 'Preço vista', 'Margem', 'Total', ''].map((h) => (
+                    <th key={h} style={{ padding: '6px 8px', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {itensNovos.map((i, idx) => (
+                  <tr key={idx}>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{codPrefix(i.codigo_produto)}{i.descricao}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmtQtd(i.quantidade, i.unidade)}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmt(i.preco_custo)}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{i.preco_venda_vista > 0 ? fmt(i.preco_venda_vista) : '-'}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', textAlign: 'right', color: i.margem_vista >= 0 ? 'var(--green-500)' : '#EF4444' }}>{i.preco_venda_vista > 0 ? `${(i.margem_vista * 100).toFixed(1)}%` : '-'}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, fontWeight: 600, borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{fmt(i.quantidade * i.preco_custo + i.rateio_despesas)}</td>
+                    <td style={{ padding: '7px 8px', borderBottom: '1px solid var(--border)' }}>
+                      <button onClick={() => removerItemNovo(idx)} style={{ color: 'var(--red-500)', fontSize: 12, padding: '2px 6px' }}>✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <FaturaEntradaForm
+            contasFolha={contasFolha}
+            historicos={historicos}
+            restante={restante}
+            onAdicionar={(f) => setFaturasNovas((prev) => [...prev, f])}
+            onAdicionarVarias={(fs) => setFaturasNovas((prev) => [...prev, ...fs])}
+          />
+
+          {faturasNovas.length > 0 && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
+              <thead>
+                <tr>
+                  {['Plano de contas', 'Histórico', 'Nº Docto', 'Vencimento', 'Valor', ''].map((h) => (
+                    <th key={h} style={{ padding: '6px 8px', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {faturasNovas.map((f, idx) => (
+                  <tr key={idx}>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{f.conta_label || '-'}</td>
+                    <td style={{ padding: '7px 8px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{f.historico_label || '-'}</td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>
+                      <input value={f.nro_docto || ''} onChange={(e) => atualizarFaturaNova(idx, 'nro_docto', e.target.value)} style={{ ...inp, height: 28 }} />
+                    </td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>
+                      <input value={f.data_vencimento || ''} onChange={(e) => atualizarFaturaNova(idx, 'data_vencimento', e.target.value)} type='date' style={{ ...inp, height: 28, minWidth: 138 }} />
+                    </td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>
+                      <input value={f.valor_docto} onChange={(e) => atualizarFaturaNova(idx, 'valor_docto', parseFloat(e.target.value) || 0)} type='number' min='0' style={{ ...inp, height: 28, textAlign: 'right', minWidth: 100 }} />
+                    </td>
+                    <td style={{ padding: '7px 8px', borderBottom: '1px solid var(--border)' }}>
+                      <button onClick={() => removerFaturaNova(idx)} style={{ color: 'var(--red-500)', fontSize: 12, padding: '2px 6px' }}>✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div style={{ flexShrink: 0 }}>
+          <div style={{ background: 'var(--blue-50)', border: '1px solid var(--blue-100)', borderRadius: 'var(--radius-md)', padding: '8px 14px', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10, fontSize: 13 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: 'var(--blue-700)' }}>Total geral dos itens (já lançado + novo)</span>
+              <strong style={{ color: 'var(--blue-700)' }}>{fmt(totalItensGeral)}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: 'var(--blue-700)' }}>Total geral das faturas (já lançado + novo)</span>
+              <strong style={{ color: faturasBatem ? 'var(--blue-700)' : '#C53030' }}>{fmt(totalFaturasGeral)}</strong>
+            </div>
+            {!faturasBatem && (
+              <div style={{ fontSize: 11, color: '#C53030' }}>
+                O total das faturas precisa bater com o total dos itens da entrada inteira antes de confirmar.
+              </div>
+            )}
+          </div>
+          {erro && (
+            <div style={{ fontSize: 12, color: '#C53030', marginBottom: 8 }}>{erro}</div>
+          )}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
+            <button
+              disabled={!valido || salvando}
+              onClick={confirmar}
+              style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: valido ? 'var(--green-500)' : 'var(--gray-200)', color: valido ? 'var(--surface)' : 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: valido && !salvando ? 'pointer' : 'not-allowed' }}
+            >
+              {salvando ? 'Enviando...' : podeCompletarDireto ? 'Completar entrada' : 'Enviar pedido de aprovação'}
             </button>
           </div>
         </div>
@@ -1019,6 +1222,9 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   const [entradaAcordeao, setEntradaAcordeao] = useState(null)
   const [itensPorEntrada, setItensPorEntrada] = useState({})
   const [carregandoItensEntrada, setCarregandoItensEntrada] = useState(false)
+  const [faturasPorEntrada, setFaturasPorEntrada] = useState({})
+  const [modalCompletarEntrada, setModalCompletarEntrada] = useState(null)
+  const [aguardandoAprovacaoEntrada, setAguardandoAprovacaoEntrada] = useState(false)
 
   // Posição de estoque — filtro de situação e seleção para pedido de compra
   const [filtroSituacaoEstoque, setFiltroSituacaoEstoque] = useState('todos')
@@ -1097,6 +1303,61 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
       console.error('Erro ao confirmar entrada de mercadoria:', err)
       return { sucesso: false, erro: err.message }
     }
+  }
+
+  // Reabrir/completar entrada já confirmada — restrito a nível 250, gate real
+  // aplicado server-side na RPC via nivel_atual(); abaixo disso vira pedido de
+  // aprovação (mesmo padrão de CONTAGEM_ESTOQUE/BAIXA_PREJUIZO_CR).
+  const podeCompletarEntradaDireto = (usuario?.nivel ?? 0) >= 250
+
+  async function abrirCompletarEntrada(numero) {
+    if (!faturasPorEntrada[numero]) {
+      try {
+        const faturas = await window.api.entradasMercadoria.faturas(numero)
+        setFaturasPorEntrada((prev) => ({ ...prev, [numero]: faturas }))
+      } catch (err) {
+        console.error('Erro ao carregar faturas da entrada:', err)
+        setFaturasPorEntrada((prev) => ({ ...prev, [numero]: [] }))
+      }
+    }
+    if (!itensPorEntrada[numero]) {
+      try {
+        const itens = await window.api.entradasMercadoria.itens(numero)
+        setItensPorEntrada((prev) => ({ ...prev, [numero]: itens }))
+      } catch (err) {
+        console.error('Erro ao carregar itens da entrada:', err)
+      }
+    }
+    setModalCompletarEntrada(numero)
+  }
+
+  async function confirmarCompletarEntrada({ itensNovos, faturasNovas }) {
+    const nomeUsuario = usuario?.nome || usuario?.usuario || 'sistema'
+    const numero = modalCompletarEntrada
+    if (podeCompletarEntradaDireto) {
+      const resultado = await window.api.entradasMercadoria.completar({
+        numero,
+        itens: itensNovos,
+        faturas: faturasNovas,
+        usuario: nomeUsuario,
+      })
+      if (!resultado.sucesso) return resultado
+      setModalCompletarEntrada(null)
+      setItensPorEntrada((prev) => { const p = { ...prev }; delete p[numero]; return p })
+      setFaturasPorEntrada((prev) => { const p = { ...prev }; delete p[numero]; return p })
+      await carregarDados()
+      mostrarSucesso('Entrada completada!')
+      return { sucesso: true }
+    }
+    const resultado = await window.api.aprovacoes.solicitar({
+      tipo: 'COMPLETAR_ENTRADA_MERCADORIA',
+      itens: [{ numero, itensNovos, faturasNovas }],
+      usuario_solicitante: nomeUsuario,
+    })
+    if (!resultado.sucesso) return resultado
+    setModalCompletarEntrada(null)
+    setAguardandoAprovacaoEntrada(true)
+    return { sucesso: true }
   }
 
   const DURACAO_ACORDEAO = 220
@@ -1338,6 +1599,23 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
           usuario={usuario}
         />
       )}
+      {modalCompletarEntrada && (
+        <ModalCompletarEntrada
+          numero={modalCompletarEntrada}
+          itensExistentes={itensPorEntrada[modalCompletarEntrada]}
+          faturasExistentes={faturasPorEntrada[modalCompletarEntrada]}
+          podeCompletarDireto={podeCompletarEntradaDireto}
+          onClose={() => setModalCompletarEntrada(null)}
+          onConfirmar={confirmarCompletarEntrada}
+        />
+      )}
+      {aguardandoAprovacaoEntrada && (
+        <ModalAviso
+          titulo='Aguardando aprovação'
+          mensagem='Seu pedido para completar a entrada de mercadoria foi enviado para aprovação de um administrador. Nada muda até que ele aprove.'
+          onFechar={() => setAguardandoAprovacaoEntrada(false)}
+        />
+      )}
       {modalSaida && <ModalSaida onClose={() => setModalSaida(false)} onSalvar={salvarMovimento} produtos={produtos} />}
       {modalAcerto && <ModalAcerto onClose={() => setModalAcerto(false)} onSalvar={salvarMovimento} produtos={produtos} />}
       {modalPedido && (
@@ -1524,6 +1802,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                                     <span>Total das faturas: <strong style={{ color: 'var(--text-primary)' }}>{fmt(e.valor_total_faturas || 0)}</strong></span>
                                     {e.usuario && <span>Lançado por: <strong style={{ color: 'var(--text-primary)' }}>{e.usuario}</strong></span>}
                                     {e.observacao && <span>Obs: <strong style={{ color: 'var(--text-primary)' }}>{e.observacao}</strong></span>}
+                                    {e.editado_por && <span>Completada por: <strong style={{ color: 'var(--text-primary)' }}>{e.editado_por}</strong> em {fmtDate(e.editado_em)}</span>}
                                   </div>
                                   {!itensEntrada ? (
                                     <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0' }}>
@@ -1553,6 +1832,14 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                                       </tbody>
                                     </table>
                                   )}
+                                  <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+                                    <button
+                                      onClick={(ev) => { ev.stopPropagation(); abrirCompletarEntrada(e.numero) }}
+                                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 12, color: 'var(--text-secondary)', background: 'var(--surface)' }}
+                                    >
+                                      <Edit2 size={12} /> {podeCompletarEntradaDireto ? 'Completar entrada' : 'Solicitar complemento'}
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             </div>

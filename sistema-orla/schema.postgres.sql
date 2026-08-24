@@ -591,7 +591,9 @@ CREATE TABLE IF NOT EXISTS entradas_mercadoria (
   observacao TEXT,
   usuario TEXT,
   data_atualizacao TEXT,
-  hora_atualizacao TEXT
+  hora_atualizacao TEXT,
+  editado_por TEXT,
+  editado_em TEXT
 );
 
 CREATE TABLE IF NOT EXISTS entradas_mercadoria_itens (

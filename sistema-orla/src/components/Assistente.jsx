@@ -34,13 +34,29 @@ function resumoItensPrejuizo(itens) {
   return { qtde: lista.length, total: lista.reduce((s, i) => s + (i.valor || 0), 0) }
 }
 
-// Textos das solicitações de aprovação — hoje existem dois tipos:
-// CONTAGEM_ESTOQUE (ajuste de estoque) e BAIXA_PREJUIZO_CR (exclusão de
-// contas a receber por dívida incobrável).
+// COMPLETAR_ENTRADA_MERCADORIA guarda um único objeto (não uma lista de itens
+// como os outros tipos) em itens[0]: { numero, itensNovos, faturasNovas }.
+function resumoCompletarEntrada(itens) {
+  const s = (itens || [])[0] || {}
+  const itensNovos = s.itensNovos || []
+  const faturasNovas = s.faturasNovas || []
+  const totalItens = itensNovos.reduce((acc, i) => acc + (i.quantidade || 0) * (i.preco_custo || 0) + (i.rateio_despesas || 0), 0)
+  const totalFaturas = faturasNovas.reduce((acc, f) => acc + (f.valor_docto || 0), 0)
+  return { numero: s.numero, qtdeItens: itensNovos.length, qtdeFaturas: faturasNovas.length, totalItens, totalFaturas }
+}
+
+// Textos das solicitações de aprovação — hoje existem três tipos:
+// CONTAGEM_ESTOQUE (ajuste de estoque), BAIXA_PREJUIZO_CR (exclusão de
+// contas a receber por dívida incobrável) e COMPLETAR_ENTRADA_MERCADORIA
+// (adicionar itens/faturas que faltaram numa entrada já confirmada).
 function textoSolicitacaoPendente(s) {
   if (s.tipo === 'BAIXA_PREJUIZO_CR') {
     const { qtde, total } = resumoItensPrejuizo(s.itens)
     return `${s.usuario_solicitante || 'Alguém'} pediu para excluir ${qtde} conta${qtde !== 1 ? 's' : ''} a receber por prejuízo (${fmt(total)})`
+  }
+  if (s.tipo === 'COMPLETAR_ENTRADA_MERCADORIA') {
+    const { numero, qtdeItens, totalItens } = resumoCompletarEntrada(s.itens)
+    return `${s.usuario_solicitante || 'Alguém'} pediu para completar a entrada de mercadoria #${numero} (${qtdeItens} item${qtdeItens !== 1 ? 'ns' : ''}, ${fmt(totalItens)})`
   }
   return `${s.usuario_solicitante || 'Alguém'} solicitou aprovação de contagem de estoque (${(s.itens || []).length} produto${(s.itens || []).length !== 1 ? 's' : ''})`
 }
@@ -51,6 +67,12 @@ function textoSolicitacaoResolvida(s) {
     return s.situacao === 'APROVADO'
       ? `✅ Seu pedido de exclusão por prejuízo (${qtde} conta${qtde !== 1 ? 's' : ''}, ${fmt(total)}) foi aprovado por ${s.usuario_aprovador || 'um administrador'}.`
       : `❌ Seu pedido de exclusão por prejuízo foi rejeitado por ${s.usuario_aprovador || 'um administrador'}.${s.motivo_rejeicao ? ` Motivo: ${s.motivo_rejeicao}` : ''}`
+  }
+  if (s.tipo === 'COMPLETAR_ENTRADA_MERCADORIA') {
+    const { numero } = resumoCompletarEntrada(s.itens)
+    return s.situacao === 'APROVADO'
+      ? `✅ Seu pedido para completar a entrada #${numero} foi aprovado por ${s.usuario_aprovador || 'um administrador'}. Estoque e contas a pagar atualizados.`
+      : `❌ Seu pedido para completar a entrada #${numero} foi rejeitado por ${s.usuario_aprovador || 'um administrador'}.${s.motivo_rejeicao ? ` Motivo: ${s.motivo_rejeicao}` : ''}`
   }
   return s.situacao === 'APROVADO'
     ? `✅ Sua contagem de estoque foi aprovada por ${s.usuario_aprovador || 'um administrador'}. Estoque atualizado.`
@@ -63,6 +85,10 @@ function textoMinhaPendente(s) {
   if (s.tipo === 'BAIXA_PREJUIZO_CR') {
     const { qtde, total } = resumoItensPrejuizo(s.itens)
     return `Você pediu para excluir ${qtde} conta${qtde !== 1 ? 's' : ''} a receber por prejuízo (${fmt(total)}) — aguardando aprovação.`
+  }
+  if (s.tipo === 'COMPLETAR_ENTRADA_MERCADORIA') {
+    const { numero, qtdeItens, totalItens } = resumoCompletarEntrada(s.itens)
+    return `Você pediu para completar a entrada de mercadoria #${numero} (${qtdeItens} item${qtdeItens !== 1 ? 'ns' : ''}, ${fmt(totalItens)}) — aguardando aprovação.`
   }
   return `Você solicitou aprovação de contagem de estoque (${(s.itens || []).length} produto${(s.itens || []).length !== 1 ? 's' : ''}) — aguardando aprovação.`
 }
@@ -1195,14 +1221,25 @@ export default function Assistente({ caixaAberto, onNavigate, usuario, pagina })
 
       {confirmacaoAprovacao && confirmacaoAprovacao.tipo === 'aprovar' && (
         <ModalConfirmacao
-          titulo={confirmacaoAprovacao.solicitacao.tipo === 'BAIXA_PREJUIZO_CR' ? 'Aprovar exclusão por prejuízo' : 'Aprovar contagem'}
+          titulo={
+            confirmacaoAprovacao.solicitacao.tipo === 'BAIXA_PREJUIZO_CR'
+              ? 'Aprovar exclusão por prejuízo'
+              : confirmacaoAprovacao.solicitacao.tipo === 'COMPLETAR_ENTRADA_MERCADORIA'
+                ? 'Aprovar complemento de entrada'
+                : 'Aprovar contagem'
+          }
           mensagem={
             confirmacaoAprovacao.solicitacao.tipo === 'BAIXA_PREJUIZO_CR'
               ? (() => {
                   const { qtde, total } = resumoItensPrejuizo(confirmacaoAprovacao.solicitacao.itens)
                   return `Aprovar a exclusão de ${qtde} conta${qtde !== 1 ? 's' : ''} a receber por prejuízo (${fmt(total)}), pedida por ${confirmacaoAprovacao.solicitacao.usuario_solicitante || 'este usuário'}? O valor entra como perda no relatório diário e no lucro, e não pode ser desfeito.`
                 })()
-              : `Aprovar a contagem de estoque enviada por ${confirmacaoAprovacao.solicitacao.usuario_solicitante || 'este usuário'}? As quantidades serão atualizadas no estoque.`
+              : confirmacaoAprovacao.solicitacao.tipo === 'COMPLETAR_ENTRADA_MERCADORIA'
+                ? (() => {
+                    const { numero, qtdeItens, qtdeFaturas, totalItens, totalFaturas } = resumoCompletarEntrada(confirmacaoAprovacao.solicitacao.itens)
+                    return `Aprovar o complemento da entrada #${numero} pedido por ${confirmacaoAprovacao.solicitacao.usuario_solicitante || 'este usuário'}: ${qtdeItens} item${qtdeItens !== 1 ? 'ns' : ''} novo${qtdeItens !== 1 ? 's' : ''} (${fmt(totalItens)})${qtdeFaturas > 0 ? ` e ${qtdeFaturas} fatura${qtdeFaturas !== 1 ? 's' : ''} (${fmt(totalFaturas)})` : ''}? Atualiza estoque, custo médio e contas a pagar.`
+                  })()
+                : `Aprovar a contagem de estoque enviada por ${confirmacaoAprovacao.solicitacao.usuario_solicitante || 'este usuário'}? As quantidades serão atualizadas no estoque.`
           }
           icone={Check}
           corIcone='#22863A'
@@ -1216,11 +1253,19 @@ export default function Assistente({ caixaAberto, onNavigate, usuario, pagina })
       )}
       {confirmacaoAprovacao && confirmacaoAprovacao.tipo === 'rejeitar' && (
         <ModalConfirmacao
-          titulo={confirmacaoAprovacao.solicitacao.tipo === 'BAIXA_PREJUIZO_CR' ? 'Rejeitar exclusão por prejuízo' : 'Rejeitar contagem'}
+          titulo={
+            confirmacaoAprovacao.solicitacao.tipo === 'BAIXA_PREJUIZO_CR'
+              ? 'Rejeitar exclusão por prejuízo'
+              : confirmacaoAprovacao.solicitacao.tipo === 'COMPLETAR_ENTRADA_MERCADORIA'
+                ? 'Rejeitar complemento de entrada'
+                : 'Rejeitar contagem'
+          }
           mensagem={
             confirmacaoAprovacao.solicitacao.tipo === 'BAIXA_PREJUIZO_CR'
               ? 'Rejeitar este pedido de exclusão por prejuízo? As contas continuam em aberto normalmente.'
-              : 'Rejeitar esta contagem de estoque? As quantidades não serão alteradas.'
+              : confirmacaoAprovacao.solicitacao.tipo === 'COMPLETAR_ENTRADA_MERCADORIA'
+                ? 'Rejeitar este pedido de complemento de entrada? Nada é alterado no estoque ou nas contas a pagar.'
+                : 'Rejeitar esta contagem de estoque? As quantidades não serão alteradas.'
           }
           icone={Ban}
           corIcone='#C53030'

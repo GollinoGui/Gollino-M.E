@@ -310,6 +310,8 @@ handle('entradasMercadoria:listar', (_, filtros) => db.entradasMercadoria.listar
 handle('entradasMercadoria:itens', (_, numero) => db.entradasMercadoria.itens(numero))
 handle('entradasMercadoria:proximoNumero', () => db.entradasMercadoria.proximoNumero())
 handle('entradasMercadoria:confirmar', (_, dados) => db.entradasMercadoria.confirmar(dados))
+handle('entradasMercadoria:faturas', (_, numero) => db.entradasMercadoria.faturas(numero))
+handle('entradasMercadoria:completar', (_, dados) => db.entradasMercadoria.completar(dados))
 
 // --- CHEQUES ---
 handle('cheques:listar', (_, filtros) => db.cheques.listar(filtros))

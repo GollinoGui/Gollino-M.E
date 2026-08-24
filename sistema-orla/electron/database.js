@@ -1117,6 +1117,40 @@ async function registrarPedidoCompraDaEntrada(cabecalho, itens) {
   if (erroItens) throw new Error(erroItens.message)
 }
 
+// Best-effort: acha o pedido de compra espelhado de uma entrada (ver
+// MARCA_PEDIDO_AUTO_ENTRADA) e insere nele os itens que acabaram de ser
+// adicionados via entrada_mercadoria_completar, somando o valor_total. Se o
+// espelho não existir por qualquer motivo, não bloqueia — só fica sem os
+// itens novos ali, igual já é tolerado em registrarPedidoCompraDaEntrada.
+async function adicionarItensAoPedidoCompraDaEntrada(numeroEntrada, itens) {
+  if (!itens.length) return
+  const { data: pedido, error: erroPedido } = await supabase
+    .from('pedidos_compra')
+    .select('numero, valor_total')
+    .eq('observacao', `${MARCA_PEDIDO_AUTO_ENTRADA}${numeroEntrada}`)
+    .maybeSingle()
+  if (erroPedido) throw new Error(erroPedido.message)
+  if (!pedido) return
+
+  const valorNovo = itens.reduce((s, i) => s + (i.quantidade || 0) * (i.preco_custo || 0), 0)
+  const { error: erroItens } = await supabase.from('pedidos_compra_itens').insert(
+    itens.map((i) => ({
+      numero: pedido.numero,
+      codigo_produto: i.codigo_produto,
+      descricao: i.descricao,
+      quantidade: i.quantidade || 0,
+      preco_unitario: i.preco_custo || 0,
+      total: (i.quantidade || 0) * (i.preco_custo || 0),
+    })),
+  )
+  if (erroItens) throw new Error(erroItens.message)
+  const { error: erroUpdate } = await supabase
+    .from('pedidos_compra')
+    .update({ valor_total: (pedido.valor_total || 0) + valorNovo })
+    .eq('numero', pedido.numero)
+  if (erroUpdate) throw new Error(erroUpdate.message)
+}
+
 // Backfill único das entradas confirmadas antes de registrarPedidoCompraDaEntrada
 // existir. Idempotente — usa a marca em observacao pra pular quem já tem
 // espelho — então repetir não duplica nada; guardado atrás de
@@ -1188,6 +1222,38 @@ const entradasMercadoria = {
     const { data, error } = await supabase.from('entradas_mercadoria_itens').select('*').eq('numero', numero)
     if (error) throw new Error(error.message)
     return data
+  },
+
+  // Faturas já lançadas de uma entrada confirmada — não tem tabela própria,
+  // viram linhas em contas_pagar (ver comentário na tabela entradas_mercadoria).
+  async faturas(numero) {
+    const { data, error } = await supabase
+      .from('contas_pagar')
+      .select('*')
+      .eq('documento_origem', numero)
+      .eq('tipo_origem', 'ENTRADA_MERCADORIA')
+    if (error) throw new Error(error.message)
+    return data
+  },
+
+  // Reabre uma entrada já confirmada pra adicionar itens/faturas que ficaram
+  // de fora (ex.: modal fechado no meio do lançamento) — nunca edita/remove o
+  // que já foi confirmado. Restrito a nível 250, gate aplicado server-side na
+  // RPC via nivel_atual(); ver entrada_mercadoria_completar no Supabase.
+  async completar({ numero, itens, faturas, usuario }) {
+    const { error } = await supabase.rpc('entrada_mercadoria_completar', {
+      p_numero: numero,
+      p_itens: itens || [],
+      p_faturas: faturas || [],
+      p_usuario: usuario,
+    })
+    if (error) return { sucesso: false, erro: error.message }
+    try {
+      await adicionarItensAoPedidoCompraDaEntrada(numero, itens || [])
+    } catch (e) {
+      console.error('Erro ao complementar pedido de compra espelho da entrada:', e.message)
+    }
+    return { sucesso: true }
   },
 
   async confirmar({ cabecalho, itens, faturas }) {
@@ -1540,6 +1606,15 @@ const aprovacoes = {
           : `solicitado por ${solicitacao.usuario_solicitante}, aprovado por ${usuario}`,
       })
       if (error) return { sucesso: false, erro: error.message }
+    } else if (solicitacao.tipo === 'COMPLETAR_ENTRADA_MERCADORIA') {
+      const { numero, itensNovos, faturasNovas } = solicitacao.itens?.[0] || {}
+      const resultado = await entradasMercadoria.completar({
+        numero,
+        itens: itensNovos,
+        faturas: faturasNovas,
+        usuario: `${solicitacao.usuario_solicitante} (aprovado por ${usuario})`,
+      })
+      if (!resultado.sucesso) return { sucesso: false, erro: resultado.erro }
     }
 
     const { error: errUpdate } = await supabase
