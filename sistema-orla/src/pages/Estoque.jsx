@@ -10,6 +10,14 @@ import { fmtQtd } from '../utils/formatQtd'
 const fmt = (v) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = (d) => new Date(d).toLocaleDateString('pt-BR')
+// Mesmo padrão de Produtos.jsx: digitação livre com vírgula decimal (o
+// <input type='number'> do HTML só aceita ponto, não a vírgula do pt-BR).
+function maskDecimal(v) {
+  return v.replace(/[^0-9,.]/g, '')
+}
+function parseDecimal(v) {
+  return parseFloat(String(v).replace(/\./g, '').replace(',', '.')) || 0
+}
 const codPrefix = (codigo) => (
   <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)', marginRight: 6 }}>#{codigo}</span>
 )
@@ -917,7 +925,7 @@ function ModalSaida({ onClose, onSalvar, produtos }) {
     data: new Date().toISOString().split('T')[0],
   })
   const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }))
-  const valido = produto && form.quantidade && parseFloat(form.quantidade) > 0 && form.motivo
+  const valido = produto && form.quantidade && parseDecimal(form.quantidade) > 0 && form.motivo
 
   return (
     <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
@@ -939,7 +947,7 @@ function ModalSaida({ onClose, onSalvar, produtos }) {
           )}
           <div>
             <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Quantidade{produto ? ` (${produto.unidade || 'UN'})` : ''} *</label>
-            <input value={form.quantidade} onChange={f('quantidade')} type='number' min='0.001' step='0.001' style={{ width: '100%', height: 36, padding: '0 10px' }} />
+            <input value={form.quantidade} onChange={(e) => setForm((p) => ({ ...p, quantidade: maskDecimal(e.target.value) }))} inputMode='decimal' style={{ width: '100%', height: 36, padding: '0 10px' }} />
           </div>
           <div>
             <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Motivo *</label>
@@ -965,7 +973,7 @@ function ModalSaida({ onClose, onSalvar, produtos }) {
           <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
           <button
             disabled={!valido}
-            onClick={() => onSalvar({ produto_id: produto.codigo, produto: produto.descricao, ...form, tipo: 'SAIDA', valor_unitario: 0, total: 0 })}
+            onClick={() => onSalvar({ produto_id: produto.codigo, produto: produto.descricao, ...form, quantidade: parseDecimal(form.quantidade), tipo: 'SAIDA', valor_unitario: 0, total: 0 })}
             style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: valido ? '#EF4444' : 'var(--gray-200)', color: valido ? '#fff' : 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: valido ? 'pointer' : 'not-allowed' }}
           >
             Confirmar saída
@@ -980,7 +988,7 @@ function ModalAcerto({ onClose, onSalvar, produtos }) {
   const [produto, setProduto] = useState(null)
   const [novaQtde, setNovaQtde] = useState('')
   const [obs, setObs] = useState('')
-  const valido = produto && novaQtde !== '' && parseFloat(novaQtde) >= 0
+  const valido = produto && novaQtde !== '' && parseDecimal(novaQtde) >= 0
 
   return (
     <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
@@ -1004,19 +1012,17 @@ function ModalAcerto({ onClose, onSalvar, produtos }) {
             <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Quantidade real (contada){produto ? ` (${produto.unidade || 'UN'})` : ''} *</label>
             <input
               value={novaQtde}
-              onChange={(e) => setNovaQtde(e.target.value)}
-              type='number'
-              min='0'
-              step='0.001'
+              onChange={(e) => setNovaQtde(maskDecimal(e.target.value))}
+              inputMode='decimal'
               placeholder='Informe a quantidade real'
               style={{ width: '100%', height: 36, padding: '0 10px' }}
             />
           </div>
           {produto && novaQtde !== '' && (
-            <div style={{ background: parseFloat(novaQtde) >= (produto.estoque_atual ?? 0) ? '#F0FDF4' : '#FFF5F5', border: `1px solid ${parseFloat(novaQtde) >= (produto.estoque_atual ?? 0) ? '#6EE7B7' : '#FCA5A5'}`, borderRadius: 'var(--radius-md)', padding: '8px 14px', fontSize: 13, display: 'flex', justifyContent: 'space-between' }}>
+            <div style={{ background: parseDecimal(novaQtde) >= (produto.estoque_atual ?? 0) ? '#F0FDF4' : '#FFF5F5', border: `1px solid ${parseDecimal(novaQtde) >= (produto.estoque_atual ?? 0) ? '#6EE7B7' : '#FCA5A5'}`, borderRadius: 'var(--radius-md)', padding: '8px 14px', fontSize: 13, display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Diferença</span>
-              <strong style={{ color: parseFloat(novaQtde) >= (produto.estoque_atual ?? 0) ? '#15803D' : '#B91C1C' }}>
-                {parseFloat(novaQtde) - (produto.estoque_atual ?? 0) > 0 ? '+' : ''}{fmtQtd(parseFloat(novaQtde) - (produto.estoque_atual ?? 0), produto.unidade)}
+              <strong style={{ color: parseDecimal(novaQtde) >= (produto.estoque_atual ?? 0) ? '#15803D' : '#B91C1C' }}>
+                {parseDecimal(novaQtde) - (produto.estoque_atual ?? 0) > 0 ? '+' : ''}{fmtQtd(parseDecimal(novaQtde) - (produto.estoque_atual ?? 0), produto.unidade)}
               </strong>
             </div>
           )}
@@ -1029,7 +1035,7 @@ function ModalAcerto({ onClose, onSalvar, produtos }) {
           <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
           <button
             disabled={!valido}
-            onClick={() => onSalvar({ produto_id: produto.codigo, produto: produto.descricao, quantidade: parseFloat(novaQtde), obs, tipo: 'ACERTO', valor_unitario: 0, total: 0, data: new Date().toISOString().split('T')[0] })}
+            onClick={() => onSalvar({ produto_id: produto.codigo, produto: produto.descricao, quantidade: parseDecimal(novaQtde), obs, tipo: 'ACERTO', valor_unitario: 0, total: 0, data: new Date().toISOString().split('T')[0] })}
             style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: valido ? '#60A5FA' : 'var(--gray-200)', color: valido ? '#fff' : 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: valido ? 'pointer' : 'not-allowed' }}
           >
             Aplicar acerto
@@ -1495,7 +1501,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
     const itensAlterados = Object.entries(contagem)
       .map(([produto_id, novaQtde]) => {
         const prod = produtos.find((p) => p.codigo === produto_id)
-        return prod ? { produto_id, produto: prod.descricao, quantidade_atual: prod.estoque_atual ?? 0, quantidade_nova: parseFloat(novaQtde) } : null
+        return prod ? { produto_id, produto: prod.descricao, quantidade_atual: prod.estoque_atual ?? 0, quantidade_nova: parseDecimal(novaQtde) } : null
       })
       .filter((item) => item && item.quantidade_nova !== item.quantidade_atual)
     if (itensAlterados.length === 0) {
@@ -2149,8 +2155,8 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
             <tbody>
               {prodFiltrados.map((p) => {
                 const val = contagem[p.codigo]
-                const diff = val !== undefined ? parseFloat(val) - (p.estoque_atual ?? 0) : 0
-                const alterado = val !== undefined && parseFloat(val) !== (p.estoque_atual ?? 0)
+                const diff = val !== undefined ? parseDecimal(val) - (p.estoque_atual ?? 0) : 0
+                const alterado = val !== undefined && parseDecimal(val) !== (p.estoque_atual ?? 0)
                 return (
                   <tr key={p.id} style={{ background: alterado ? (diff > 0 ? '#F0FDF4' : '#FFF5F5') : 'transparent', transition: 'background 0.08s' }}>
                     <td style={{ padding: '8px 10px', fontSize: 11, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', fontFamily: 'monospace' }}>{p.codigo}</td>
@@ -2158,11 +2164,9 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
                     <td style={{ padding: '8px 10px', fontSize: 14, fontWeight: 600, borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--text-secondary)' }}>{fmtQtd(p.estoque_atual ?? 0, p.unidade)}</td>
                     <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
                       <input
-                        type='number'
-                        min='0'
-                        step='0.001'
+                        inputMode='decimal'
                         value={contagem[p.codigo] ?? ''}
-                        onChange={(e) => setContagem((prev) => ({ ...prev, [p.codigo]: e.target.value }))}
+                        onChange={(e) => setContagem((prev) => ({ ...prev, [p.codigo]: maskDecimal(e.target.value) }))}
                         placeholder={String(p.estoque_atual ?? 0)}
                         style={{ width: 80, height: 32, padding: '0 8px', textAlign: 'center', border: `1px solid ${alterado ? (diff > 0 ? '#86EFAC' : '#FCA5A5') : 'var(--border-md)'}`, borderRadius: 'var(--radius-md)', fontSize: 14, fontWeight: 600 }}
                       />
@@ -2178,7 +2182,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
           {Object.keys(contagem).length > 0 && (
             <div style={{ position: 'sticky', bottom: 0, background: 'var(--surface)', borderTop: '1px solid var(--border)', padding: '12px 16px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <span style={{ fontSize: 13, color: 'var(--text-secondary)', alignSelf: 'center' }}>
-                {Object.keys(contagem).filter((k) => parseFloat(contagem[k]) !== (produtos.find((p) => p.codigo === k)?.estoque_atual ?? 0)).length} produto(s) alterado(s)
+                {Object.keys(contagem).filter((k) => parseDecimal(contagem[k]) !== (produtos.find((p) => p.codigo === k)?.estoque_atual ?? 0)).length} produto(s) alterado(s)
               </span>
               <button onClick={() => setContagem({})} style={{ padding: '8px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Limpar</button>
               <button onClick={salvarContagem} disabled={salvandoContagem} style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: 'var(--blue-600)', color: '#fff', fontSize: 13, fontWeight: 500 }}>
