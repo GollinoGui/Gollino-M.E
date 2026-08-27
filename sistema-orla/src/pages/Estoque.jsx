@@ -916,7 +916,7 @@ function ModalCompletarEntrada({ numero, itensExistentes, faturasExistentes, pod
   )
 }
 
-function ModalSaida({ onClose, onSalvar, produtos }) {
+function ModalSaida({ onClose, onSalvar, produtos, salvando }) {
   const [produto, setProduto] = useState(null)
   const [form, setForm] = useState({
     quantidade: '',
@@ -970,13 +970,13 @@ function ModalSaida({ onClose, onSalvar, produtos }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
+          <button onClick={onClose} disabled={salvando} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
           <button
-            disabled={!valido}
-            onClick={() => onSalvar({ produto_id: produto.codigo, produto: produto.descricao, ...form, quantidade: parseDecimal(form.quantidade), tipo: 'SAIDA', valor_unitario: 0, total: 0 })}
-            style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: valido ? '#EF4444' : 'var(--gray-200)', color: valido ? '#fff' : 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: valido ? 'pointer' : 'not-allowed' }}
+            disabled={!valido || salvando}
+            onClick={() => { if (!salvando) onSalvar({ produto_id: produto.codigo, produto: produto.descricao, ...form, quantidade: parseDecimal(form.quantidade), tipo: 'SAIDA', valor_unitario: 0, total: 0 }) }}
+            style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: valido && !salvando ? '#EF4444' : 'var(--gray-200)', color: valido && !salvando ? '#fff' : 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: valido && !salvando ? 'pointer' : 'not-allowed' }}
           >
-            Confirmar saída
+            {salvando ? 'Enviando...' : 'Confirmar saída'}
           </button>
         </div>
       </div>
@@ -984,7 +984,7 @@ function ModalSaida({ onClose, onSalvar, produtos }) {
   )
 }
 
-function ModalAcerto({ onClose, onSalvar, produtos }) {
+function ModalAcerto({ onClose, onSalvar, produtos, salvando }) {
   const [produto, setProduto] = useState(null)
   const [novaQtde, setNovaQtde] = useState('')
   const [obs, setObs] = useState('')
@@ -1032,13 +1032,13 @@ function ModalAcerto({ onClose, onSalvar, produtos }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
+          <button onClick={onClose} disabled={salvando} style={{ padding: '8px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}>Cancelar</button>
           <button
-            disabled={!valido}
-            onClick={() => onSalvar({ produto_id: produto.codigo, produto: produto.descricao, quantidade: parseDecimal(novaQtde), obs, tipo: 'ACERTO', valor_unitario: 0, total: 0, data: new Date().toISOString().split('T')[0] })}
-            style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: valido ? '#60A5FA' : 'var(--gray-200)', color: valido ? '#fff' : 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: valido ? 'pointer' : 'not-allowed' }}
+            disabled={!valido || salvando}
+            onClick={() => { if (!salvando) onSalvar({ produto_id: produto.codigo, produto: produto.descricao, quantidade: parseDecimal(novaQtde), obs, tipo: 'ACERTO', valor_unitario: 0, total: 0, data: new Date().toISOString().split('T')[0] }) }}
+            style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)', background: valido && !salvando ? '#60A5FA' : 'var(--gray-200)', color: valido && !salvando ? '#fff' : 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: valido && !salvando ? 'pointer' : 'not-allowed' }}
           >
-            Aplicar acerto
+            {salvando ? 'Aplicando...' : 'Aplicar acerto'}
           </button>
         </div>
       </div>
@@ -1213,6 +1213,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   const [filtroTipo, setFiltroTipo] = useState('todos')
   const [modalSaida, setModalSaida] = useState(false)
   const [modalAcerto, setModalAcerto] = useState(false)
+  const [salvandoMovimento, setSalvandoMovimento] = useState(false)
   const [modalPedido, setModalPedido] = useState(false)
   const [itensParaPedido, setItensParaPedido] = useState([])
   const [sucesso, setSucesso] = useState('')
@@ -1416,6 +1417,8 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   })
 
   async function salvarMovimento(form) {
+    if (salvandoMovimento) return
+    setSalvandoMovimento(true)
     try {
       if (!window.api.movimentosEstoque) return
       await window.api.movimentosEstoque.salvar({ ...form, usuario: usuario?.nome || usuario?.usuario || 'sistema' })
@@ -1425,6 +1428,8 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
       mostrarSucesso(form.tipo === 'SAIDA' ? 'Saída registrada!' : 'Acerto aplicado!')
     } catch (err) {
       console.error('Erro ao salvar movimento:', err)
+    } finally {
+      setSalvandoMovimento(false)
     }
   }
 
@@ -1497,6 +1502,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   }
 
   async function salvarContagem() {
+    if (salvandoContagem) return
     if (Object.keys(contagem).length === 0) return
     const itensAlterados = Object.entries(contagem)
       .map(([produto_id, novaQtde]) => {
@@ -1623,8 +1629,8 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
           onFechar={() => setAguardandoAprovacaoEntrada(false)}
         />
       )}
-      {modalSaida && <ModalSaida onClose={() => setModalSaida(false)} onSalvar={salvarMovimento} produtos={produtos} />}
-      {modalAcerto && <ModalAcerto onClose={() => setModalAcerto(false)} onSalvar={salvarMovimento} produtos={produtos} />}
+      {modalSaida && <ModalSaida onClose={() => setModalSaida(false)} onSalvar={salvarMovimento} produtos={produtos} salvando={salvandoMovimento} />}
+      {modalAcerto && <ModalAcerto onClose={() => setModalAcerto(false)} onSalvar={salvarMovimento} produtos={produtos} salvando={salvandoMovimento} />}
       {modalPedido && (
         <ModalPedidoCompra
           onClose={() => { setModalPedido(false); setItensParaPedido([]) }}

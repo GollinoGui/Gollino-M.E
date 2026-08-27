@@ -64,34 +64,40 @@ function ModalConfirmarPagamento({ contas, onClose, onConfirm, fornecedorFixoMap
   const [valorUnico, setValorUnico] = useState(
     unico ? (contas[0].valor_docto || 0).toFixed(2) : '',
   )
+  const [descontoInput, setDescontoInput] = useState('')
   const [data, setData] = useState(hojeLocal())
   const [salvando, setSalvando] = useState(false)
 
+  const valorDocto = unico ? contas[0].valor_docto || 0 : 0
+  const descontoManual = unico ? parseFloat(descontoInput) || 0 : 0
   const valorFinal = unico ? parseFloat(valorUnico) || 0 : totalDocumentos
-  const valorMaximo = unico ? contas[0].valor_docto || 0 : Infinity
-  const valorExcedeConta = unico && parseFloat(valorUnico) > valorMaximo
+  // Valor pago (caixa) + desconto (abatido sem sair do caixa) juntos não podem
+  // passar do valor do documento — cada campo limita o espaço do outro.
+  const valorMaximo = unico ? Math.max(0, valorDocto - descontoManual) : Infinity
+  const descontoMaximo = unico ? Math.max(0, valorDocto - valorFinal) : Infinity
+  const valorExcedeConta = unico && valorFinal + descontoManual > valorDocto + 0.01
   const valorValido = unico ? parseFloat(valorUnico) > 0 && !valorExcedeConta : true
   const podeConfirmar = !!forma && valorValido
   const gastoFixo = unico ? fornecedorFixoMap?.get(contas[0].codigo_fornecedor) : null
-  const restante = unico ? Math.max(0, (contas[0].valor_docto || 0) - valorFinal) : 0
+  const restante = unico ? Math.max(0, valorDocto - valorFinal - descontoManual) : 0
   const ehPagamentoParcialDeFixo = !!gastoFixo && restante > 0.01
 
   async function handleConfirm() {
     if (!podeConfirmar) return
     setSalvando(true)
-    let descontoOutraParte = 0
+    let descontoFinal = descontoManual
     if (ehPagamentoParcialDeFixo) {
       const outroPagou = await window.api.dialog.confirm(
         `Você está pagando ${fmt(valorFinal)} de uma conta de ${fmt(contas[0].valor_docto)} (${gastoFixo.descricao}).\n\n` +
         `A outra parte (${fmt(restante)}) já foi paga por fora, direto ao fornecedor?\n\n` +
         `Clique OK pra marcar essa conta como totalmente paga, sem esse restante sair do caixa da loja. Clique Cancelar se a outra parte ainda não pagou — a conta fica em aberto com o saldo restante.`,
       )
-      if (outroPagou) descontoOutraParte = restante
+      if (outroPagou) descontoFinal += restante
     }
     const pagamentos = contas.map((c) => ({
       id: c.id,
       valor_pagamento: unico ? valorFinal : c.valor_docto || 0,
-      valor_desconto: unico ? descontoOutraParte : 0,
+      valor_desconto: unico ? descontoFinal : 0,
     }))
     await onConfirm(pagamentos, forma, data)
     setSalvando(false)
@@ -201,7 +207,7 @@ function ModalConfirmarPagamento({ contas, onClose, onConfirm, fornecedorFixoMap
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: unico ? '1fr 1fr' : '1fr 1fr',
+              gridTemplateColumns: unico ? '1fr 1fr 1fr' : '1fr 1fr',
               gap: 12,
               marginBottom: 16,
             }}
@@ -238,45 +244,62 @@ function ModalConfirmarPagamento({ contas, onClose, onConfirm, fornecedorFixoMap
               </select>
             </div>
             {unico ? (
-              <div>
-                <label
-                  style={{
-                    fontSize: 11,
-                    color: 'var(--text-muted)',
-                    display: 'block',
-                    marginBottom: 4,
-                  }}
-                >
-                  Valor pago
-                </label>
-                <input
-                  value={valorUnico}
-                  onChange={(e) => setValorUnico(e.target.value)}
-                  type='number'
-                  step='0.01'
-                  max={valorMaximo}
-                  style={{
-                    width: '100%',
-                    height: 36,
-                    padding: '0 10px',
-                    borderRadius: 8,
-                    border: `1px solid ${valorExcedeConta ? '#C53030' : ehPagamentoParcialDeFixo ? corGastoFixo(gastoFixo.id) : 'var(--border-md)'}`,
-                  }}
-                />
-                {valorExcedeConta && (
-                  <div style={{ fontSize: 11, color: '#C53030', marginTop: 6 }}>
-                    Valor não pode passar de {fmt(valorMaximo)} — o total da conta.
-                  </div>
-                )}
-                {!valorExcedeConta && gastoFixo && (
-                  <div style={{ fontSize: 11, color: ehPagamentoParcialDeFixo ? corGastoFixo(gastoFixo.id) : '#B7791F', marginTop: 6 }}>
-                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: corGastoFixo(gastoFixo.id), marginRight: 6 }} />
-                    {ehPagamentoParcialDeFixo
-                      ? `Pagando só a parte da loja — falta ${fmt(restante)}. Ao clicar em Pagar, vou perguntar se essa outra parte já foi paga por fora.`
-                      : `Essa conta é o gasto fixo "${gastoFixo.descricao}" e é dividida com outra pessoa. Pra pagar só a parte da loja, apague o valor acima e digite a parte dela.`}
-                  </div>
-                )}
-              </div>
+              <>
+                <div>
+                  <label
+                    style={{
+                      fontSize: 11,
+                      color: 'var(--text-muted)',
+                      display: 'block',
+                      marginBottom: 4,
+                    }}
+                  >
+                    Valor pago
+                  </label>
+                  <input
+                    value={valorUnico}
+                    onChange={(e) => setValorUnico(e.target.value)}
+                    type='number'
+                    step='0.01'
+                    max={valorMaximo}
+                    style={{
+                      width: '100%',
+                      height: 36,
+                      padding: '0 10px',
+                      borderRadius: 8,
+                      border: `1px solid ${valorExcedeConta ? '#C53030' : ehPagamentoParcialDeFixo ? corGastoFixo(gastoFixo.id) : 'var(--border-md)'}`,
+                    }}
+                  />
+                </div>
+                <div>
+                  <label
+                    style={{
+                      fontSize: 11,
+                      color: 'var(--text-muted)',
+                      display: 'block',
+                      marginBottom: 4,
+                    }}
+                  >
+                    Desconto (R$)
+                  </label>
+                  <input
+                    value={descontoInput}
+                    onChange={(e) => setDescontoInput(e.target.value)}
+                    type='number'
+                    step='0.01'
+                    min='0'
+                    max={descontoMaximo}
+                    placeholder='0,00'
+                    style={{
+                      width: '100%',
+                      height: 36,
+                      padding: '0 10px',
+                      borderRadius: 8,
+                      border: `1px solid ${valorExcedeConta ? '#C53030' : 'var(--border-md)'}`,
+                    }}
+                  />
+                </div>
+              </>
             ) : (
               <div>
                 <label
@@ -330,6 +353,24 @@ function ModalConfirmarPagamento({ contas, onClose, onConfirm, fornecedorFixoMap
                 }}
               />
             </div>
+            {unico && valorExcedeConta && (
+              <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#C53030' }}>
+                Valor pago + desconto não pode passar de {fmt(valorDocto)} — o total da conta.
+              </div>
+            )}
+            {unico && !valorExcedeConta && restante > 0.01 && !ehPagamentoParcialDeFixo && (
+              <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--text-muted)' }}>
+                Fica em aberto o saldo de {fmt(restante)}.
+              </div>
+            )}
+            {unico && !valorExcedeConta && gastoFixo && (
+              <div style={{ gridColumn: '1 / -1', fontSize: 11, color: ehPagamentoParcialDeFixo ? corGastoFixo(gastoFixo.id) : '#B7791F' }}>
+                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: corGastoFixo(gastoFixo.id), marginRight: 6 }} />
+                {ehPagamentoParcialDeFixo
+                  ? `Pagando só a parte da loja — falta ${fmt(restante)}. Ao clicar em Pagar, vou perguntar se essa outra parte já foi paga por fora.`
+                  : `Essa conta é o gasto fixo "${gastoFixo.descricao}" e é dividida com outra pessoa. Pra pagar só a parte da loja, apague o valor acima e digite a parte dela.`}
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button
