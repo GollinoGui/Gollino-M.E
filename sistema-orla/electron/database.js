@@ -1844,6 +1844,78 @@ const relatorios = {
     )
   },
 
+  // Compras (entradas de mercadoria) e vendas por produto, quebradas mês a
+  // mês dentro do período filtrado — usado pela aba "Produtos" pra responder
+  // "em que mês comprei/vendi mais desse produto". Sem RPC (mesmo motivo do
+  // entradasMercadoria acima): agrega direto das tabelas aqui.
+  async comprasVendasPorMes(dataInicio, dataFim) {
+    const [{ data: entradasCab, error: e1 }, { data: vendasCab, error: e2 }] = await Promise.all([
+      supabase
+        .from('entradas_mercadoria')
+        .select('numero, data_entrada')
+        .gte('data_entrada', dataInicio)
+        .lte('data_entrada', dataFim),
+      supabase
+        .from('vendas')
+        .select('orcamento, data')
+        .eq('situacao', 'N')
+        .gte('data', dataInicio)
+        .lte('data', dataFim),
+    ])
+    if (e1) throw new Error(e1.message)
+    if (e2) throw new Error(e2.message)
+
+    const mesPorNumero = Object.fromEntries((entradasCab || []).map((c) => [c.numero, c.data_entrada.slice(0, 7)]))
+    const mesPorOrcamento = Object.fromEntries((vendasCab || []).map((v) => [v.orcamento, v.data.slice(0, 7)]))
+
+    const [{ data: itensCompra, error: e3 }, { data: itensVenda, error: e4 }] = await Promise.all([
+      entradasCab?.length
+        ? supabase
+            .from('entradas_mercadoria_itens')
+            .select('numero, codigo_produto, descricao, quantidade, valor_total')
+            .in('numero', entradasCab.map((c) => c.numero))
+        : Promise.resolve({ data: [] }),
+      vendasCab?.length
+        ? supabase
+            .from('vendas_itens')
+            .select('orcamento, codigo_produto, descricao, unidade, quantidade, valor_total')
+            .in('orcamento', vendasCab.map((v) => v.orcamento))
+        : Promise.resolve({ data: [] }),
+    ])
+    if (e3) throw new Error(e3.message)
+    if (e4) throw new Error(e4.message)
+
+    const porProduto = {}
+    const pegarProduto = (codigo, descricao, unidade) => {
+      if (!porProduto[codigo]) porProduto[codigo] = { codigo, descricao, unidade: unidade || '', meses: {} }
+      if (unidade && !porProduto[codigo].unidade) porProduto[codigo].unidade = unidade
+      return porProduto[codigo]
+    }
+    const pegarMes = (produto, mes) => {
+      if (!produto.meses[mes]) produto.meses[mes] = { mes, qtde_compra: 0, valor_compra: 0, qtde_venda: 0, valor_venda: 0 }
+      return produto.meses[mes]
+    }
+
+    for (const it of itensCompra || []) {
+      const mes = mesPorNumero[it.numero]
+      if (!mes) continue
+      const m = pegarMes(pegarProduto(it.codigo_produto, it.descricao), mes)
+      m.qtde_compra += it.quantidade || 0
+      m.valor_compra += it.valor_total || 0
+    }
+    for (const it of itensVenda || []) {
+      const mes = mesPorOrcamento[it.orcamento]
+      if (!mes) continue
+      const m = pegarMes(pegarProduto(it.codigo_produto, it.descricao, it.unidade), mes)
+      m.qtde_venda += it.quantidade || 0
+      m.valor_venda += it.valor_total || 0
+    }
+
+    return Object.values(porProduto)
+      .map((p) => ({ ...p, meses: Object.values(p.meses).sort((a, b) => a.mes.localeCompare(b.mes)) }))
+      .sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR', { sensitivity: 'base' }))
+  },
+
   async extrato(dataInicio, dataFim) {
     const [{ data: saldoInicial, error: e1 }, { data: movimentos, error: e2 }] = await Promise.all([
       supabase.rpc('relatorio_extrato_saldo_inicial', { p_data_inicio: dataInicio }),

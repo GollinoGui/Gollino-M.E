@@ -1,7 +1,7 @@
 {
   "name": "sistema-orla",
   "private": true,
-  "version": "1.4.5",
+  "version": "1.4.6",
   "description": "Sistema de Gestão Gollino M.E",
   "main": "electron/main.js",
   "type": "commonjs",

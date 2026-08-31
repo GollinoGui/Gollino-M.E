@@ -274,6 +274,7 @@ contextBridge.exposeInMainWorld('api', {
     inventario: () => ipcRenderer.invoke('relatorios:inventario'),
     itenisVendidos: (f) => ipcRenderer.invoke('relatorios:itenisVendidos', f),
     entradasMercadoria: (f) => ipcRenderer.invoke('relatorios:entradasMercadoria', f),
+    comprasVendasPorMes: (f) => ipcRenderer.invoke('relatorios:comprasVendasPorMes', f),
     sazonalidadeProdutos: () => ipcRenderer.invoke('relatorios:sazonalidadeProdutos'),
     vendasMensais: () => ipcRenderer.invoke('relatorios:vendasMensais'),
     contasReceberMensal: () => ipcRenderer.invoke('relatorios:contasReceberMensal'),

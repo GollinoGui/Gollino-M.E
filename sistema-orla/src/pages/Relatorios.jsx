@@ -14,6 +14,9 @@ import {
   Printer,
   Download,
   ListTree,
+  ChevronDown,
+  ChevronRight,
+  Calendar,
 } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
 import { BotaoGerarRelatorio } from '../components/BotoesRelatorio'
@@ -44,6 +47,21 @@ function mesAtual() {
   const ini = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
   const fim = d.toISOString().slice(0, 10)
   return { ini, fim }
+}
+
+function ultimos12Meses() {
+  const hoje = new Date()
+  const iniD = new Date(hoje.getFullYear(), hoje.getMonth() - 11, 1)
+  const ini = `${iniD.getFullYear()}-${String(iniD.getMonth() + 1).padStart(2, '0')}-01`
+  const fim = hoje.toISOString().slice(0, 10)
+  return { ini, fim }
+}
+
+const MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+function mesLabel(mesStr) {
+  if (!mesStr) return ''
+  const [y, m] = mesStr.split('-')
+  return `${MESES_ABREV[Number(m) - 1]}/${y.slice(2)}`
 }
 
 const abas = [
@@ -92,8 +110,9 @@ function CardMetrica({ label, value, sub, color }) {
   )
 }
 
-function BarraHorizontal({ label, value, max, color }) {
+function BarraHorizontal({ label, value, max, color, formatador }) {
   const pct = max > 0 ? (value / max) * 100 : 0
+  const exibir = formatador ? formatador(value) : fmt(value)
   return (
     <div style={{ marginBottom: 10 }}>
       <div
@@ -117,7 +136,7 @@ function BarraHorizontal({ label, value, max, color }) {
           {label}
         </span>
         <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-          {fmt(value)}
+          {exibir}
         </span>
       </div>
       <div
@@ -677,6 +696,122 @@ function RelProdutos() {
       .finally(() => setLoading(false))
   }, [])
 
+  // ── Compras e vendas por mês (período filtrável) ──
+  const periodoPadrao = ultimos12Meses()
+  const [dataInicioCV, setDataInicioCV] = useState(periodoPadrao.ini)
+  const [dataFimCV, setDataFimCV] = useState(periodoPadrao.fim)
+  const [comprasVendas, setComprasVendas] = useState([])
+  const [loadingCV, setLoadingCV] = useState(false)
+  const [buscaCV, setBuscaCV] = useState('')
+  const [expandidoCV, setExpandidoCV] = useState(null)
+
+  async function carregarComprasVendas() {
+    setLoadingCV(true)
+    try {
+      const data = await window.api.relatorios.comprasVendasPorMes({ dataInicio: dataInicioCV, dataFim: dataFimCV })
+      setComprasVendas(data || [])
+    } catch (err) {
+      console.error('Erro ao carregar compras/vendas por mês:', err)
+    } finally {
+      setLoadingCV(false)
+    }
+  }
+
+  useEffect(() => { carregarComprasVendas() }, [])
+
+  const produtosCV = comprasVendas
+    .map((p) => {
+      const totalQtdCompra = p.meses.reduce((s, m) => s + (m.qtde_compra || 0), 0)
+      const totalValCompra = p.meses.reduce((s, m) => s + (m.valor_compra || 0), 0)
+      const totalQtdVenda = p.meses.reduce((s, m) => s + (m.qtde_venda || 0), 0)
+      const totalValVenda = p.meses.reduce((s, m) => s + (m.valor_venda || 0), 0)
+      const mesForteCompra = p.meses.reduce((a, b) => ((b.qtde_compra || 0) > (a?.qtde_compra || 0) ? b : a), null)
+      const mesForteVenda = p.meses.reduce((a, b) => ((b.qtde_venda || 0) > (a?.qtde_venda || 0) ? b : a), null)
+      return {
+        ...p,
+        totalQtdCompra,
+        totalValCompra,
+        totalQtdVenda,
+        totalValVenda,
+        mesForteCompra: mesForteCompra && mesForteCompra.qtde_compra > 0 ? mesForteCompra : null,
+        mesForteVenda: mesForteVenda && mesForteVenda.qtde_venda > 0 ? mesForteVenda : null,
+      }
+    })
+    .filter(
+      (p) =>
+        !buscaCV ||
+        p.descricao?.toLowerCase().includes(buscaCV.toLowerCase()) ||
+        p.codigo?.toLowerCase().includes(buscaCV.toLowerCase()),
+    )
+
+  const {
+    ordenados: produtosCVOrd,
+    coluna: colCV,
+    direcao: dirCV,
+    alternar: alternarCV,
+  } = useOrdenacao(produtosCV, {
+    colunaInicial: 'totalQtdCompra',
+    direcaoInicial: 'desc',
+    acessores: {
+      mes_forte_compra: (p) => p.mesForteCompra?.mes || '',
+      mes_forte_venda: (p) => p.mesForteVenda?.mes || '',
+    },
+  })
+
+  function exportarExcelCV() {
+    const linhas = []
+    for (const p of comprasVendas) {
+      for (const m of p.meses) {
+        linhas.push({
+          Código: p.codigo,
+          Descrição: p.descricao,
+          Mês: mesLabel(m.mes),
+          'Qtd Comprada': String(m.qtde_compra || 0).replace('.', ','),
+          'Valor Comprado (R$)': (m.valor_compra || 0).toFixed(2).replace('.', ','),
+          'Qtd Vendida': String(m.qtde_venda || 0).replace('.', ','),
+          'Valor Vendido (R$)': (m.valor_venda || 0).toFixed(2).replace('.', ','),
+        })
+      }
+    }
+    exportarCSV(linhas, `compras_vendas_mes_${dataInicioCV}_${dataFimCV}`)
+  }
+
+  async function gerarPdfComprasVendas() {
+    const empresa = await buscarEmpresa()
+    const linhas = []
+    for (const p of comprasVendas) {
+      for (const m of p.meses) {
+        linhas.push({ codigo: p.codigo, descricao: p.descricao, ...m })
+      }
+    }
+    const colunas = [
+      { label: 'Código' },
+      { label: 'Descrição' },
+      { label: 'Mês' },
+      { label: 'Qtd Compra', num: true },
+      { label: 'Valor Compra', num: true },
+      { label: 'Qtd Venda', num: true },
+      { label: 'Valor Venda', num: true },
+    ]
+    const html = gerarHtmlListaSimples({
+      empresa,
+      titulo: 'Compras e Vendas por Mês',
+      subtitulo: `Período de ${fmtDate(dataInicioCV)} a ${fmtDate(dataFimCV)} — ${comprasVendas.length} produto(s)`,
+      colunas,
+      linhas,
+      montarLinha: (l) => `<tr>
+        <td>${l.codigo}</td>
+        <td>${l.descricao}</td>
+        <td>${mesLabel(l.mes)}</td>
+        <td class="num">${(l.qtde_compra || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td>
+        <td class="num">${fmtMoedaBR(l.valor_compra)}</td>
+        <td class="num">${(l.qtde_venda || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 })}</td>
+        <td class="num">${fmtMoedaBR(l.valor_venda)}</td>
+      </tr>`,
+    })
+    await gerarPdfRelatorio(html, `compras_vendas_mes_${dataInicioCV}_${dataFimCV}`)
+  }
+
   const totalUnid = produtos.reduce((s, p) => s + (p.estoque_atual || 0), 0)
   const semEstoque = produtos.filter((p) => (p.estoque_atual || 0) === 0).length
   const baixo = produtos.filter(
@@ -1075,6 +1210,196 @@ function RelProdutos() {
               </tfoot>
             </table>
           </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 32, marginBottom: 6 }}>
+            <Calendar size={16} color='var(--text-secondary)' />
+            <div style={{ fontSize: 14, fontWeight: 600 }}>Compras e vendas por mês</div>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 680, lineHeight: 1.5, marginBottom: 14 }}>
+            Filtre um período pra ver, produto a produto, em que mês você comprou mais (entrada de mercadoria) e em que mês vendeu mais.
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>De</label>
+              <input
+                type='date'
+                value={dataInicioCV}
+                onChange={(e) => setDataInicioCV(e.target.value)}
+                style={{ height: 32, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: 13 }}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Até</label>
+              <input
+                type='date'
+                value={dataFimCV}
+                onChange={(e) => setDataFimCV(e.target.value)}
+                style={{ height: 32, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: 13 }}
+              />
+            </div>
+            <button
+              onClick={carregarComprasVendas}
+              style={{ height: 32, padding: '0 16px', borderRadius: 6, background: 'var(--blue-700)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
+            >
+              {loadingCV ? 'Carregando…' : 'Atualizar'}
+            </button>
+            <input
+              placeholder='Buscar produto…'
+              value={buscaCV}
+              onChange={(e) => setBuscaCV(e.target.value)}
+              style={{ height: 32, padding: '0 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: 13, minWidth: 180 }}
+            />
+            <div style={{ marginLeft: 'auto' }}>
+              <BotaoGerarRelatorio onExportarExcel={exportarExcelCV} onGerarPDF={gerarPdfComprasVendas} />
+            </div>
+          </div>
+
+          {loadingCV ? (
+            <Carregando />
+          ) : (
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+              {produtosCVOrd.length === 0 ? (
+                <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                  Nenhuma compra ou venda registrada nesse período.
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                  <thead>
+                    <tr>
+                      {[
+                        { label: 'Código', chave: 'codigo' },
+                        { label: 'Descrição', chave: 'descricao' },
+                        { label: 'Qtd comprada', chave: 'totalQtdCompra' },
+                        { label: 'Mês que mais comprei', chave: 'mes_forte_compra' },
+                        { label: 'Qtd vendida', chave: 'totalQtdVenda' },
+                        { label: 'Mês que mais vendi', chave: 'mes_forte_venda' },
+                      ].map((h) => (
+                        <ThOrdenavel
+                          key={h.chave}
+                          label={h.label}
+                          chave={h.chave}
+                          colunaAtual={colCV}
+                          direcao={dirCV}
+                          onOrdenar={alternarCV}
+                          style={{
+                            padding: '8px 12px',
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: 'var(--text-muted)',
+                            textAlign: h.chave === 'descricao' || h.chave === 'codigo' ? 'left' : 'right',
+                            background: 'var(--gray-50)',
+                            borderBottom: '1px solid var(--border)',
+                          }}
+                        />
+                      ))}
+                      <th style={{ padding: '8px 12px', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }} />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {produtosCVOrd.map((p) => {
+                      const aberto = expandidoCV === p.codigo
+                      const mesesComCompra = p.meses.filter((m) => m.qtde_compra > 0)
+                      const mesesComVenda = p.meses.filter((m) => m.qtde_venda > 0)
+                      const maxCompraMes = Math.max(...mesesComCompra.map((m) => m.qtde_compra || 0), 1)
+                      const maxVendaMes = Math.max(...mesesComVenda.map((m) => m.qtde_venda || 0), 1)
+                      const fmtQ = (v) => (v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 })
+                      return (
+                        <Fragment key={p.codigo}>
+                          <tr
+                            onClick={() => setExpandidoCV(aberto ? null : p.codigo)}
+                            style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                          >
+                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>{p.codigo}</td>
+                            <td style={{ padding: '8px 12px', fontWeight: 500 }}>{p.descricao}</td>
+                            <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtQ(p.totalQtdCompra)}</td>
+                            <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                              {p.mesForteCompra ? (
+                                <span style={{ background: 'var(--blue-50)', color: 'var(--blue-700)', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>
+                                  {mesLabel(p.mesForteCompra.mes)}
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtQ(p.totalQtdVenda)}</td>
+                            <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                              {p.mesForteVenda ? (
+                                <span style={{ background: 'var(--green-50)', color: 'var(--green-500)', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500 }}>
+                                  {mesLabel(p.mesForteVenda.mes)}
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                              {aberto ? <ChevronDown size={14} color='var(--text-muted)' /> : <ChevronRight size={14} color='var(--text-muted)' />}
+                            </td>
+                          </tr>
+                          {aberto && (
+                            <tr>
+                              <td colSpan={7} style={{ padding: '14px 20px', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+                                  <div>
+                                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10 }}>
+                                      Comprado por mês ({p.unidade || 'un'})
+                                    </div>
+                                    {mesesComCompra.length === 0 ? (
+                                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sem compras nesse período.</div>
+                                    ) : (
+                                      mesesComCompra.map((m) => (
+                                        <BarraHorizontal
+                                          key={'c-' + m.mes}
+                                          label={mesLabel(m.mes)}
+                                          value={m.qtde_compra || 0}
+                                          max={maxCompraMes}
+                                          color='var(--blue-400)'
+                                          formatador={fmtQ}
+                                        />
+                                      ))
+                                    )}
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10 }}>
+                                      Vendido por mês ({p.unidade || 'un'})
+                                    </div>
+                                    {mesesComVenda.length === 0 ? (
+                                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sem vendas nesse período.</div>
+                                    ) : (
+                                      mesesComVenda.map((m) => (
+                                        <BarraHorizontal
+                                          key={'v-' + m.mes}
+                                          label={mesLabel(m.mes)}
+                                          value={m.qtde_venda || 0}
+                                          max={maxVendaMes}
+                                          color='var(--green-500)'
+                                          formatador={fmtQ}
+                                        />
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+                                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 10, lineHeight: 1.5 }}>
+                                  {p.mesForteCompra && (
+                                    <>Comprou mais em <strong>{mesLabel(p.mesForteCompra.mes)}</strong> ({fmtQ(p.mesForteCompra.qtde_compra)} {p.unidade || 'un'}, {fmt(p.mesForteCompra.valor_compra)}). </>
+                                  )}
+                                  {p.mesForteVenda && (
+                                    <>Vendeu mais em <strong>{mesLabel(p.mesForteVenda.mes)}</strong> ({fmtQ(p.mesForteVenda.qtde_venda)} {p.unidade || 'un'}, {fmt(p.mesForteVenda.valor_venda)}).</>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>
