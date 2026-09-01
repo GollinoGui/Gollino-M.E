@@ -945,6 +945,7 @@ export default function ContasReceber({ usuario }) {
   const [opcoesRelatorioBaixa, setOpcoesRelatorioBaixa] = useState(null) // recebidas | null
   const [detalheDocumento, setDetalheDocumento] = useState(null)
   const [dadosTotais, setDadosTotais] = useState([])
+  const [agruparCliente, setAgruparCliente] = useState(false)
 
   // ── Carrega do banco ─────────────────────────────────────────
   // dados = respeita o filtro de status (o que a TABELA mostra). dadosTotais
@@ -1047,19 +1048,59 @@ export default function ContasReceber({ usuario }) {
   })
 
   // ── Relatório (Excel/PDF), em ordem de vencimento ───────────────────────
+  const nomeClienteDe = (c) => c.codigo_cliente ? `${c.nome_cliente} (#${c.codigo_cliente})` : c.nome_cliente
+
+  // Um grupo por cliente (ordem alfabética), parcelas de cada um por vencimento —
+  // usado tanto no Excel quanto no PDF quando "Agrupar por cliente" está ativo.
+  function agruparPorCliente(lista) {
+    const itensPorNome = {}
+    for (const c of lista) {
+      const nome = nomeClienteDe(c)
+      ;(itensPorNome[nome] ||= []).push(c)
+    }
+    return Object.keys(itensPorNome)
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      .map((nome) => ({
+        nome,
+        itens: itensPorNome[nome].sort((a, b) =>
+          (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
+        ),
+      }))
+  }
+
   function exportarExcel() {
-    const porVencimento = [...filtrados].sort((a, b) =>
-      (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
-    )
-    const linhas = porVencimento.map((c) => ({
+    const linhaDe = (c, cliente) => ({
       Documento: c.nro_docto || '—',
-      Cliente: c.codigo_cliente ? `${c.nome_cliente} (#${c.codigo_cliente})` : c.nome_cliente,
+      Cliente: cliente,
       Vencimento: fmtDate(c.data_vencimento),
       'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
       'Pago (R$)': (c.valor_pagamento || 0).toFixed(2).replace('.', ','),
       'Em Aberto (R$)': (c.valor_docto - (c.valor_pagamento || 0)).toFixed(2).replace('.', ','),
       Situação: STATUS_CFG[getSituacao(c)].label,
-    }))
+    })
+
+    let linhas
+    if (agruparCliente) {
+      linhas = []
+      for (const { nome, itens } of agruparPorCliente(filtrados)) {
+        linhas.push(...itens.map((c) => linhaDe(c, nome)))
+        const subVal = itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+        const subPago = itens.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
+        linhas.push({
+          Documento: '', Cliente: `Subtotal - ${nome}`, Vencimento: '',
+          'Valor (R$)': subVal.toFixed(2).replace('.', ','),
+          'Pago (R$)': subPago.toFixed(2).replace('.', ','),
+          'Em Aberto (R$)': (subVal - subPago).toFixed(2).replace('.', ','),
+          Situação: '',
+        })
+      }
+    } else {
+      const porVencimento = [...filtrados].sort((a, b) =>
+        (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
+      )
+      linhas = porVencimento.map((c) => linhaDe(c, nomeClienteDe(c)))
+    }
+
     linhas.push({
       Documento: '',
       Cliente: 'TOTAL GERAL',
@@ -1069,37 +1110,75 @@ export default function ContasReceber({ usuario }) {
       'Em Aberto (R$)': totalEmAbertoTabela.toFixed(2).replace('.', ','),
       Situação: '',
     })
-    exportarCSV(linhas, `contas_receber_${new Date().toISOString().slice(0, 10)}`)
+    exportarCSV(linhas, `contas_receber${agruparCliente ? '_por_cliente' : ''}_${new Date().toISOString().slice(0, 10)}`)
   }
 
   async function gerarRelatorioPDF() {
     const empresa = await buscarEmpresa()
-    const porVencimento = [...filtrados].sort((a, b) =>
-      (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
-    )
-    const colunas = [
-      { label: 'Documento' },
-      { label: 'Cliente' },
-      { label: 'Vencimento' },
-      { label: 'Valor', num: true },
-      { label: 'Pago', num: true },
-      { label: 'Em Aberto', num: true },
-      { label: 'Situação' },
-    ]
-    const html = gerarHtmlListaSimples({
-      empresa,
-      titulo: 'Contas a Receber',
-      subtitulo: `${filtrados.length} parcela(s), ordenadas por vencimento — gerado em ${fmtDate(new Date().toISOString().slice(0, 10))}`,
-      colunas,
-      linhas: porVencimento,
-      montarLinha: (c) => {
+    const dataGerado = fmtDate(new Date().toISOString().slice(0, 10))
+
+    let html
+    if (agruparCliente) {
+      const colunasGrupo = [
+        { label: 'Documento' },
+        { label: 'Vencimento' },
+        { label: 'Valor', num: true },
+        { label: 'Pago', num: true },
+        { label: 'Em Aberto', num: true },
+        { label: 'Situação' },
+      ]
+      const montarLinhaGrupo = (c) => {
         const emAberto = c.valor_docto - (c.valor_pagamento || 0)
-        return `<tr><td>${c.nro_docto || '—'}</td><td>${c.nome_cliente || c.codigo_cliente || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(c.valor_pagamento || 0)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${STATUS_CFG[getSituacao(c)].label}</td></tr>`
-      },
-      montarTotalGeral: () =>
-        `<td colspan="3">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDoctoTabela)}</td><td class="num">${fmtMoedaBR(totalPagoFiltrados)}</td><td class="num">${fmtMoedaBR(totalEmAbertoTabela)}</td><td></td>`,
-    })
-    await gerarPdfRelatorio(html, `contas_receber_${new Date().toISOString().slice(0, 10)}`)
+        return `<tr><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(c.valor_pagamento || 0)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${STATUS_CFG[getSituacao(c)].label}</td></tr>`
+      }
+      const grupos = agruparPorCliente(filtrados)
+      const secoes = grupos.map(({ nome, itens }) => {
+        const subVal = itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+        const subPago = itens.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
+        const subAberto = subVal - subPago
+        return {
+          titulo: nome,
+          colunas: colunasGrupo,
+          linhas: itens,
+          montarLinha: montarLinhaGrupo,
+          montarTotal: () =>
+            `<td>Subtotal</td><td></td><td class="num">${fmtMoedaBR(subVal)}</td><td class="num">${fmtMoedaBR(subPago)}</td><td class="num">${fmtMoedaBR(subAberto)}</td><td></td>`,
+        }
+      })
+      html = gerarHtmlSecoes({
+        empresa,
+        titulo: 'Contas a Receber por Cliente',
+        subtitulo: `${filtrados.length} parcela(s) — ${grupos.length} cliente(s) — gerado em ${dataGerado}`,
+        secoes,
+      })
+    } else {
+      const porVencimento = [...filtrados].sort((a, b) =>
+        (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
+      )
+      const colunas = [
+        { label: 'Documento' },
+        { label: 'Cliente' },
+        { label: 'Vencimento' },
+        { label: 'Valor', num: true },
+        { label: 'Pago', num: true },
+        { label: 'Em Aberto', num: true },
+        { label: 'Situação' },
+      ]
+      html = gerarHtmlListaSimples({
+        empresa,
+        titulo: 'Contas a Receber',
+        subtitulo: `${filtrados.length} parcela(s), ordenadas por vencimento — gerado em ${dataGerado}`,
+        colunas,
+        linhas: porVencimento,
+        montarLinha: (c) => {
+          const emAberto = c.valor_docto - (c.valor_pagamento || 0)
+          return `<tr><td>${c.nro_docto || '—'}</td><td>${c.nome_cliente || c.codigo_cliente || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(c.valor_pagamento || 0)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${STATUS_CFG[getSituacao(c)].label}</td></tr>`
+        },
+        montarTotalGeral: () =>
+          `<td colspan="3">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDoctoTabela)}</td><td class="num">${fmtMoedaBR(totalPagoFiltrados)}</td><td class="num">${fmtMoedaBR(totalEmAbertoTabela)}</td><td></td>`,
+      })
+    }
+    await gerarPdfRelatorio(html, `contas_receber${agruparCliente ? '_por_cliente' : ''}_${new Date().toISOString().slice(0, 10)}`)
   }
 
   // Só faz sentido marcar como "selecionada" uma conta ainda em aberto (nem
@@ -1736,6 +1815,15 @@ export default function ContasReceber({ usuario }) {
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
           {filtrados.length} registro(s) · Selecionadas: {selecionadas.length}
         </span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+          <input
+            type='checkbox'
+            checked={agruparCliente}
+            onChange={(e) => setAgruparCliente(e.target.checked)}
+            style={{ width: 15, height: 15, cursor: 'pointer' }}
+          />
+          Agrupar por cliente
+        </label>
         <BotoesRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} abrirParaCima />
         <div style={{ flex: 1 }} />
         <button
