@@ -31,6 +31,7 @@ import {
   exportarCSV,
   buscarEmpresa,
   gerarHtmlListaSimples,
+  gerarHtmlSecoes,
   gerarPdfRelatorio,
   fmtMoedaBR,
 } from '../utils/relatorios'
@@ -1411,6 +1412,7 @@ function RelContasReceber() {
   const [contas, setContas] = useState([])
   const [loading, setLoading] = useState(true)
   const [filtroSit, setFiltroSit] = useState('')
+  const [agruparCliente, setAgruparCliente] = useState(false)
 
   async function carregar(sit) {
     setLoading(true)
@@ -1457,22 +1459,60 @@ function RelContasReceber() {
     },
   })
 
+  // Um grupo por cliente (ordem alfabética), parcelas de cada um por vencimento —
+  // usado tanto no Excel quanto no PDF quando "Agrupar por cliente" está ativo.
+  function agruparPorCliente(lista) {
+    const itensPorNome = {}
+    for (const c of lista) {
+      const nome = pessoaLabel(c.nome_cliente, c.codigo_cliente)
+      ;(itensPorNome[nome] ||= []).push(c)
+    }
+    return Object.keys(itensPorNome)
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      .map((nome) => ({
+        nome,
+        itens: itensPorNome[nome].sort((a, b) =>
+          (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
+        ),
+      }))
+  }
+
   function exportarExcel() {
-    const porVencimento = [...contas].sort((a, b) =>
-      (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
-    )
-    const linhas = porVencimento.map((c) => ({
+    const totalDocto = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
+    const totalPagoLinhas = contas.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
+    const linhaDe = (c, cliente) => ({
       Documento: c.nro_docto || '—',
       Seq: c.seq_docto || '—',
-      Cliente: pessoaLabel(c.nome_cliente, c.codigo_cliente),
+      Cliente: cliente,
       Vencimento: fmtDate(c.data_vencimento),
       'Valor (R$)': (c.valor_docto || 0).toFixed(2).replace('.', ','),
       'Pago (R$)': (c.valor_pagamento || 0).toFixed(2).replace('.', ','),
       'Em Aberto (R$)': ((c.valor_docto || 0) - (c.valor_pagamento || 0)).toFixed(2).replace('.', ','),
       Situação: situacaoDe(c),
-    }))
-    const totalDocto = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
-    const totalPagoLinhas = contas.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
+    })
+
+    let linhas
+    if (agruparCliente) {
+      linhas = []
+      for (const { nome, itens } of agruparPorCliente(contas)) {
+        linhas.push(...itens.map((c) => linhaDe(c, nome)))
+        const subVal = itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+        const subPago = itens.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
+        linhas.push({
+          Documento: '', Seq: '', Cliente: `Subtotal - ${nome}`, Vencimento: '',
+          'Valor (R$)': subVal.toFixed(2).replace('.', ','),
+          'Pago (R$)': subPago.toFixed(2).replace('.', ','),
+          'Em Aberto (R$)': (subVal - subPago).toFixed(2).replace('.', ','),
+          Situação: '',
+        })
+      }
+    } else {
+      const porVencimento = [...contas].sort((a, b) =>
+        (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
+      )
+      linhas = porVencimento.map((c) => linhaDe(c, pessoaLabel(c.nome_cliente, c.codigo_cliente)))
+    }
+
     linhas.push({
       Documento: '', Seq: '', Cliente: 'TOTAL GERAL', Vencimento: '',
       'Valor (R$)': totalDocto.toFixed(2).replace('.', ','),
@@ -1480,39 +1520,77 @@ function RelContasReceber() {
       'Em Aberto (R$)': totalAberto.toFixed(2).replace('.', ','),
       Situação: '',
     })
-    exportarCSV(linhas, 'contas_receber')
+    exportarCSV(linhas, agruparCliente ? 'contas_receber_por_cliente' : 'contas_receber')
   }
 
   async function gerarRelatorioPDF() {
     const empresa = await buscarEmpresa()
-    const porVencimento = [...contas].sort((a, b) =>
-      (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
-    )
     const totalDocto = contas.reduce((s, c) => s + (c.valor_docto || 0), 0)
     const totalPagoLinhas = contas.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
-    const colunas = [
-      { label: 'Documento' },
-      { label: 'Cliente' },
-      { label: 'Vencimento' },
-      { label: 'Valor', num: true },
-      { label: 'Pago', num: true },
-      { label: 'Em Aberto', num: true },
-      { label: 'Situação' },
-    ]
-    const html = gerarHtmlListaSimples({
-      empresa,
-      titulo: 'Contas a Receber',
-      subtitulo: `${contas.length} parcela(s), ordenadas por vencimento`,
-      colunas,
-      linhas: porVencimento,
-      montarLinha: (c) => {
+    const montarLinha = (c) => {
+      const emAberto = (c.valor_docto || 0) - (c.valor_pagamento || 0)
+      return `<tr><td>${c.nro_docto || '—'}</td><td>${pessoaLabel(c.nome_cliente, c.codigo_cliente)}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(c.valor_pagamento || 0)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${situacaoDe(c)}</td></tr>`
+    }
+
+    let html
+    if (agruparCliente) {
+      const colunasGrupo = [
+        { label: 'Documento' },
+        { label: 'Vencimento' },
+        { label: 'Valor', num: true },
+        { label: 'Pago', num: true },
+        { label: 'Em Aberto', num: true },
+        { label: 'Situação' },
+      ]
+      const montarLinhaGrupo = (c) => {
         const emAberto = (c.valor_docto || 0) - (c.valor_pagamento || 0)
-        return `<tr><td>${c.nro_docto || '—'}</td><td>${pessoaLabel(c.nome_cliente, c.codigo_cliente)}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(c.valor_pagamento || 0)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${situacaoDe(c)}</td></tr>`
-      },
-      montarTotalGeral: () =>
-        `<td colspan="3">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDocto)}</td><td class="num">${fmtMoedaBR(totalPagoLinhas)}</td><td class="num">${fmtMoedaBR(totalAberto)}</td><td></td>`,
-    })
-    await gerarPdfRelatorio(html, 'contas_receber')
+        return `<tr><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(c.valor_pagamento || 0)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${situacaoDe(c)}</td></tr>`
+      }
+      const grupos = agruparPorCliente(contas)
+      const secoes = grupos.map(({ nome, itens }) => {
+        const subVal = itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
+        const subPago = itens.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
+        const subAberto = subVal - subPago
+        return {
+          titulo: nome,
+          colunas: colunasGrupo,
+          linhas: itens,
+          montarLinha: montarLinhaGrupo,
+          montarTotal: () =>
+            `<td>Subtotal</td><td></td><td class="num">${fmtMoedaBR(subVal)}</td><td class="num">${fmtMoedaBR(subPago)}</td><td class="num">${fmtMoedaBR(subAberto)}</td><td></td>`,
+        }
+      })
+      html = gerarHtmlSecoes({
+        empresa,
+        titulo: 'Contas a Receber por Cliente',
+        subtitulo: `${contas.length} parcela(s) — ${grupos.length} cliente(s) — Em aberto: ${fmtMoedaBR(totalAberto)}`,
+        secoes,
+      })
+    } else {
+      const porVencimento = [...contas].sort((a, b) =>
+        (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
+      )
+      const colunas = [
+        { label: 'Documento' },
+        { label: 'Cliente' },
+        { label: 'Vencimento' },
+        { label: 'Valor', num: true },
+        { label: 'Pago', num: true },
+        { label: 'Em Aberto', num: true },
+        { label: 'Situação' },
+      ]
+      html = gerarHtmlListaSimples({
+        empresa,
+        titulo: 'Contas a Receber',
+        subtitulo: `${contas.length} parcela(s), ordenadas por vencimento`,
+        colunas,
+        linhas: porVencimento,
+        montarLinha,
+        montarTotalGeral: () =>
+          `<td colspan="3">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDocto)}</td><td class="num">${fmtMoedaBR(totalPagoLinhas)}</td><td class="num">${fmtMoedaBR(totalAberto)}</td><td></td>`,
+      })
+    }
+    await gerarPdfRelatorio(html, agruparCliente ? 'contas_receber_por_cliente' : 'contas_receber')
   }
 
   return (
@@ -1531,6 +1609,15 @@ function RelContasReceber() {
           style={{ height: 34, padding: '0 14px', border: '1px solid var(--border-md)', borderRadius: 'var(--radius-md)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)', cursor: 'pointer' }}>
           <RefreshCw size={12} /> Atualizar
         </button>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, height: 34, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+          <input
+            type='checkbox'
+            checked={agruparCliente}
+            onChange={(e) => setAgruparCliente(e.target.checked)}
+            style={{ width: 15, height: 15, cursor: 'pointer' }}
+          />
+          Agrupar por cliente (Excel/PDF)
+        </label>
       </div>
       {loading ? (
         <Carregando />
