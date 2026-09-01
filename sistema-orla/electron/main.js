@@ -678,7 +678,13 @@ ipcMain.handle('pdf:gerarVenda', async (_, orcamento) => {
     const filePath = path.join(dir, fileName)
     fs.writeFileSync(filePath, pdfBuffer)
 
-    await shell.openPath(filePath)
+    // shell.openPath nunca rejeita: em falha, resolve com uma string de erro
+    // em vez de lançar. Sem checar isso, o PDF fica salvo em disco mas nada
+    // abre na tela e o app reporta sucesso do mesmo jeito.
+    const erroAbrir = await shell.openPath(filePath)
+    if (erroAbrir) {
+      return { sucesso: false, erro: `PDF salvo, mas não foi possível abrir: ${erroAbrir}`, caminho: filePath }
+    }
 
     return { sucesso: true, caminho: filePath }
   } catch (err) {
@@ -720,7 +726,10 @@ ipcMain.handle('pdf:gerarRelatorio', async (_, { html, nomeArquivo }) => {
     const filePath = path.join(dir, fileName)
     fs.writeFileSync(filePath, pdfBuffer)
 
-    await shell.openPath(filePath)
+    const erroAbrir = await shell.openPath(filePath)
+    if (erroAbrir) {
+      return { sucesso: false, erro: `PDF salvo, mas não foi possível abrir: ${erroAbrir}`, caminho: filePath }
+    }
 
     return { sucesso: true, caminho: filePath }
   } catch (err) {
