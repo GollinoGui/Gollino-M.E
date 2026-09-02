@@ -745,6 +745,20 @@ function RelProdutos() {
         p.codigo?.toLowerCase().includes(buscaCV.toLowerCase()),
     )
 
+  // Resumo por mês: total de entrada (compras) e saída (vendas) em R$ somando todos os produtos
+  const resumoPorMesCV = Object.values(
+    comprasVendas.reduce((acc, p) => {
+      for (const m of p.meses) {
+        if (!acc[m.mes]) acc[m.mes] = { mes: m.mes, valorEntrada: 0, valorSaida: 0 }
+        acc[m.mes].valorEntrada += m.valor_compra || 0
+        acc[m.mes].valorSaida += m.valor_venda || 0
+      }
+      return acc
+    }, {}),
+  ).sort((a, b) => a.mes.localeCompare(b.mes))
+  const totalEntradaCV = resumoPorMesCV.reduce((s, m) => s + m.valorEntrada, 0)
+  const totalSaidaCV = resumoPorMesCV.reduce((s, m) => s + m.valorSaida, 0)
+
   const {
     ordenados: produtosCVOrd,
     coluna: colCV,
@@ -1217,7 +1231,7 @@ function RelProdutos() {
             <div style={{ fontSize: 14, fontWeight: 600 }}>Compras e vendas por mês</div>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 680, lineHeight: 1.5, marginBottom: 14 }}>
-            Filtre um período pra ver, produto a produto, em que mês você comprou mais (entrada de mercadoria) e em que mês vendeu mais.
+            Filtre um período pra ver, produto a produto, em que mês você comprou mais (entrada de mercadoria) e em que mês vendeu mais — e o total em R$ que entrou e saiu em cada mês.
           </div>
 
           <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -1259,6 +1273,81 @@ function RelProdutos() {
           {loadingCV ? (
             <Carregando />
           ) : (
+            <>
+              {comprasVendas.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
+                    <CardMetrica label='Total entrada no período (compras)' value={fmt(totalEntradaCV)} color='var(--blue-700)' />
+                    <CardMetrica label='Total saída no período (vendas)' value={fmt(totalSaidaCV)} color='var(--green-500)' />
+                    <CardMetrica
+                      label='Saldo (saída − entrada)'
+                      value={fmt(totalSaidaCV - totalEntradaCV)}
+                      color={totalSaidaCV - totalEntradaCV >= 0 ? 'var(--green-500)' : 'var(--red-500)'}
+                    />
+                  </div>
+                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textAlign: 'left', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>Mês</th>
+                          <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textAlign: 'right', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>Entrada (R$)</th>
+                          <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textAlign: 'right', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>Saída (R$)</th>
+                          <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textAlign: 'right', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>Saldo (R$)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resumoPorMesCV.map((m) => (
+                          <tr key={m.mes} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td style={{ padding: '8px 12px', fontWeight: 500 }}>{mesLabel(m.mes)}</td>
+                            <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--blue-700)' }}>{fmt(m.valorEntrada)}</td>
+                            <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--green-500)' }}>{fmt(m.valorSaida)}</td>
+                            <td
+                              style={{
+                                padding: '8px 12px',
+                                textAlign: 'right',
+                                fontWeight: 600,
+                                color: m.valorSaida - m.valorEntrada >= 0 ? 'var(--green-500)' : 'var(--red-500)',
+                              }}
+                            >
+                              {fmt(m.valorSaida - m.valorEntrada)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <td style={{ padding: '10px 12px', fontWeight: 700, background: 'var(--gray-50)', borderTop: '1px solid var(--border)' }}>
+                            Total do período
+                          </td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--blue-700)', background: 'var(--gray-50)', borderTop: '1px solid var(--border)' }}>
+                            {fmt(totalEntradaCV)}
+                          </td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--green-500)', background: 'var(--gray-50)', borderTop: '1px solid var(--border)' }}>
+                            {fmt(totalSaidaCV)}
+                          </td>
+                          <td
+                            style={{
+                              padding: '10px 12px',
+                              textAlign: 'right',
+                              fontWeight: 700,
+                              color: totalSaidaCV - totalEntradaCV >= 0 ? 'var(--green-500)' : 'var(--red-500)',
+                              background: 'var(--gray-50)',
+                              borderTop: '1px solid var(--border)',
+                            }}
+                          >
+                            {fmt(totalSaidaCV - totalEntradaCV)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <Package size={16} color='var(--text-secondary)' />
+                <div style={{ fontSize: 14, fontWeight: 600 }}>Detalhe por produto</div>
+              </div>
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
               {produtosCVOrd.length === 0 ? (
                 <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
@@ -1400,6 +1489,7 @@ function RelProdutos() {
                 </table>
               )}
             </div>
+            </>
           )}
         </>
       )}
