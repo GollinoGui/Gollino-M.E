@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, FileText, CheckCircle, Clock, ExternalLink, Copy, Check } from 'lucide-react'
+import { Search, FileText, CheckCircle, Clock, ExternalLink, Copy, Check, Loader2, Printer, AlertTriangle, Plug } from 'lucide-react'
 import { fmtQtd } from '../utils/formatQtd'
 
 const fmt = (v) =>
@@ -50,6 +50,19 @@ function primeiroDiaMes() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
+// Códigos de situação da NF-e na Bling (ver electron/bling.js)
+const SITUACAO_BLING = {
+  1: { texto: 'Enviando…', cor: '#92400E', bg: '#FFFBEB' },
+  3: { texto: 'Aguardando recibo', cor: '#92400E', bg: '#FFFBEB' },
+  4: { texto: 'Rejeitada', cor: '#991B1B', bg: '#FEF2F2' },
+  5: { texto: 'Autorizada', cor: '#15803D', bg: '#F0FDF4' },
+  6: { texto: 'Autorizada', cor: '#15803D', bg: '#F0FDF4' },
+  8: { texto: 'Aguardando protocolo', cor: '#92400E', bg: '#FFFBEB' },
+  9: { texto: 'Denegada', cor: '#991B1B', bg: '#FEF2F2' },
+  11: { texto: 'Bloqueada', cor: '#991B1B', bg: '#FEF2F2' },
+}
+const SITUACOES_EM_ANDAMENTO = [1, 3, 8, 10]
+
 export default function NotaFiscal() {
   const [vendas, setVendas] = useState([])
   const [carregando, setCarregando] = useState(false)
@@ -65,6 +78,9 @@ export default function NotaFiscal() {
   const [detalhes, setDetalhes] = useState(null)
   const [carregandoDetalhes, setCarregandoDetalhes] = useState(false)
   const [copiado, setCopiado] = useState('')
+  const [blingAutorizado, setBlingAutorizado] = useState(null) // null = ainda não checou
+  const [conectando, setConectando] = useState(false)
+  const [emitindo, setEmitindo] = useState(null) // orcamento em emissão/consulta agora
 
   async function carregar() {
     setCarregando(true)
@@ -79,7 +95,58 @@ export default function NotaFiscal() {
   useEffect(() => {
     carregar()
     window.api.config.get('empresa').then((empresa) => setPortalUrl(empresa?.portal_nfe_url || ''))
+    window.api.nfe.blingStatusAutorizacao().then((r) => setBlingAutorizado(Boolean(r?.autorizado)))
   }, [])
+
+  async function conectarBling() {
+    setConectando(true)
+    try {
+      const r = await window.api.nfe.blingAutorizar()
+      if (r?.sucesso) {
+        setBlingAutorizado(true)
+        setSucesso('Conectado com a Bling')
+        setTimeout(() => setSucesso(''), 3000)
+      } else {
+        window.alert(r?.erro || 'Não foi possível concluir a autorização.')
+      }
+    } finally {
+      setConectando(false)
+    }
+  }
+
+  function espera(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  async function emitirComBling(v) {
+    setEmitindo(v.orcamento)
+    try {
+      const r = await window.api.nfe.emitirBling(v.orcamento)
+      if (!r?.sucesso) {
+        window.alert(r?.erro || 'Falha ao emitir a NF-e.')
+        await carregar()
+        return
+      }
+      // Aguarda a SEFAZ processar — consulta a cada 3s por até 1 minuto.
+      for (let tentativa = 0; tentativa < 20; tentativa++) {
+        await espera(3000)
+        const resultado = await window.api.nfe.consultarBling(v.orcamento)
+        if (resultado?.erro) {
+          window.alert(resultado.erro)
+          break
+        }
+        if (!SITUACOES_EM_ANDAMENTO.includes(resultado?.situacao)) break
+      }
+      await carregar()
+    } finally {
+      setEmitindo(null)
+    }
+  }
+
+  function imprimirDanfe(link) {
+    if (!link) return
+    window.api.nfe.abrirPortal(link)
+  }
 
   async function abrirModal(v) {
     setModal(v)
@@ -126,6 +193,7 @@ export default function NotaFiscal() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
+      <style>{'@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }'}</style>
       {sucesso && (
         <div style={{
           position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)',
@@ -268,6 +336,28 @@ export default function NotaFiscal() {
         </div>
       )}
 
+      {blingAutorizado === false && (
+        <div style={{
+          padding: '9px 16px', background: '#FFFBEB', borderBottom: '1px solid #FDE68A',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+        }}>
+          <span style={{ fontSize: 12, color: '#92400E' }}>
+            Sistema ainda não conectado com a Bling — a emissão automática de NF-e não vai funcionar até conectar.
+          </span>
+          <button
+            onClick={conectarBling}
+            disabled={conectando}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 7,
+              border: 'none', background: '#92400E', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
+            }}
+          >
+            {conectando ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Plug size={13} />}
+            {conectando ? 'Abrindo navegador…' : 'Conectar com a Bling'}
+          </button>
+        </div>
+      )}
+
       {/* Filtros */}
       <div style={{
         padding: '10px 16px', background: 'var(--surface)',
@@ -378,6 +468,27 @@ export default function NotaFiscal() {
                     }}>
                       <CheckCircle size={11} /> {v.numero_nfe}
                     </span>
+                  ) : SITUACAO_BLING[v.nfe_situacao] ? (
+                    <span
+                      title={v.nfe_erro || ''}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        background: SITUACAO_BLING[v.nfe_situacao].bg, color: SITUACAO_BLING[v.nfe_situacao].cor,
+                        border: `1px solid ${SITUACAO_BLING[v.nfe_situacao].cor}40`,
+                        padding: '2px 10px', borderRadius: 10, fontSize: 11, fontWeight: 700,
+                      }}>
+                      {SITUACOES_EM_ANDAMENTO.includes(v.nfe_situacao) && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />}
+                      {v.nfe_situacao === 4 || v.nfe_situacao === 9 ? <AlertTriangle size={11} /> : null}
+                      {SITUACAO_BLING[v.nfe_situacao].texto}
+                    </span>
+                  ) : v.nfe_erro ? (
+                    <span title={v.nfe_erro} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      background: '#FEF2F2', color: '#991B1B', border: '1px solid #FCA5A5',
+                      padding: '2px 10px', borderRadius: 10, fontSize: 11, fontWeight: 700,
+                    }}>
+                      <AlertTriangle size={11} /> Erro
+                    </span>
                   ) : (
                     <span style={{
                       background: '#FEF9C3', color: '#92400E', border: '1px solid #FDE68A',
@@ -387,19 +498,64 @@ export default function NotaFiscal() {
                     </span>
                   )}
                 </td>
-                <td style={{ padding: '9px 12px' }}>
-                  <button
-                    onClick={() => abrirModal(v)}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 5,
-                      padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                      border: '1px solid var(--border)', color: 'var(--text-secondary)',
-                    }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--gray-50)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    <FileText size={12} /> {v.numero_nfe ? 'Editar' : 'Registrar'}
-                  </button>
+                <td style={{ padding: '9px 12px', display: 'flex', gap: 6 }}>
+                  {v.numero_nfe ? (
+                    <>
+                      {v.nfe_link_danfe && (
+                        <button
+                          onClick={() => imprimirDanfe(v.nfe_link_danfe)}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 5,
+                            padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                            border: '1px solid var(--blue-700)', background: 'var(--blue-700)', color: '#fff',
+                          }}
+                        >
+                          <Printer size={12} /> Imprimir
+                        </button>
+                      )}
+                      <button
+                        onClick={() => abrirModal(v)}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                          border: '1px solid var(--border)', color: 'var(--text-secondary)',
+                        }}
+                      >
+                        <FileText size={12} /> Editar
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => emitirComBling(v)}
+                        disabled={Boolean(emitindo) || blingAutorizado === false}
+                        title={blingAutorizado === false ? 'Conecte com a Bling primeiro' : ''}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                          cursor: emitindo || blingAutorizado === false ? 'not-allowed' : 'pointer',
+                          border: '1px solid var(--blue-700)',
+                          background: blingAutorizado === false ? 'var(--gray-200)' : 'var(--blue-700)',
+                          color: blingAutorizado === false ? 'var(--text-muted)' : '#fff',
+                        }}
+                      >
+                        {emitindo === v.orcamento
+                          ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                          : <FileText size={12} />}
+                        {emitindo === v.orcamento ? 'Emitindo…' : 'Emitir NF-e'}
+                      </button>
+                      <button
+                        onClick={() => abrirModal(v)}
+                        title='Registrar número manualmente (fallback)'
+                        style={{
+                          padding: '4px 8px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
+                          border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'transparent',
+                        }}
+                      >
+                        manual
+                      </button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}

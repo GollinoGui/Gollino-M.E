@@ -34,3 +34,7 @@ banco/*.db-shm
 banco/*.db-wal
 banco/vendas/
 banco/relatorios/
+
+# Credenciais e tokens da integração Bling — nunca vai pro git
+electron/bling-config.json
+electron/bling-tokens.json

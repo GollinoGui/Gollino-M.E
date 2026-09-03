@@ -298,6 +298,10 @@ handle('nfe:abrirPortal', (_, url) => {
   shell.openExternal(url)
   return { sucesso: true }
 })
+handle('nfe:blingStatusAutorizacao', () => db.nfe.blingStatusAutorizacao())
+handle('nfe:blingAutorizar', () => db.nfe.blingAutorizar())
+handle('nfe:emitirBling', (_, orcamento) => db.nfe.emitirBling(orcamento))
+handle('nfe:consultarBling', (_, orcamento) => db.nfe.consultarBling(orcamento))
 
 // --- PEDIDOS DE COMPRA ---
 handle('pedidosCompra:listar', (_, filtros) => db.pedidosCompra.listar(filtros))

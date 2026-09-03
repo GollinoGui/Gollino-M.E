@@ -1,4 +1,5 @@
 const { supabase, emailDoUsuario } = require('./supabaseClient')
+const bling = require('./bling')
 
 // Escapa um valor para uso dentro de .or()/.filter() do supabase-js — evita
 // que vírgula/aspas no texto digitado pelo usuário quebrem a sintaxe do filtro.
@@ -1708,7 +1709,7 @@ const comentarios = {
 // ============================================================
 const nfe = {
   async listar(filtros = {}) {
-    let q = supabase.from('vendas').select('orcamento, data, hora_cadastro, valor_total, situacao, numero_nfe, codigo_cliente, usuario_cadastro').neq('situacao', 'C')
+    let q = supabase.from('vendas').select('orcamento, data, hora_cadastro, valor_total, situacao, numero_nfe, codigo_cliente, usuario_cadastro, nfe_bling_id, nfe_situacao, nfe_link_danfe, nfe_erro').neq('situacao', 'C')
     if (filtros.dataInicio) q = q.gte('data', filtros.dataInicio)
     if (filtros.dataFim) q = q.lte('data', filtros.dataFim)
     if (filtros.status === 'com') q = q.not('numero_nfe', 'is', null).neq('numero_nfe', '')
@@ -1739,6 +1740,57 @@ const nfe = {
       supabase.from('vendas_itens').select('*').eq('orcamento', orcamento).order('id'),
     ])
     return { venda, cliente: cliente || null, itens: itens || [] }
+  },
+
+  async blingStatusAutorizacao() {
+    return bling.statusAutorizacao()
+  },
+
+  async blingAutorizar() {
+    return bling.iniciarAutorizacao()
+  },
+
+  // Emite a NF-e de verdade via API da Bling (cria + envia pra autorização)
+  // a partir dos dados já registrados na venda. Salva o id/situação na venda
+  // pra permitir consultar o andamento depois com blingConsultar.
+  async emitirBling(orcamento) {
+    const detalhesVenda = await this.detalhes(orcamento)
+    if (!detalhesVenda) throw new Error(`Venda #${orcamento} não encontrada.`)
+
+    const codigosProduto = [...new Set(detalhesVenda.itens.map((i) => i.codigo_produto))]
+    const { data: produtos } = await supabase
+      .from('produtos')
+      .select('codigo, ncm, codigo_cest, origem_mercadoria')
+      .in('codigo', codigosProduto)
+    const produtosPorCodigo = Object.fromEntries((produtos || []).map((p) => [p.codigo, p]))
+
+    try {
+      const { blingId } = await bling.emitirNfeDaVenda(detalhesVenda, produtosPorCodigo)
+      await supabase.from('vendas').update({ nfe_bling_id: blingId, nfe_situacao: 1, nfe_erro: null }).eq('orcamento', orcamento)
+      return { sucesso: true, blingId }
+    } catch (e) {
+      await supabase.from('vendas').update({ nfe_erro: e.message }).eq('orcamento', orcamento)
+      throw e
+    }
+  },
+
+  // Consulta o andamento na Bling (situação, número definitivo, link do
+  // DANFE) e atualiza a venda. Chamado em polling pela tela até sair de
+  // "Pendente"/"Aguardando".
+  async consultarBling(orcamento) {
+    const { data: venda, error } = await supabase.from('vendas').select('nfe_bling_id').eq('orcamento', orcamento).maybeSingle()
+    if (error) throw new Error(error.message)
+    if (!venda?.nfe_bling_id) throw new Error(`Venda #${orcamento} ainda não tem emissão iniciada na Bling.`)
+
+    const dados = await bling.consultarNfe(venda.nfe_bling_id)
+    const atualizacao = { nfe_situacao: dados.situacao }
+    if (dados.situacao === 5) {
+      atualizacao.numero_nfe = dados.numero
+      atualizacao.nfe_link_danfe = dados.linkDanfe || dados.linkPDF || null
+      atualizacao.nfe_erro = null
+    }
+    await supabase.from('vendas').update(atualizacao).eq('orcamento', orcamento)
+    return { situacao: dados.situacao, numero: dados.numero, linkDanfe: atualizacao.nfe_link_danfe || null }
   },
 }
 
