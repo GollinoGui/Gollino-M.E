@@ -219,6 +219,10 @@ contextBridge.exposeInMainWorld('api', {
     blingAutorizar: () => ipcRenderer.invoke('nfe:blingAutorizar'),
     emitirBling: (orcamento) => ipcRenderer.invoke('nfe:emitirBling', orcamento),
     consultarBling: (orcamento) => ipcRenderer.invoke('nfe:consultarBling', orcamento),
+    blingNaturezas: () => ipcRenderer.invoke('nfe:blingNaturezas'),
+    blingFormasPagamento: () => ipcRenderer.invoke('nfe:blingFormasPagamento'),
+    emitirManual: (dados) => ipcRenderer.invoke('nfe:emitirManual', dados),
+    consultarBlingPorId: (blingId) => ipcRenderer.invoke('nfe:consultarBlingPorId', blingId),
   },
 
   // PEDIDOS DE COMPRA

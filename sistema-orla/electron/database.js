@@ -1750,6 +1750,30 @@ const nfe = {
     return bling.iniciarAutorizacao()
   },
 
+  async blingNaturezas() {
+    const lista = await bling.listarNaturezasOperacao()
+    return lista.map((n) => ({ id: n.id, descricao: n.descricao }))
+  },
+
+  async blingFormasPagamento() {
+    const lista = await bling.listarFormasPagamento()
+    return lista.map((f) => ({ id: f.id, descricao: f.descricao }))
+  },
+
+  // NF-e criada manualmente pela tela (tipo Venda avulsa/Devolução/Outra),
+  // sem estar presa a uma venda já registrada no sistema.
+  async emitirManual(dados) {
+    const { blingId } = await bling.emitirNfeManual(dados)
+    return { sucesso: true, blingId }
+  },
+
+  // Consulta direta por id da Bling — usada pelo polling da NF-e manual, que
+  // não tem uma linha em `vendas` pra guardar o id.
+  async consultarBlingPorId(blingId) {
+    const dados = await bling.consultarNfe(blingId)
+    return { situacao: dados.situacao, numero: dados.numero, linkDanfe: dados.linkDanfe || dados.linkPDF || null }
+  },
+
   // Emite a NF-e de verdade via API da Bling (cria + envia pra autorização)
   // a partir dos dados já registrados na venda. Salva o id/situação na venda
   // pra permitir consultar o andamento depois com blingConsultar.

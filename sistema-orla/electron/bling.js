@@ -15,10 +15,19 @@ const fs = require('fs')
 const path = require('path')
 const http = require('http')
 const crypto = require('crypto')
-const { shell } = require('electron')
+const { app, shell } = require('electron')
 
 const CONFIG_PATH = path.join(__dirname, 'bling-config.json')
-const TOKENS_PATH = path.join(__dirname, 'bling-tokens.json')
+
+// bling-config.json (Client ID/Secret) é só leitura, então pode ficar dentro
+// do app.asar. Mas bling-tokens.json precisa ser GRAVADO em runtime — dentro
+// do app.asar (empacotado) o filesystem é somente leitura, então usa a pasta
+// de dados do usuário, igual getBancoDir() em main.js resolve pro mesmo
+// problema com o banco local.
+function getTokensPath() {
+  const base = app.isPackaged ? app.getPath('userData') : __dirname
+  return path.join(base, 'bling-tokens.json')
+}
 
 const API_BASE_URL = 'https://api.bling.com.br/Api/v3'
 const OAUTH_BASE_URL = 'https://www.bling.com.br/Api/v3'
@@ -31,9 +40,10 @@ function carregarConfig() {
 }
 
 function carregarTokens() {
-  if (!fs.existsSync(TOKENS_PATH)) return null
+  const tokensPath = getTokensPath()
+  if (!fs.existsSync(tokensPath)) return null
   try {
-    return JSON.parse(fs.readFileSync(TOKENS_PATH, 'utf8'))
+    return JSON.parse(fs.readFileSync(tokensPath, 'utf8'))
   } catch {
     return null
   }
@@ -42,7 +52,7 @@ function carregarTokens() {
 function salvarTokens(tokenSet) {
   const expiraEm = Date.now() + (tokenSet.expires_in || 21600) * 1000
   const dados = { ...tokenSet, expira_em: expiraEm }
-  fs.writeFileSync(TOKENS_PATH, JSON.stringify(dados, null, 2))
+  fs.writeFileSync(getTokensPath(), JSON.stringify(dados, null, 2))
   return dados
 }
 
@@ -307,6 +317,27 @@ function montarItens(itensVenda, produtosPorCodigo) {
   })
 }
 
+// Igual montarItens, mas pra quando o NCM/CEST/origem já vêm junto no próprio
+// item (NF-e manual/devolução/outra) em vez de precisar olhar em `produtos`.
+function montarItensManual(itens) {
+  return itens.map((it) => {
+    if (!it.ncm) {
+      throw new Error(`Item "${it.descricao || it.codigo}" sem NCM — obrigatório pra emitir NF-e.`)
+    }
+    return {
+      codigo: it.codigo || it.descricao,
+      descricao: it.descricao,
+      unidade: it.unidade || 'UN',
+      quantidade: Number(it.quantidade) || 1,
+      valor: Number(it.valor) || 0,
+      tipo: 'P',
+      classificacaoFiscal: it.ncm,
+      cest: it.cest || undefined,
+      origem: Number(it.origem) || 0,
+    }
+  })
+}
+
 // Monta e emite (cria + envia) a NF-e de uma venda já registrada no
 // sistema-orla. `detalhes` é o retorno de db.nfe.detalhes(orcamento)
 // (venda, cliente, itens), e `produtosPorCodigo` é um mapa codigo->produto
@@ -335,9 +366,64 @@ async function emitirNfeDaVenda(detalhes, produtosPorCodigo) {
     ],
   }
 
+  const blingId = await criarEEnviarNfe(payload)
+  return { blingId }
+}
+
+async function criarEEnviarNfe(payload) {
   const criada = await chamarApi('POST', '/nfe', payload)
   const blingId = criada.data.id
   await chamarApi('POST', `/nfe/${blingId}/enviar`, {})
+  return blingId
+}
+
+const NATUREZA_POR_TIPO = {
+  devolucao: 'Devolução de venda',
+  outra: null, // obrigatório vir em dados.naturezaDescricao
+}
+const FINALIDADE_POR_TIPO = { venda: 1, devolucao: 4, outra: 1 }
+
+// NF-e criada "na mão" pela tela Fiscal > NF-e > "+ Nova NF-e" — não está
+// presa a uma venda já registrada (devolução, ou qualquer outro caso que o
+// Orlasoft cobria com o tipo "Outra"). `dados.destinatario` aceita tanto uma
+// linha de `clientes` quanto um objeto avulso com os mesmos nomes de campo
+// (nome, cpf/cgc, ie, endereco, numero, bairro, cep, cidade, uf, ...).
+async function emitirNfeManual(dados) {
+  const { tipoOperacao, destinatario, itens, formaPagamentoDescricao, dataOperacao, naturezaDescricao: naturezaManual, finalidade: finalidadeManual } = dados
+  if (!itens?.length) throw new Error('Adicione ao menos um item.')
+
+  const { dadosContato, ehContribuinte } = montarContato(destinatario)
+
+  let naturezaDescricao = naturezaManual
+  if (!naturezaDescricao) {
+    naturezaDescricao =
+      tipoOperacao === 'venda'
+        ? (ehContribuinte ? 'Venda de mercadoria' : 'Venda de mercadoria a não contribuinte')
+        : NATUREZA_POR_TIPO[tipoOperacao]
+  }
+  if (!naturezaDescricao) throw new Error('Informe a natureza de operação.')
+
+  const naturezaId = await idNaturezaOperacao(naturezaDescricao)
+  const formaPagId = await idFormaPagamento(formaPagamentoDescricao || 'Dinheiro')
+  const valorTotal = itens.reduce((s, it) => s + (Number(it.valor) || 0) * (Number(it.quantidade) || 1), 0)
+
+  const payload = {
+    tipo: 1,
+    dataOperacao: dataOperacao || new Date().toISOString().slice(0, 19).replace('T', ' '),
+    contato: dadosContato,
+    naturezaOperacao: { id: naturezaId },
+    finalidade: finalidadeManual || FINALIDADE_POR_TIPO[tipoOperacao] || 1,
+    itens: montarItensManual(itens),
+    parcelas: [
+      {
+        data: (dataOperacao || new Date().toISOString()).slice(0, 10),
+        valor: valorTotal,
+        formaPagamento: { id: formaPagId },
+      },
+    ],
+  }
+
+  const blingId = await criarEEnviarNfe(payload)
   return { blingId }
 }
 
@@ -350,5 +436,8 @@ module.exports = {
   iniciarAutorizacao,
   statusAutorizacao,
   emitirNfeDaVenda,
+  emitirNfeManual,
   consultarNfe,
+  listarNaturezasOperacao,
+  listarFormasPagamento,
 }

@@ -302,6 +302,10 @@ handle('nfe:blingStatusAutorizacao', () => db.nfe.blingStatusAutorizacao())
 handle('nfe:blingAutorizar', () => db.nfe.blingAutorizar())
 handle('nfe:emitirBling', (_, orcamento) => db.nfe.emitirBling(orcamento))
 handle('nfe:consultarBling', (_, orcamento) => db.nfe.consultarBling(orcamento))
+handle('nfe:blingNaturezas', () => db.nfe.blingNaturezas())
+handle('nfe:blingFormasPagamento', () => db.nfe.blingFormasPagamento())
+handle('nfe:emitirManual', (_, dados) => db.nfe.emitirManual(dados))
+handle('nfe:consultarBlingPorId', (_, blingId) => db.nfe.consultarBlingPorId(blingId))
 
 // --- PEDIDOS DE COMPRA ---
 handle('pedidosCompra:listar', (_, filtros) => db.pedidosCompra.listar(filtros))

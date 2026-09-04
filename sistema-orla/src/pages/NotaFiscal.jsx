@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, FileText, CheckCircle, Clock, ExternalLink, Copy, Check, Loader2, Printer, AlertTriangle, Plug } from 'lucide-react'
+import { Search, FileText, CheckCircle, Clock, ExternalLink, Copy, Check, Loader2, Printer, AlertTriangle, Plug, Pencil } from 'lucide-react'
 import { fmtQtd } from '../utils/formatQtd'
 
 const fmt = (v) =>
@@ -82,6 +82,26 @@ export default function NotaFiscal() {
   const [conectando, setConectando] = useState(false)
   const [emitindo, setEmitindo] = useState(null) // orcamento em emissão/consulta agora
 
+  // --- Modal "+ Nova NF-e" (venda avulsa, devolução ou outra — não presa a
+  // uma venda já registrada, igual o "Novo" do Orlasoft) ---
+  const [modalManual, setModalManual] = useState(false)
+  const [tipoManual, setTipoManual] = useState(null) // 'venda' | 'devolucao' | 'outra'
+  const [buscaCliente, setBuscaCliente] = useState('')
+  const [opcoesCliente, setOpcoesCliente] = useState([])
+  const [clienteSelecionado, setClienteSelecionado] = useState(null)
+  const [clienteAvulso, setClienteAvulso] = useState(false)
+  const [destAvulso, setDestAvulso] = useState({ nome: '', cpf: '', cgc: '', ie: '', endereco: '', numero: '', bairro: '', cep: '', cidade: '', uf: '', telefone: '', email: '' })
+  const [itensManuais, setItensManuais] = useState([{ codigo: '', descricao: '', unidade: 'UN', quantidade: 1, valor: 0, ncm: '', cest: '', origem: 0 }])
+  const [buscaProdutoIdx, setBuscaProdutoIdx] = useState(null)
+  const [opcoesProduto, setOpcoesProduto] = useState([])
+  const [naturezasBling, setNaturezasBling] = useState([])
+  const [formasBling, setFormasBling] = useState([])
+  const [naturezaManual, setNaturezaManualDesc] = useState('')
+  const [formaPagManual, setFormaPagManual] = useState('Dinheiro')
+  const [dataManual, setDataManual] = useState(hoje())
+  const [emitindoManual, setEmitindoManual] = useState(false)
+  const [resultadoManual, setResultadoManual] = useState(null) // { situacao, numero, linkDanfe, erro }
+
   async function carregar() {
     setCarregando(true)
     try {
@@ -146,6 +166,114 @@ export default function NotaFiscal() {
   function imprimirDanfe(link) {
     if (!link) return
     window.api.nfe.abrirPortal(link)
+  }
+
+  function abrirNovaNfe() {
+    setTipoManual(null)
+    setBuscaCliente('')
+    setOpcoesCliente([])
+    setClienteSelecionado(null)
+    setClienteAvulso(false)
+    setDestAvulso({ nome: '', cpf: '', cgc: '', ie: '', endereco: '', numero: '', bairro: '', cep: '', cidade: '', uf: '', telefone: '', email: '' })
+    setItensManuais([{ codigo: '', descricao: '', unidade: 'UN', quantidade: 1, valor: 0, ncm: '', cest: '', origem: 0 }])
+    setNaturezaManualDesc('')
+    setFormaPagManual('Dinheiro')
+    setDataManual(hoje())
+    setResultadoManual(null)
+    setModalManual(true)
+    if (!formasBling.length) window.api.nfe.blingFormasPagamento().then((r) => setFormasBling(r || []))
+  }
+
+  function escolherTipoManual(tipo) {
+    setTipoManual(tipo)
+    if (tipo === 'outra' && !naturezasBling.length) {
+      window.api.nfe.blingNaturezas().then((r) => setNaturezasBling(r || []))
+    }
+  }
+
+  async function buscarClientesModal(texto) {
+    setBuscaCliente(texto)
+    setClienteSelecionado(null)
+    if (texto.trim().length < 2) return setOpcoesCliente([])
+    const r = await window.api.clientes.listar({ busca: texto })
+    setOpcoesCliente((r || []).slice(0, 8))
+  }
+
+  function selecionarClienteModal(c) {
+    setClienteSelecionado(c)
+    setBuscaCliente(`${c.nome}${c.codigo ? ` (#${c.codigo})` : ''}`)
+    setOpcoesCliente([])
+  }
+
+  async function buscarProdutosModal(idx, texto) {
+    atualizarItem(idx, 'descricao', texto)
+    setBuscaProdutoIdx(idx)
+    if (texto.trim().length < 2) return setOpcoesProduto([])
+    const r = await window.api.produtos.listar({ busca: texto })
+    setOpcoesProduto((r || []).slice(0, 8))
+  }
+
+  function selecionarProdutoModal(idx, p) {
+    setItensManuais((lista) => lista.map((it, i) => (i === idx ? {
+      ...it,
+      codigo: p.codigo,
+      descricao: p.descricao,
+      unidade: p.unidade || 'UN',
+      ncm: p.ncm || '',
+      cest: p.codigo_cest || '',
+      origem: Number(p.origem_mercadoria) || 0,
+      valor: p.preco_venda_vista || 0,
+    } : it)))
+    setOpcoesProduto([])
+    setBuscaProdutoIdx(null)
+  }
+
+  function atualizarItem(idx, campo, valor) {
+    setItensManuais((lista) => lista.map((it, i) => (i === idx ? { ...it, [campo]: valor } : it)))
+  }
+
+  function adicionarItemManual() {
+    setItensManuais((lista) => [...lista, { codigo: '', descricao: '', unidade: 'UN', quantidade: 1, valor: 0, ncm: '', cest: '', origem: 0 }])
+  }
+
+  function removerItemManual(idx) {
+    setItensManuais((lista) => lista.filter((_, i) => i !== idx))
+  }
+
+  async function emitirManualSubmit() {
+    const destinatario = clienteAvulso ? destAvulso : clienteSelecionado
+    if (!destinatario) return window.alert('Selecione um cliente ou preencha os dados do destinatário.')
+    if (!(destinatario.nome || '').trim()) return window.alert('Informe o nome do destinatário.')
+    if (itensManuais.some((it) => !it.descricao || !it.ncm || !it.valor)) {
+      return window.alert('Preencha descrição, NCM e valor de todos os itens.')
+    }
+    if (tipoManual === 'outra' && !naturezaManual) return window.alert('Escolha a natureza de operação.')
+
+    setEmitindoManual(true)
+    setResultadoManual(null)
+    try {
+      const r = await window.api.nfe.emitirManual({
+        tipoOperacao: tipoManual,
+        destinatario,
+        itens: itensManuais,
+        formaPagamentoDescricao: formaPagManual,
+        dataOperacao: dataManual,
+        naturezaDescricao: tipoManual === 'outra' ? naturezaManual : undefined,
+      })
+      if (!r?.sucesso) {
+        setResultadoManual({ erro: r?.erro || 'Falha ao emitir.' })
+        return
+      }
+      for (let tentativa = 0; tentativa < 20; tentativa++) {
+        await espera(3000)
+        const status = await window.api.nfe.consultarBlingPorId(r.blingId)
+        setResultadoManual(status)
+        if (status?.erro || !SITUACOES_EM_ANDAMENTO.includes(status?.situacao)) break
+      }
+      await carregar()
+    } finally {
+      setEmitindoManual(false)
+    }
   }
 
   async function abrirModal(v) {
@@ -336,6 +464,194 @@ export default function NotaFiscal() {
         </div>
       )}
 
+      {/* Modal "+ Nova NF-e" — Venda avulsa / Devolução / Outra */}
+      {modalManual && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 600,
+        }}>
+          <div style={{
+            background: 'var(--surface)', borderRadius: 12, padding: 28,
+            width: 640, maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Nova NF-e</div>
+              <button onClick={() => setModalManual(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 16 }}>✕</button>
+            </div>
+
+            {!tipoManual ? (
+              <div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>Qual o tipo dessa NF-e?</div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {[
+                    { id: 'venda', label: 'Venda' },
+                    { id: 'devolucao', label: 'Devolução' },
+                    { id: 'outra', label: 'Outra' },
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => escolherTipoManual(t.id)}
+                      style={{ flex: 1, padding: '22px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : resultadoManual ? (
+              <div>
+                {resultadoManual.erro ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 14, borderRadius: 8, background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', fontSize: 13, marginBottom: 16 }}>
+                    <AlertTriangle size={16} /> {resultadoManual.erro}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 14, borderRadius: 8, background: SITUACAO_BLING[resultadoManual.situacao]?.bg || '#FFFBEB', border: `1px solid ${SITUACAO_BLING[resultadoManual.situacao]?.cor || '#FDE68A'}40`, marginBottom: 16 }}>
+                    {SITUACOES_EM_ANDAMENTO.includes(resultadoManual.situacao) && <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />}
+                    <div style={{ fontSize: 13, fontWeight: 600, color: SITUACAO_BLING[resultadoManual.situacao]?.cor }}>
+                      {SITUACAO_BLING[resultadoManual.situacao]?.texto || 'Processando…'}{resultadoManual.numero ? ` — Nº ${resultadoManual.numero}` : ''}
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  {resultadoManual.linkDanfe && (
+                    <button onClick={() => imprimirDanfe(resultadoManual.linkDanfe)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 7, border: 'none', background: 'var(--blue-700)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                      <Printer size={13} /> Imprimir
+                    </button>
+                  )}
+                  <button onClick={() => setModalManual(false)}
+                    style={{ padding: '8px 18px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer' }}>
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                  <button onClick={() => setTipoManual(null)} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}>← trocar tipo</button>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 10, background: 'var(--gray-50)', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                    {tipoManual}
+                  </span>
+                </div>
+
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 6 }}>Destinatário</div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, cursor: 'pointer' }}>
+                  <input type='checkbox' checked={clienteAvulso} onChange={(e) => { setClienteAvulso(e.target.checked); setClienteSelecionado(null); setBuscaCliente('') }} />
+                  Cliente não cadastrado (digitar na mão)
+                </label>
+
+                {!clienteAvulso ? (
+                  <div style={{ position: 'relative', marginBottom: 16 }}>
+                    <input
+                      value={buscaCliente}
+                      onChange={(e) => buscarClientesModal(e.target.value)}
+                      placeholder='Buscar cliente por nome, CPF/CNPJ ou código…'
+                      style={{ width: '100%', height: 36, padding: '0 12px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13 }}
+                    />
+                    {opcoesCliente.length > 0 && (
+                      <div style={{ position: 'absolute', top: 38, left: 0, right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 7, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 10, maxHeight: 200, overflowY: 'auto' }}>
+                        {opcoesCliente.map((c) => (
+                          <div key={c.codigo} onClick={() => selecionarClienteModal(c)}
+                            style={{ padding: '8px 12px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid var(--border)' }}>
+                            {c.nome} <span style={{ color: 'var(--text-muted)' }}>(#{c.codigo}){c.cgc ? ` — ${c.cgc}` : c.cpf ? ` — ${c.cpf}` : ''}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+                    <input placeholder='Nome / Razão social' value={destAvulso.nome} onChange={(e) => setDestAvulso({ ...destAvulso, nome: e.target.value })} style={{ gridColumn: '1 / 3', height: 34, padding: '0 10px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                    <input placeholder='CPF' value={destAvulso.cpf} onChange={(e) => setDestAvulso({ ...destAvulso, cpf: e.target.value })} style={{ height: 34, padding: '0 10px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                    <input placeholder='CNPJ' value={destAvulso.cgc} onChange={(e) => setDestAvulso({ ...destAvulso, cgc: e.target.value })} style={{ height: 34, padding: '0 10px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                    <input placeholder='Inscrição Estadual (se contribuinte)' value={destAvulso.ie} onChange={(e) => setDestAvulso({ ...destAvulso, ie: e.target.value })} style={{ gridColumn: '1 / 3', height: 34, padding: '0 10px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                    <input placeholder='Endereço' value={destAvulso.endereco} onChange={(e) => setDestAvulso({ ...destAvulso, endereco: e.target.value })} style={{ height: 34, padding: '0 10px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                    <input placeholder='Número' value={destAvulso.numero} onChange={(e) => setDestAvulso({ ...destAvulso, numero: e.target.value })} style={{ height: 34, padding: '0 10px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                    <input placeholder='Bairro' value={destAvulso.bairro} onChange={(e) => setDestAvulso({ ...destAvulso, bairro: e.target.value })} style={{ height: 34, padding: '0 10px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                    <input placeholder='CEP' value={destAvulso.cep} onChange={(e) => setDestAvulso({ ...destAvulso, cep: e.target.value })} style={{ height: 34, padding: '0 10px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                    <input placeholder='Cidade' value={destAvulso.cidade} onChange={(e) => setDestAvulso({ ...destAvulso, cidade: e.target.value })} style={{ height: 34, padding: '0 10px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                    <input placeholder='UF' maxLength={2} value={destAvulso.uf} onChange={(e) => setDestAvulso({ ...destAvulso, uf: e.target.value.toUpperCase() })} style={{ height: 34, padding: '0 10px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                  </div>
+                )}
+
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 6 }}>Itens</div>
+                {itensManuais.map((it, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'flex-start', position: 'relative' }}>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <input
+                        value={it.descricao}
+                        onChange={(e) => buscarProdutosModal(idx, e.target.value)}
+                        placeholder='Produto ou descrição…'
+                        style={{ width: '100%', height: 32, padding: '0 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12 }}
+                      />
+                      {buscaProdutoIdx === idx && opcoesProduto.length > 0 && (
+                        <div style={{ position: 'absolute', top: 34, left: 0, right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 7, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 10, maxHeight: 180, overflowY: 'auto' }}>
+                          {opcoesProduto.map((p) => (
+                            <div key={p.codigo} onClick={() => selecionarProdutoModal(idx, p)}
+                              style={{ padding: '7px 10px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid var(--border)' }}>
+                              {p.descricao} <span style={{ color: 'var(--text-muted)' }}>(#{p.codigo}){p.ncm ? '' : ' — sem NCM!'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <input value={it.quantidade} onChange={(e) => atualizarItem(idx, 'quantidade', e.target.value)} placeholder='Qtd' style={{ width: 55, height: 32, padding: '0 6px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12 }} />
+                    <input value={it.valor} onChange={(e) => atualizarItem(idx, 'valor', e.target.value)} placeholder='Valor un.' style={{ width: 75, height: 32, padding: '0 6px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12 }} />
+                    <input value={it.ncm} onChange={(e) => atualizarItem(idx, 'ncm', e.target.value)} placeholder='NCM' style={{ width: 85, height: 32, padding: '0 6px', borderRadius: 6, border: `1px solid ${it.ncm ? 'var(--border)' : '#FCA5A5'}`, fontSize: 12 }} />
+                    <button onClick={() => removerItemManual(idx)} disabled={itensManuais.length === 1}
+                      style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: itensManuais.length === 1 ? 'not-allowed' : 'pointer', flexShrink: 0 }}>
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <button onClick={adicionarItemManual} style={{ border: 'none', background: 'transparent', color: 'var(--blue-700)', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '4px 0', marginBottom: 16 }}>
+                  + Adicionar item
+                </button>
+
+                {tipoManual === 'outra' && (
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Natureza de operação</label>
+                    <select value={naturezaManual} onChange={(e) => setNaturezaManualDesc(e.target.value)}
+                      style={{ width: '100%', height: 34, padding: '0 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }}>
+                      <option value=''>Selecione…</option>
+                      {naturezasBling.map((n) => <option key={n.id} value={n.descricao}>{n.descricao}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 20 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Forma de pagamento</label>
+                    <select value={formaPagManual} onChange={(e) => setFormaPagManual(e.target.value)}
+                      style={{ width: '100%', height: 34, padding: '0 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }}>
+                      {formasBling.length
+                        ? formasBling.map((f) => <option key={f.id} value={f.descricao}>{f.descricao}</option>)
+                        : <option value='Dinheiro'>Dinheiro</option>}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Data</label>
+                    <input type='date' value={dataManual} onChange={(e) => setDataManual(e.target.value)}
+                      style={{ width: '100%', height: 34, padding: '0 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setModalManual(false)} style={{ padding: '8px 18px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer' }}>
+                    Cancelar
+                  </button>
+                  <button onClick={emitirManualSubmit} disabled={emitindoManual}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 20px', borderRadius: 7, background: 'var(--blue-700)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: emitindoManual ? 'not-allowed' : 'pointer', border: 'none' }}>
+                    {emitindoManual && <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />}
+                    {emitindoManual ? 'Emitindo…' : 'Emitir'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {blingAutorizado === false && (
         <div style={{
           padding: '9px 16px', background: '#FFFBEB', borderBottom: '1px solid #FDE68A',
@@ -393,6 +709,11 @@ export default function NotaFiscal() {
           style={{ height: 34, padding: '0 18px', borderRadius: 7, background: 'var(--blue-700)', color: '#fff', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer' }}>
           {carregando ? 'Buscando…' : 'Buscar'}
         </button>
+        <button onClick={abrirNovaNfe}
+          title='Devolução, ou qualquer NF-e que não seja de uma venda já registrada'
+          style={{ height: 34, padding: '0 16px', borderRadius: 7, background: 'var(--surface)', color: 'var(--blue-700)', fontSize: 13, fontWeight: 600, border: '1px solid var(--blue-700)', cursor: 'pointer' }}>
+          + Nova NF-e
+        </button>
       </div>
 
       {/* Cards resumo */}
@@ -420,7 +741,7 @@ export default function NotaFiscal() {
             <col />
             <col style={{ width: 110 }} />
             <col style={{ width: 160 }} />
-            <col style={{ width: 110 }} />
+            <col style={{ width: 190 }} />
           </colgroup>
           <thead>
             <tr>
@@ -548,11 +869,12 @@ export default function NotaFiscal() {
                         onClick={() => abrirModal(v)}
                         title='Registrar número manualmente (fallback)'
                         style={{
-                          padding: '4px 8px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          width: 28, height: 28, borderRadius: 6, cursor: 'pointer', flexShrink: 0,
                           border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'transparent',
                         }}
                       >
-                        manual
+                        <Pencil size={12} />
                       </button>
                     </>
                   )}
