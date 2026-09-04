@@ -35,6 +35,12 @@ banco/*.db-wal
 banco/vendas/
 banco/relatorios/
 
+# Scripts de migração (rodados manualmente no SQL Editor do Supabase) —
+# ficam só locais, nunca vão pro repositório público. Não são "código do
+# app" de verdade, e às vezes citam fornecedor/valor real nos comentários
+# pra facilitar rodar.
+banco/migracoes/
+
 # Credenciais e tokens da integração Bling — nunca vai pro git
 electron/bling-config.json
 electron/bling-tokens.json

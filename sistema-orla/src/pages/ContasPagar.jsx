@@ -868,7 +868,7 @@ function ModalNova({ onClose, onSalvar }) {
 export default function ContasPagar({ usuario }) {
   // Criar/excluir conta continua nível 2 (Elter/admin). Confirmar pagamento
   // de uma conta já lançada é liberado a partir do nível 1 (Rosângela) —
-  // decisão deliberada e escopada: ver banco/migracao_contas_pagar_pagar_nivel1.sql.
+  // decisão deliberada e escopada: ver banco/migracoes/migracao_contas_pagar_pagar_nivel1.sql.
   const podeCriarConta = (usuario?.nivel ?? 0) >= 2
   const podePagarConta = (usuario?.nivel ?? 0) >= 1
   const [dados, setDados] = useState([])

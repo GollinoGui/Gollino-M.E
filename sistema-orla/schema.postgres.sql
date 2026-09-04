@@ -694,7 +694,7 @@ CREATE TABLE IF NOT EXISTS fechamentos_patrimoniais (
 -- ============================================================
 -- TABELA: gastos_operacionais (gastos fixos/variáveis mensais — usada pelo
 -- simulador de Ponto de Equilíbrio em Lucro Real; ver
--- banco/migracao_gastos_operacionais.sql pro script completo com RLS)
+-- banco/migracoes/migracao_gastos_operacionais.sql pro script completo com RLS)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS gastos_operacionais (
   id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -712,7 +712,7 @@ CREATE TABLE IF NOT EXISTS gastos_operacionais (
 );
 
 -- Confirmação manual de pagamento por mês de um gasto fixo (ver
--- banco/migracao_gastos_operacionais_pagamento_manual.sql pro script
+-- banco/migracoes/migracao_gastos_operacionais_pagamento_manual.sql pro script
 -- completo com RLS) — alternativa à reconciliação automática com Contas a
 -- Pagar, pra gasto sem fornecedor vinculado ou pago por fora do sistema.
 CREATE TABLE IF NOT EXISTS gastos_operacionais_pagamentos (

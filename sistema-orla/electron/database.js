@@ -325,7 +325,7 @@ const produtos = {
 
   // Grava via RPC com trava otimista: manda a versão que a tela carregou
   // (dados.versao) e o Postgres só grava se ninguém mudou o produto desde
-  // então. Ver banco/migracao_produtos_versionamento_otimista.sql.
+  // então. Ver banco/migracoes/migracao_produtos_versionamento_otimista.sql.
   async salvar(dados) {
     const { id, versao, ...resto } = dados
     const { data, error } = await supabase.rpc('produtos_salvar', {
