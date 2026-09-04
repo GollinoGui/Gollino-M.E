@@ -417,6 +417,7 @@ function ModalNova({ onClose, onSalvar }) {
     valor_fatura_cheia: '',
     data_vencimento: '',
     codigo_forma_pagamento: '',
+    despesa_fixa: false,
   })
   const [salvando, setSalvando] = useState(false)
   const [planoContas, setPlanoContas] = useState([])
@@ -814,6 +815,22 @@ function ModalNova({ onClose, onSalvar }) {
             Não afeta o caixa — é só pra lembrar o valor total da fatura quando "Valor (R$)" já é a parte da loja numa conta dividida (ex: internet, celular).
           </div>
         </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12.5, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <input
+              type='checkbox'
+              checked={form.despesa_fixa}
+              onChange={(e) => setForm((p) => ({ ...p, despesa_fixa: e.target.checked }))}
+              style={{ marginTop: 2, width: 14, height: 14, cursor: 'pointer' }}
+            />
+            <span>
+              🔁 Conta fixa — repete todo mês
+              <div style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 400, marginTop: 2 }}>
+                No mês seguinte o sistema lança sozinho uma cópia (mesmo fornecedor/valor/vencimento no mesmo dia), sem precisar digitar de novo. Você ainda pode ajustar valor ou cancelar antes de pagar.
+              </div>
+            </span>
+          </label>
+        </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button
             onClick={onClose}
@@ -872,6 +889,25 @@ export default function ContasPagar({ usuario }) {
     window.api.gastosOperacionais.fornecedoresFixos()
       .then((lista) => setFornecedorFixoMap(new Map((lista || []).map((g) => [g.codigo_fornecedor, g]))))
       .catch((err) => console.error('Erro ao carregar gastos fixos:', err))
+  }, [])
+
+  // Roda uma vez ao abrir a tela: gera o lançamento do mês corrente pra cada
+  // conta marcada como fixa que ainda não tem cópia neste mês (idempotente —
+  // se já existe, o backend simplesmente não cria de novo). Assim a conta
+  // fixa "se relança sozinha" na primeira vez que alguém abre Contas a Pagar
+  // depois que o mês virou, sem precisar de um processo rodando em segundo
+  // plano.
+  useEffect(() => {
+    window.api.contasPagar.relancarFixas(usuario?.nome || usuario?.usuario)
+      .then((criadas) => {
+        if (criadas && criadas.length > 0) {
+          const n = criadas.length
+          setSucesso(`🔁 ${n} conta${n > 1 ? 's' : ''} fixa${n > 1 ? 's' : ''} relançada${n > 1 ? 's' : ''} automaticamente esse mês`)
+          setTimeout(() => setSucesso(''), 4500)
+          carregar()
+        }
+      })
+      .catch((err) => console.error('Erro ao relançar contas fixas:', err))
   }, [])
 
   async function carregar() {
@@ -1095,6 +1131,7 @@ export default function ContasPagar({ usuario }) {
         codigo_forma_pagamento: form.codigo_forma_pagamento,
         situacao_docto: 'A',
         usuario: usuario?.usuario || 'sistema',
+        despesa_fixa: form.despesa_fixa ? 'S' : 'N',
       })
       setModalNova(false)
       setSucesso('✅ Conta adicionada!')
@@ -1102,6 +1139,18 @@ export default function ContasPagar({ usuario }) {
       await carregar()
     } catch (err) {
       console.error('Erro ao salvar conta:', err)
+    }
+  }
+
+  // Marca/desmarca uma conta já lançada como fixa — pra quem já tinha aluguel,
+  // internet etc. cadastrados antes dessa automação existir, sem precisar
+  // excluir e relançar na mão só pra ligar o flag.
+  async function toggleFixa(conta) {
+    try {
+      await window.api.contasPagar.marcarFixa({ id: conta.id, fixa: conta.despesa_fixa !== 'S' })
+      await carregar()
+    } catch (err) {
+      console.error('Erro ao marcar conta como fixa:', err)
     }
   }
 
@@ -1352,12 +1401,22 @@ export default function ContasPagar({ usuario }) {
                         : vencido
                           ? '#FFF5F5'
                           : 'transparent',
-                      borderLeft: gastoFixo ? `3px solid ${corGastoFixo(gastoFixo.id)}` : '3px solid transparent',
+                      borderLeft: gastoFixo
+                        ? `3px solid ${corGastoFixo(gastoFixo.id)}`
+                        : c.despesa_fixa === 'S'
+                          ? `3px solid ${corGastoFixo(c.id_conta_origem || c.id)}`
+                          : '3px solid transparent',
                       cursor: selecionavel ? 'pointer' : 'default',
                       opacity: selecionavel ? 1 : 0.7,
                       transition: 'background 0.08s',
                     }}
-                    title={gastoFixo ? `Gasto fixo do Ponto de Equilíbrio: ${gastoFixo.descricao}` : undefined}
+                    title={
+                      gastoFixo
+                        ? `Gasto fixo do Ponto de Equilíbrio: ${gastoFixo.descricao}`
+                        : c.despesa_fixa === 'S'
+                          ? 'Conta fixa — relança sozinha todo mês'
+                          : undefined
+                    }
                     onMouseEnter={(e) => {
                       if (!sel && selecionavel)
                         e.currentTarget.style.background = vencido
@@ -1391,6 +1450,39 @@ export default function ContasPagar({ usuario }) {
                       }}
                     >
                       {c.nome_fornecedor || '—'} (#{c.codigo_fornecedor})
+                      {podeCriarConta ? (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleFixa(c) }}
+                          title={c.despesa_fixa === 'S' ? 'Conta fixa — clique para desmarcar (deixa de relançar sozinha)' : 'Marcar como conta fixa (relança sozinha todo mês)'}
+                          style={{
+                            marginLeft: 6,
+                            fontSize: 10,
+                            fontWeight: 600,
+                            padding: '1px 6px',
+                            borderRadius: 8,
+                            border: c.despesa_fixa === 'S' ? 'none' : '1px dashed var(--border-md)',
+                            cursor: 'pointer',
+                            background: c.despesa_fixa === 'S' ? corGastoFixo(c.id_conta_origem || c.id) : 'transparent',
+                            color: c.despesa_fixa === 'S' ? '#fff' : 'var(--text-muted)',
+                          }}
+                        >
+                          🔁 {c.despesa_fixa === 'S' ? 'Fixa' : 'marcar fixa'}
+                        </button>
+                      ) : c.despesa_fixa === 'S' ? (
+                        <span
+                          style={{
+                            marginLeft: 6,
+                            fontSize: 10,
+                            fontWeight: 600,
+                            padding: '1px 6px',
+                            borderRadius: 8,
+                            background: corGastoFixo(c.id_conta_origem || c.id),
+                            color: '#fff',
+                          }}
+                        >
+                          🔁 Fixa
+                        </span>
+                      ) : null}
                       {c.observacao && (
                         <span
                           style={{

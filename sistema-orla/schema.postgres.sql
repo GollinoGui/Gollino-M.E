@@ -262,6 +262,8 @@ CREATE TABLE IF NOT EXISTS contas_pagar (
   numero_nfe TEXT,
   nr_boleto TEXT,
   nr_duplicata TEXT,
+  -- 'S' = conta fixa (aluguel, internet etc.) — relança sozinha todo mês via
+  -- contas_pagar_relancar_fixas(), ver migracao_contas_pagar_fixas.sql
   despesa_fixa TEXT DEFAULT 'N',
   despesa_fornecedor TEXT DEFAULT 'N',
   documento_origem TEXT,
@@ -290,7 +292,8 @@ CREATE TABLE IF NOT EXISTS contas_pagar (
   data_atualizacao TEXT,
   hora_atualizacao TEXT,
   possui_cheque_devolvido TEXT DEFAULT 'N',
-  tipo_contas_pagar TEXT
+  tipo_contas_pagar TEXT,
+  id_conta_origem INTEGER REFERENCES contas_pagar(id)
 );
 
 -- ============================================================

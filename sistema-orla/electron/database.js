@@ -604,6 +604,27 @@ const contasPagar = {
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
+
+  // Gera o lançamento do mês corrente pra cada conta marcada como fixa que
+  // ainda não tem cópia neste mês (mesmo fornecedor + plano de contas) —
+  // idempotente, então pode chamar toda vez que a tela abre sem duplicar.
+  // RPC SECURITY DEFINER porque precisa rodar mesmo pra nível 1 (Rosângela),
+  // que não tem permissão de INSERT direto em contas_pagar.
+  async relancarFixas(usuarioNome) {
+    const { data, error } = await supabase.rpc('contas_pagar_relancar_fixas', { p_usuario: usuarioNome || null })
+    if (error) throw new Error(error.message)
+    return data || []
+  },
+
+  // Liga/desliga o flag de conta fixa numa conta já lançada — pra quem já
+  // tinha aluguel/internet cadastrados antes dessa automação existir.
+  async marcarFixa({ id, fixa }) {
+    const { error } = await supabase.from('contas_pagar')
+      .update({ despesa_fixa: fixa ? 'S' : 'N', data_atualizacao: hoje(), hora_atualizacao: agora() })
+      .eq('id', id)
+    if (error) return { sucesso: false, erro: error.message }
+    return { sucesso: true }
+  },
 }
 
 // ============================================================
