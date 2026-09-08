@@ -346,8 +346,8 @@ async function emitirNfeDaVenda(detalhes, produtosPorCodigo) {
   const { venda, cliente, itens } = detalhes
   if (!itens?.length) throw new Error('Venda sem itens — nada pra emitir.')
 
-  const { dadosContato, ehContribuinte } = montarContato(cliente)
-  const naturezaId = await idNaturezaOperacao(ehContribuinte ? 'Venda de mercadoria' : 'Venda de mercadoria a não contribuinte')
+  const { dadosContato } = montarContato(cliente)
+  const naturezaId = await idNaturezaOperacao('Venda de mercadoria')
   const formaPagId = await idFormaPagamento(formaPagamentoDominante(venda))
 
   const payload = {
@@ -392,14 +392,11 @@ async function emitirNfeManual(dados) {
   const { tipoOperacao, destinatario, itens, formaPagamentoDescricao, dataOperacao, naturezaDescricao: naturezaManual, finalidade: finalidadeManual } = dados
   if (!itens?.length) throw new Error('Adicione ao menos um item.')
 
-  const { dadosContato, ehContribuinte } = montarContato(destinatario)
+  const { dadosContato } = montarContato(destinatario)
 
   let naturezaDescricao = naturezaManual
   if (!naturezaDescricao) {
-    naturezaDescricao =
-      tipoOperacao === 'venda'
-        ? (ehContribuinte ? 'Venda de mercadoria' : 'Venda de mercadoria a não contribuinte')
-        : NATUREZA_POR_TIPO[tipoOperacao]
+    naturezaDescricao = tipoOperacao === 'venda' ? 'Venda de mercadoria' : NATUREZA_POR_TIPO[tipoOperacao]
   }
   if (!naturezaDescricao) throw new Error('Informe a natureza de operação.')
 
