@@ -235,6 +235,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
     grafico7dias: [],
   })
   const [vendasHoje, setVendasHoje] = useState([])
+  const [todasVendasHoje, setTodasVendasHoje] = useState([])
   const [contasVencendo, setContasVencendo] = useState([])
   const [contasPagarAlerta, setContasPagarAlerta] = useState([])
   const [produtosBaixo, setProdutosBaixo] = useState([])
@@ -269,6 +270,7 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
         dataFim: dataHoje,
         situacao: 'N',
       })
+      setTodasVendasHoje(vendas)
       setVendasHoje(vendas.slice(0, 5))
 
       // Contas a receber vencendo (próximos 7 dias)
@@ -419,16 +421,16 @@ export default function Dashboard({ onNavigate, caixaAberto, usuario }) {
   const COR_A_RECEBER = '#DC6803'
 
   const valoresPorForma = (() => {
-    const dinheiro = vendasHoje.reduce((s, v) => s + (v.valor_pago_dinheiro || 0), 0)
-    const cartaoC = vendasHoje.reduce((s, v) => s + (v.valor_pago_cartao_credito || 0), 0)
-    const cartaoD = vendasHoje.reduce((s, v) => s + (v.valor_pago_cartao_debito || 0), 0)
-    const cheque = vendasHoje.reduce((s, v) => s + (v.valor_pago_cheque || 0), 0)
-    const pix = vendasHoje.reduce((s, v) => s + (v.valor_pago_pix || 0), 0)
-    const haver = vendasHoje.reduce((s, v) => s + (v.valor_pago_haver || 0), 0)
+    const dinheiro = todasVendasHoje.reduce((s, v) => s + (v.valor_pago_dinheiro || 0), 0)
+    const cartaoC = todasVendasHoje.reduce((s, v) => s + (v.valor_pago_cartao_credito || 0), 0)
+    const cartaoD = todasVendasHoje.reduce((s, v) => s + (v.valor_pago_cartao_debito || 0), 0)
+    const cheque = todasVendasHoje.reduce((s, v) => s + (v.valor_pago_cheque || 0), 0)
+    const pix = todasVendasHoje.reduce((s, v) => s + (v.valor_pago_pix || 0), 0)
+    const haver = todasVendasHoje.reduce((s, v) => s + (v.valor_pago_haver || 0), 0)
     // Convênio/fiado e o restante de vendas mistas caem em "valor_restante" —
     // não é dinheiro que entrou no caixa, mas precisa aparecer aqui, senão a
     // venda some do gráfico sem explicação nenhuma.
-    const aReceber = vendasHoje.reduce((s, v) => s + (v.valor_restante || 0), 0)
+    const aReceber = todasVendasHoje.reduce((s, v) => s + (v.valor_restante || 0), 0)
     return { dinheiro, cartaoC, cartaoD, cheque, pix, haver, aReceber }
   })()
 
