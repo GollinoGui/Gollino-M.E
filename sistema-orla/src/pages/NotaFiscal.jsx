@@ -104,6 +104,12 @@ export default function NotaFiscal() {
   const [emitindoManual, setEmitindoManual] = useState(false)
   const [resultadoManual, setResultadoManual] = useState(null) // { situacao, numero, linkDanfe, erro }
 
+  // --- Histórico de notas avulsas (emitidas pelo "+ Nova NF-e", não presas
+  // a uma venda registrada — só existiam na Bling até essa tela) ---
+  const [modalAvulsas, setModalAvulsas] = useState(false)
+  const [avulsas, setAvulsas] = useState([])
+  const [carregandoAvulsas, setCarregandoAvulsas] = useState(false)
+
   async function carregar() {
     setCarregando(true)
     try {
@@ -168,6 +174,17 @@ export default function NotaFiscal() {
   function imprimirDanfe(link) {
     if (!link) return
     window.api.nfe.abrirPortal(link)
+  }
+
+  async function abrirAvulsas() {
+    setModalAvulsas(true)
+    setCarregandoAvulsas(true)
+    try {
+      const dados = await window.api.nfe.listarAvulsas()
+      setAvulsas(dados || [])
+    } finally {
+      setCarregandoAvulsas(false)
+    }
   }
 
   function abrirNovaNfe() {
@@ -674,6 +691,71 @@ export default function NotaFiscal() {
         </div>
       )}
 
+      {/* Modal histórico de notas avulsas */}
+      {modalAvulsas && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500,
+        }}>
+          <div style={{
+            background: 'var(--surface)', borderRadius: 12, padding: 28,
+            width: 780, maxHeight: '86vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Notas avulsas emitidas</div>
+              <button onClick={() => setModalAvulsas(false)} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
+            </div>
+            {carregandoAvulsas ? (
+              <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>Carregando…</div>
+            ) : avulsas.length === 0 ? (
+              <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>Nenhuma nota avulsa emitida ainda.</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ padding: '6px 8px' }}>Nº</th>
+                    <th style={{ padding: '6px 8px' }}>Data</th>
+                    <th style={{ padding: '6px 8px' }}>Destinatário</th>
+                    <th style={{ padding: '6px 8px' }}>Valor</th>
+                    <th style={{ padding: '6px 8px' }}>Situação</th>
+                    <th style={{ padding: '6px 8px' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {avulsas.map((a) => (
+                    <tr key={a.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '6px 8px' }}>{a.numero || '—'}</td>
+                      <td style={{ padding: '6px 8px' }}>{fmtDate(a.data_operacao) || '—'}</td>
+                      <td style={{ padding: '6px 8px' }}>{a.destinatario_nome}</td>
+                      <td style={{ padding: '6px 8px' }}>{fmt(a.valor_total)}</td>
+                      <td style={{ padding: '6px 8px' }}>
+                        {a.nfe_erro ? (
+                          <span title={a.nfe_erro} style={{ color: '#991B1B', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <AlertTriangle size={11} /> Erro
+                          </span>
+                        ) : SITUACAO_BLING[a.nfe_situacao] ? (
+                          <span style={{ padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, background: SITUACAO_BLING[a.nfe_situacao].bg, color: SITUACAO_BLING[a.nfe_situacao].cor }}>
+                            {SITUACAO_BLING[a.nfe_situacao].texto}
+                          </span>
+                        ) : '—'}
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        {a.nfe_link_danfe && (
+                          <button onClick={() => imprimirDanfe(a.nfe_link_danfe)} title='Ver DANFE'
+                            style={{ border: 'none', background: 'transparent', color: 'var(--blue-700)', cursor: 'pointer', display: 'flex' }}>
+                            <Printer size={14} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
       {blingAutorizado === false && (
         <div style={{
           padding: '9px 16px', background: '#FFFBEB', borderBottom: '1px solid #FDE68A',
@@ -735,6 +817,11 @@ export default function NotaFiscal() {
           title='Devolução, ou qualquer NF-e que não seja de uma venda já registrada'
           style={{ height: 34, padding: '0 16px', borderRadius: 7, background: 'var(--surface)', color: 'var(--blue-700)', fontSize: 13, fontWeight: 600, border: '1px solid var(--blue-700)', cursor: 'pointer' }}>
           + Nova NF-e
+        </button>
+        <button onClick={abrirAvulsas}
+          title='Histórico das NF-e emitidas pelo "+ Nova NF-e"'
+          style={{ height: 34, padding: '0 16px', borderRadius: 7, background: 'var(--surface)', color: 'var(--text-secondary)', fontSize: 13, fontWeight: 600, border: '1px solid var(--border)', cursor: 'pointer' }}>
+          Notas avulsas
         </button>
       </div>
 

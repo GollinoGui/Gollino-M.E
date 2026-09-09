@@ -1782,17 +1782,55 @@ const nfe = {
   },
 
   // NF-e criada manualmente pela tela (tipo Venda avulsa/Devolução/Outra),
-  // sem estar presa a uma venda já registrada no sistema.
+  // sem estar presa a uma venda já registrada no sistema. O número é
+  // reservado aqui (não confiamos no auto-número da Bling — ver incidente
+  // 2026-09-09, onde ele voltou pro 1 ao trocar de Homologação pra Produção
+  // e colidiu com uma NF-e real antiga) e sempre gravado em `nfe_avulsas`,
+  // com sucesso ou erro, pra existir histórico dessas notas dentro do
+  // sistema-orla (hoje elas só existem na Bling).
   async emitirManual(dados) {
-    const { blingId } = await bling.emitirNfeManual(dados)
-    return { sucesso: true, blingId }
+    const numero = await proximoNumeroAtomico('nfe')
+    const itensResumo = (dados.itens || []).map((it) => `${it.quantidade}x ${it.descricao}`).join(', ')
+    const linhaBase = {
+      tipo_operacao: dados.tipoOperacao,
+      destinatario_nome: dados.destinatario?.nome || '',
+      destinatario_documento: dados.destinatario?.cgc || dados.destinatario?.cpf || null,
+      itens_resumo: itensResumo,
+      valor_total: (dados.itens || []).reduce((s, it) => s + (Number(it.valor) || 0) * (Number(it.quantidade) || 1), 0),
+      forma_pagamento: dados.formaPagamentoDescricao || null,
+      data_operacao: dados.dataOperacao || null,
+      data_vencimento: dados.dataVencimento || null,
+      observacoes: dados.observacoes || null,
+      numero,
+      usuario: dados.usuario || null,
+    }
+    try {
+      const { blingId } = await bling.emitirNfeManual({ ...dados, numero })
+      await supabase.from('nfe_avulsas').insert({ ...linhaBase, nfe_bling_id: blingId, nfe_situacao: 1 })
+      return { sucesso: true, blingId, numero }
+    } catch (e) {
+      await supabase.from('nfe_avulsas').insert({ ...linhaBase, nfe_erro: e.message })
+      throw e
+    }
+  },
+
+  async listarAvulsas() {
+    const { data, error } = await supabase.from('nfe_avulsas').select('*').order('criado_em', { ascending: false }).limit(200)
+    if (error) throw new Error(error.message)
+    return data
   },
 
   // Consulta direta por id da Bling — usada pelo polling da NF-e manual, que
-  // não tem uma linha em `vendas` pra guardar o id.
+  // também atualiza a situação salva em `nfe_avulsas`.
   async consultarBlingPorId(blingId) {
     const dados = await bling.consultarNfe(blingId)
-    return { situacao: dados.situacao, numero: dados.numero, linkDanfe: dados.linkDanfe || dados.linkPDF || null }
+    const atualizacao = { nfe_situacao: dados.situacao }
+    if (dados.situacao === 5) {
+      atualizacao.nfe_link_danfe = dados.linkDanfe || dados.linkPDF || null
+      atualizacao.nfe_erro = null
+    }
+    await supabase.from('nfe_avulsas').update(atualizacao).eq('nfe_bling_id', blingId)
+    return { situacao: dados.situacao, numero: dados.numero, linkDanfe: atualizacao.nfe_link_danfe || null }
   },
 
   // Emite a NF-e de verdade via API da Bling (cria + envia pra autorização)
@@ -1810,7 +1848,8 @@ const nfe = {
     const produtosPorCodigo = Object.fromEntries((produtos || []).map((p) => [p.codigo, p]))
 
     try {
-      const { blingId } = await bling.emitirNfeDaVenda(detalhesVenda, produtosPorCodigo)
+      const numero = await proximoNumeroAtomico('nfe')
+      const { blingId } = await bling.emitirNfeDaVenda(detalhesVenda, produtosPorCodigo, numero)
       await supabase.from('vendas').update({ nfe_bling_id: blingId, nfe_situacao: 1, nfe_erro: null }).eq('orcamento', orcamento)
       return { sucesso: true, blingId }
     } catch (e) {

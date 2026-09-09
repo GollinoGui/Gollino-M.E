@@ -345,7 +345,7 @@ function montarItensManual(itens) {
 // sistema-orla. `detalhes` é o retorno de db.nfe.detalhes(orcamento)
 // (venda, cliente, itens), e `produtosPorCodigo` é um mapa codigo->produto
 // (pra pegar NCM/CEST/origem, que não ficam salvos em vendas_itens).
-async function emitirNfeDaVenda(detalhes, produtosPorCodigo) {
+async function emitirNfeDaVenda(detalhes, produtosPorCodigo, numero) {
   const { venda, cliente, itens } = detalhes
   if (!itens?.length) throw new Error('Venda sem itens — nada pra emitir.')
 
@@ -355,6 +355,7 @@ async function emitirNfeDaVenda(detalhes, produtosPorCodigo) {
 
   const payload = {
     tipo: 1,
+    numero: numero != null ? String(numero) : undefined,
     dataOperacao: `${venda.data} ${venda.hora_cadastro || '00:00:00'}`,
     contato: dadosContato,
     naturezaOperacao: { id: naturezaId },
@@ -392,7 +393,7 @@ const FINALIDADE_POR_TIPO = { venda: 1, devolucao: 4, outra: 1 }
 // linha de `clientes` quanto um objeto avulso com os mesmos nomes de campo
 // (nome, cpf/cgc, ie, endereco, numero, bairro, cep, cidade, uf, ...).
 async function emitirNfeManual(dados) {
-  const { tipoOperacao, destinatario, itens, formaPagamentoDescricao, dataOperacao, dataVencimento, naturezaDescricao: naturezaManual, finalidade: finalidadeManual, observacoes } = dados
+  const { tipoOperacao, destinatario, itens, formaPagamentoDescricao, dataOperacao, dataVencimento, naturezaDescricao: naturezaManual, finalidade: finalidadeManual, observacoes, numero } = dados
   if (!itens?.length) throw new Error('Adicione ao menos um item.')
 
   const { dadosContato } = montarContato(destinatario)
@@ -409,6 +410,7 @@ async function emitirNfeManual(dados) {
 
   const payload = {
     tipo: 1,
+    numero: numero != null ? String(numero) : undefined,
     dataOperacao: dataOperacao || new Date().toISOString().slice(0, 19).replace('T', ' '),
     contato: dadosContato,
     naturezaOperacao: { id: naturezaId },

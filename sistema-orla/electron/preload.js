@@ -225,6 +225,7 @@ contextBridge.exposeInMainWorld('api', {
     blingFormasPagamento: () => ipcRenderer.invoke('nfe:blingFormasPagamento'),
     emitirManual: (dados) => ipcRenderer.invoke('nfe:emitirManual', dados),
     consultarBlingPorId: (blingId) => ipcRenderer.invoke('nfe:consultarBlingPorId', blingId),
+    listarAvulsas: () => ipcRenderer.invoke('nfe:listarAvulsas'),
   },
 
   // PEDIDOS DE COMPRA

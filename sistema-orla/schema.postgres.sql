@@ -457,6 +457,34 @@ CREATE TABLE IF NOT EXISTS numeradores (
 );
 
 -- ============================================================
+-- TABELA: nfe_avulsas — histórico de NF-e emitidas pela tela
+-- "+ Nova NF-e" (não presas a uma venda registrada em `vendas`).
+-- O número da nota (campo `numero`) vem de numeradores(chave='nfe'),
+-- compartilhado com a emissão automática (emitirNfeDaVenda) pra manter
+-- uma sequência única por CNPJ/série, já que a Bling não garante
+-- numeração automática confiável (ver incidente 2026-09-09).
+-- ============================================================
+CREATE TABLE IF NOT EXISTS nfe_avulsas (
+  id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tipo_operacao TEXT NOT NULL,
+  destinatario_nome TEXT NOT NULL,
+  destinatario_documento TEXT,
+  itens_resumo TEXT,
+  valor_total DOUBLE PRECISION DEFAULT 0,
+  forma_pagamento TEXT,
+  data_operacao TEXT,
+  data_vencimento TEXT,
+  observacoes TEXT,
+  numero INTEGER,
+  nfe_bling_id BIGINT,
+  nfe_situacao INTEGER,
+  nfe_erro TEXT,
+  nfe_link_danfe TEXT,
+  usuario TEXT,
+  criado_em TIMESTAMPTZ DEFAULT now()
+);
+
+-- ============================================================
 -- DADOS INICIAIS — Configurações da empresa
 -- ============================================================
 INSERT INTO configuracoes (chave, valor, descricao) VALUES
