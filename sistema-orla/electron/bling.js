@@ -193,8 +193,11 @@ async function chamarApi(metodo, caminho, corpo) {
   const texto = await resp.text()
   const dados = texto ? JSON.parse(texto) : null
   if (!resp.ok) {
-    const msg = dados?.error?.message || dados?.error?.description || JSON.stringify(dados) || resp.status
-    throw new Error(`Bling API ${metodo} ${caminho}: ${msg}`)
+    const base = dados?.error?.message || dados?.error?.description || resp.status
+    const campos = dados?.error?.fields?.length
+      ? ' — ' + dados.error.fields.map((f) => `${f.element || f.field || ''}: ${f.msg || f.message || ''}`).join('; ')
+      : ''
+    throw new Error(`Bling API ${metodo} ${caminho}: ${base}${campos}` || `Bling API ${metodo} ${caminho}: ${JSON.stringify(dados)}`)
   }
   return dados
 }
