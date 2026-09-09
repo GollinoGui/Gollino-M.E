@@ -99,6 +99,8 @@ export default function NotaFiscal() {
   const [naturezaManual, setNaturezaManualDesc] = useState('')
   const [formaPagManual, setFormaPagManual] = useState('Dinheiro')
   const [dataManual, setDataManual] = useState(hoje())
+  const [vencimentoManual, setVencimentoManual] = useState(hoje())
+  const [observacaoManual, setObservacaoManual] = useState('')
   const [emitindoManual, setEmitindoManual] = useState(false)
   const [resultadoManual, setResultadoManual] = useState(null) // { situacao, numero, linkDanfe, erro }
 
@@ -179,6 +181,8 @@ export default function NotaFiscal() {
     setNaturezaManualDesc('')
     setFormaPagManual('Dinheiro')
     setDataManual(hoje())
+    setVencimentoManual(hoje())
+    setObservacaoManual('')
     setResultadoManual(null)
     setModalManual(true)
     if (!formasBling.length) window.api.nfe.blingFormasPagamento().then((r) => setFormasBling(r || []))
@@ -258,7 +262,9 @@ export default function NotaFiscal() {
         itens: itensManuais,
         formaPagamentoDescricao: formaPagManual,
         dataOperacao: dataManual,
+        dataVencimento: vencimentoManual,
         naturezaDescricao: tipoManual === 'outra' ? naturezaManual : undefined,
+        observacoes: observacaoManual.trim() || undefined,
       })
       if (!r?.sucesso) {
         setResultadoManual({ erro: r?.erro || 'Falha ao emitir.' })
@@ -619,7 +625,15 @@ export default function NotaFiscal() {
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 20 }}>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Observação (opcional)</label>
+                  <textarea value={observacaoManual} onChange={(e) => setObservacaoManual(e.target.value)}
+                    placeholder='Ex: nº do pedido de compra, dados bancários para pagamento, etc.'
+                    rows={2}
+                    style={{ width: '100%', padding: '8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12, resize: 'vertical', fontFamily: 'inherit' }} />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 20 }}>
                   <div>
                     <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Forma de pagamento</label>
                     <select value={formaPagManual} onChange={(e) => setFormaPagManual(e.target.value)}
@@ -630,8 +644,16 @@ export default function NotaFiscal() {
                     </select>
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Data</label>
-                    <input type='date' value={dataManual} onChange={(e) => setDataManual(e.target.value)}
+                    <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Data da operação</label>
+                    <input type='date' value={dataManual} onChange={(e) => {
+                      setDataManual(e.target.value)
+                      setVencimentoManual((v) => (v === dataManual ? e.target.value : v))
+                    }}
+                      style={{ width: '100%', height: 34, padding: '0 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Vencimento</label>
+                    <input type='date' value={vencimentoManual} onChange={(e) => setVencimentoManual(e.target.value)}
                       style={{ width: '100%', height: 34, padding: '0 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
                   </div>
                 </div>

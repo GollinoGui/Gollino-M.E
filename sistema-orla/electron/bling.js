@@ -389,7 +389,7 @@ const FINALIDADE_POR_TIPO = { venda: 1, devolucao: 4, outra: 1 }
 // linha de `clientes` quanto um objeto avulso com os mesmos nomes de campo
 // (nome, cpf/cgc, ie, endereco, numero, bairro, cep, cidade, uf, ...).
 async function emitirNfeManual(dados) {
-  const { tipoOperacao, destinatario, itens, formaPagamentoDescricao, dataOperacao, naturezaDescricao: naturezaManual, finalidade: finalidadeManual } = dados
+  const { tipoOperacao, destinatario, itens, formaPagamentoDescricao, dataOperacao, dataVencimento, naturezaDescricao: naturezaManual, finalidade: finalidadeManual, observacoes } = dados
   if (!itens?.length) throw new Error('Adicione ao menos um item.')
 
   const { dadosContato } = montarContato(destinatario)
@@ -410,10 +410,11 @@ async function emitirNfeManual(dados) {
     contato: dadosContato,
     naturezaOperacao: { id: naturezaId },
     finalidade: finalidadeManual || FINALIDADE_POR_TIPO[tipoOperacao] || 1,
+    observacoes: observacoes || undefined,
     itens: montarItensManual(itens),
     parcelas: [
       {
-        data: (dataOperacao || new Date().toISOString()).slice(0, 10),
+        data: (dataVencimento || dataOperacao || new Date().toISOString()).slice(0, 10),
         valor: valorTotal,
         formaPagamento: { id: formaPagId },
       },
