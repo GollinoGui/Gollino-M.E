@@ -277,6 +277,7 @@ handle('contasPagar:salvar', (_, dados) => db.contasPagar.salvar(dados))
 handle('contasPagar:totalAberto', () => db.contasPagar.totalAberto())
 handle('contasPagar:relancarFixas', (_, usuarioNome) => db.contasPagar.relancarFixas(usuarioNome))
 handle('contasPagar:marcarFixa', (_, dados) => db.contasPagar.marcarFixa(dados))
+handle('contasPagar:cancelar', (_, dados) => db.contasPagar.cancelar(dados))
 
 // --- CAIXA ---
 handle('caixa:status', () => db.caixa.status())

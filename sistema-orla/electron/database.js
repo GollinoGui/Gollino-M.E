@@ -625,6 +625,34 @@ const contasPagar = {
     if (error) return { sucesso: false, erro: error.message }
     return { sucesso: true }
   },
+
+  // Cancela uma ou mais contas em aberto (nível 2, mesma alçada de
+  // criar/excluir — ver podeCriarConta em ContasPagar.jsx). Não apaga a
+  // linha: vira situacao_docto='C' e o motivo entra na observação, então o
+  // histórico continua rastreável (quem, quando, por quê) em vez de só sumir.
+  async cancelar({ ids, motivo, usuario }) {
+    const idsArr = Array.isArray(ids) ? ids : [ids]
+    const { data: contas, error: e1 } = await supabase.from('contas_pagar')
+      .select('id, observacao, situacao_docto').in('id', idsArr)
+    if (e1) return { sucesso: false, erro: e1.message }
+    if (!contas || contas.length !== idsArr.length) return { sucesso: false, erro: 'Conta não encontrada.' }
+    if (contas.some((c) => c.situacao_docto !== 'A')) return { sucesso: false, erro: 'Só é possível cancelar contas em aberto.' }
+
+    for (const c of contas) {
+      const nota = `Cancelada ${hoje()} por ${usuario || 'sistema'}: ${motivo}`
+      const { error } = await supabase.from('contas_pagar')
+        .update({
+          situacao_docto: 'C',
+          observacao: c.observacao ? `${c.observacao} | ${nota}` : nota,
+          usuario: usuario || 'sistema',
+          data_atualizacao: hoje(),
+          hora_atualizacao: agora(),
+        })
+        .eq('id', c.id)
+      if (error) return { sucesso: false, erro: error.message }
+    }
+    return { sucesso: true }
+  },
 }
 
 // ============================================================

@@ -122,6 +122,7 @@ contextBridge.exposeInMainWorld('api', {
     totalAberto: () => ipcRenderer.invoke('contasPagar:totalAberto'),
     relancarFixas: (usuarioNome) => ipcRenderer.invoke('contasPagar:relancarFixas', usuarioNome),
     marcarFixa: (dados) => ipcRenderer.invoke('contasPagar:marcarFixa', dados),
+    cancelar: (dados) => ipcRenderer.invoke('contasPagar:cancelar', dados),
   },
 
   // CAIXA

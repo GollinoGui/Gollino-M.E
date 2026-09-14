@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { Search, Plus, DollarSign, RefreshCw } from 'lucide-react'
+import { Search, Plus, DollarSign, RefreshCw, XCircle } from 'lucide-react'
 import ThOrdenavel from '../components/ThOrdenavel'
 import { BotoesRelatorio } from '../components/BotoesRelatorio'
+import ModalCancelarContaPagar from '../components/ModalCancelarContaPagar'
 import { useOrdenacao } from '../utils/ordenacao'
 import { corGastoFixo } from '../utils/coresGastoFixo'
 import {
@@ -881,6 +882,7 @@ export default function ContasPagar({ usuario }) {
   const [filtroStatus, setFiltroStatus] = useState('aberto')
   const [selecionadas, setSelecionadas] = useState([])
   const [lotePagamento, setLotePagamento] = useState(null)
+  const [loteCancelamento, setLoteCancelamento] = useState(null)
   const [modalNova, setModalNova] = useState(false)
   const [sucesso, setSucesso] = useState('')
   const [fornecedorFixoMap, setFornecedorFixoMap] = useState(new Map())
@@ -1077,6 +1079,20 @@ export default function ContasPagar({ usuario }) {
     }
   }
 
+  async function confirmarCancelamento(motivo) {
+    const resultado = await window.api.contasPagar.cancelar({
+      ids: loteCancelamento.map((c) => c.id),
+      motivo,
+      usuario: usuario?.usuario || usuario?.nome || 'sistema',
+    })
+    if (!resultado.sucesso) throw new Error(resultado.erro)
+    setLoteCancelamento(null)
+    setSelecionadas([])
+    setSucesso(`✅ ${loteCancelamento.length} conta(s) cancelada(s)!`)
+    setTimeout(() => setSucesso(''), 2500)
+    await carregar()
+  }
+
   // Relatório em duas seções: o que acabou de ser pago nesta operação e tudo
   // que ainda continua em aberto no sistema (não só o que está filtrado na
   // tela no momento) — é a conferência que a secretária leva pro Elter.
@@ -1157,6 +1173,7 @@ export default function ContasPagar({ usuario }) {
   // A seleção já só admite contas ABERTO/VENCIDO (ver toggleSel), então aqui
   // só falta checar permissão e se há algo selecionado.
   const podePagar = podePagarConta && selecionadas.length > 0
+  const podeCancelar = podeCriarConta && selecionadas.length > 0
   const contasSelecionadas = dados.filter((c) => selecionadas.includes(c.id))
 
   return (
@@ -1199,6 +1216,13 @@ export default function ContasPagar({ usuario }) {
       )}
       {modalNova && (
         <ModalNova onClose={() => setModalNova(false)} onSalvar={salvarNova} />
+      )}
+      {loteCancelamento && (
+        <ModalCancelarContaPagar
+          contas={loteCancelamento}
+          onFechar={() => setLoteCancelamento(null)}
+          onConfirmar={confirmarCancelamento}
+        />
       )}
 
       {/* ── TOPO ── */}
@@ -1561,6 +1585,29 @@ export default function ContasPagar({ usuario }) {
         </span>
         <BotoesRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} abrirParaCima />
         <div style={{ flex: 1 }} />
+        {podeCriarConta && (
+          <button
+            disabled={!podeCancelar}
+            onClick={() => podeCancelar && setLoteCancelamento(contasSelecionadas)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              height: 34,
+              padding: '0 16px',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 600,
+              background: 'transparent',
+              color: podeCancelar ? '#C53030' : 'var(--text-muted)',
+              cursor: podeCancelar ? 'pointer' : 'not-allowed',
+              border: podeCancelar ? '1px solid #FCA5A5' : '1px solid var(--border-md)',
+            }}
+          >
+            <XCircle size={14} />
+            {selecionadas.length > 1 ? `Cancelar (${selecionadas.length})` : 'Cancelar'}
+          </button>
+        )}
         {podePagarConta && (
           <button
             disabled={!podePagar}
