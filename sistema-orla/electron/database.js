@@ -168,6 +168,20 @@ const clientes = {
     return data
   },
 
+  // Maior código já cadastrado, independente de ordem alfabética ou do
+  // limit(500) do listar() — usa ORDER BY codigo direto no banco para não
+  // perder clientes com nome que cai fora dos primeiros 500 alfabeticamente.
+  async proximoCodigo() {
+    const { data, error } = await supabase
+      .from('clientes')
+      .select('codigo')
+      .order('codigo', { ascending: false })
+      .limit(1)
+    if (error) throw new Error(error.message)
+    const max = data && data.length ? parseInt(data[0].codigo, 10) || 0 : 0
+    return String(max + 1).padStart(6, '0')
+  },
+
   async buscar(codigo) {
     const { data, error } = await supabase.from('clientes').select('*').eq('codigo', codigo).maybeSingle()
     if (error) throw new Error(error.message)

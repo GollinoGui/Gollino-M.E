@@ -108,7 +108,7 @@ function ModalBaixar({ pv, onConfirm, onClose, salvando }) {
 export default function PreVendas({ usuario }) {
   const [preVendas, setPreVendas] = useState([])
   const [todosProds, setTodosProds] = useState([])
-  const [todosClientes, setTodosClientes] = useState([])
+  const [opcoesCliente, setOpcoesCliente] = useState([])
   const [view, setView] = useState('lista')
   const [editando, setEditando] = useState(null)
   const [busca, setBusca] = useState('')
@@ -127,8 +127,30 @@ export default function PreVendas({ usuario }) {
   useEffect(() => {
     carregarLista()
     window.api.produtos.listar({ situacao: 'A' }).then(setTodosProds).catch(console.error)
-    window.api.clientes.listar({}).then(setTodosClientes).catch(console.error)
   }, [])
+
+  // Busca clientes no servidor conforme o usuário digita (evita depender de
+  // uma lista pré-carregada, limitada aos primeiros 500 clientes em ordem
+  // alfabética, que "sumia" com clientes cujo nome vem depois no alfabeto).
+  useEffect(() => {
+    if (clienteBusca.trim().length < 2) {
+      setOpcoesCliente([])
+      return
+    }
+    let ativo = true
+    const t = setTimeout(async () => {
+      try {
+        const r = await window.api.clientes.listar({ busca: clienteBusca })
+        if (ativo) setOpcoesCliente((r || []).slice(0, 20))
+      } catch (err) {
+        console.error('Erro ao buscar clientes:', err)
+      }
+    }, 200)
+    return () => {
+      ativo = false
+      clearTimeout(t)
+    }
+  }, [clienteBusca])
 
   async function carregarLista() {
     if (!window.api.preVendas) return
@@ -152,7 +174,6 @@ export default function PreVendas({ usuario }) {
     todosProds.filter(p => p.descricao.toLowerCase().includes(buscaProd.toLowerCase()) || p.codigo.includes(buscaProd))
   , [buscaProd, todosProds])
 
-  const clientesFiltrados = todosClientes.filter(c => c.nome.toLowerCase().includes(clienteBusca.toLowerCase()))
   const totalForm = form.itens.reduce((s, i) => s + i.total, 0)
 
   function novaPreVenda() {
@@ -296,10 +317,10 @@ export default function PreVendas({ usuario }) {
           <div style={{ marginBottom: 8, position: 'relative' }}>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>Cliente (F2)</div>
             <input value={form.nome_cliente} onChange={e => { setClienteBusca(e.target.value); setForm(p => ({ ...p, nome_cliente: e.target.value })); setClienteDropdown(true) }} onFocus={() => setClienteDropdown(true)} style={{ width: '100%', height: 32, padding: '0 10px' }} />
-            {clienteDropdown && clientesFiltrados.length > 0 && (
+            {clienteDropdown && opcoesCliente.length > 0 && (
               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: 'var(--surface)', border: '1px solid var(--border-md)', borderRadius: 'var(--radius-md)', boxShadow: '0 6px 20px rgba(0,0,0,0.1)', maxHeight: 160, overflowY: 'auto' }}>
-                {clientesFiltrados.map(c => (
-                  <button key={c.id} onClick={() => { setForm(p => ({ ...p, cliente_id: c.codigo, nome_cliente: c.nome })); setClienteDropdown(false) }} style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 13, borderBottom: '1px solid var(--border)' }}
+                {opcoesCliente.map(c => (
+                  <button key={c.id} onClick={() => { setForm(p => ({ ...p, cliente_id: c.codigo, nome_cliente: c.nome })); setClienteBusca(''); setOpcoesCliente([]); setClienteDropdown(false) }} style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 13, borderBottom: '1px solid var(--border)' }}
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   ><span style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>#{c.codigo}</span> · {c.nome}</button>

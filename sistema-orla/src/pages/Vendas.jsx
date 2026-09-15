@@ -578,19 +578,18 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
 
   // Dados do banco
   const [todosProds, setTodosProds] = useState([])
-  const [clientes, setClientes] = useState([])
+  const [opcoesCliente, setOpcoesCliente] = useState([])
   const [linhas, setLinhas] = useState([])
   const [filtroLinha, setFiltroLinha] = useState('Todos')
 
   useEffect(() => {
     async function carregar() {
       try {
-        const [prods, cls] = await Promise.all([
+        const [prods, consumidor] = await Promise.all([
           window.api.produtos.listar({ situacao: 'A' }),
-          window.api.clientes.listar({}),
+          window.api.clientes.buscar('000001'),
         ])
         setTodosProds(prods)
-        setClientes(cls)
 
         // Monta lista de linhas únicas
         const ls = [
@@ -599,7 +598,6 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
         setLinhas(ls)
 
         // Seleciona "Consumidor a Vista" por padrão
-        const consumidor = cls.find((c) => c.codigo === '000001') || cls[0]
         setClienteSel(consumidor || null)
       } catch (err) {
         console.error('Erro ao carregar vendas:', err)
@@ -608,6 +606,30 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
     carregar()
     carregarUltimas()
   }, [])
+
+  // Busca clientes no servidor conforme o usuário digita (evita depender de
+  // uma lista pré-carregada, que ficava limitada aos primeiros 500 clientes
+  // em ordem alfabética e por isso "sumia" com clientes cujo nome vem depois
+  // disso no alfabeto, como sobrenomes comuns tipo Rodrigues).
+  useEffect(() => {
+    if (clienteSel || clienteBusca.trim().length < 2) {
+      setOpcoesCliente([])
+      return
+    }
+    let ativo = true
+    const t = setTimeout(async () => {
+      try {
+        const r = await window.api.clientes.listar({ busca: clienteBusca })
+        if (ativo) setOpcoesCliente((r || []).slice(0, 20))
+      } catch (err) {
+        console.error('Erro ao buscar clientes:', err)
+      }
+    }, 200)
+    return () => {
+      ativo = false
+      clearTimeout(t)
+    }
+  }, [clienteBusca, clienteSel])
 
   // F5 abre o pagamento (equivalente a clicar em "Total (F5)"). Quando o
   // modal de pagamento já está aberto, ele mesmo trata o F5 para finalizar.
@@ -663,22 +685,6 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
       return matchBusca && matchLinha
     })
   }, [busca, filtroLinha, todosProds])
-
-  const clientesFiltrados = useMemo(
-    () =>
-      clientes
-        .filter((c) => {
-          const q = clienteBusca.toLowerCase()
-          return (
-            (c.nome || '').toLowerCase().includes(q) ||
-            (c.codigo || '').includes(clienteBusca) ||
-            (c.cpf || '').includes(clienteBusca) ||
-            (c.cgc || '').includes(clienteBusca)
-          )
-        })
-        .slice(0, 20),
-    [clientes, clienteBusca],
-  )
 
   const total = itens.reduce((s, i) => s + i.total, 0)
 
@@ -737,12 +743,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
   }
 
   async function proximoCodigoCliente() {
-    const todos = await window.api.clientes.listar({})
-    const maxCod = todos.reduce((max, c) => {
-      const n = parseInt(c.codigo) || 0
-      return n > max ? n : max
-    }, 0)
-    return String(maxCod + 1).padStart(6, '0')
+    return window.api.clientes.proximoCodigo()
   }
 
   async function finalizarVenda(pagamentoInfo) {
@@ -1047,7 +1048,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
                 fontSize: 13,
               }}
             />
-            {clienteDropdown && clienteBusca.trim().length > 0 && clientesFiltrados.length > 0 && (
+            {clienteDropdown && clienteBusca.trim().length > 0 && opcoesCliente.length > 0 && (
               <div
                 style={{
                   position: 'absolute',
@@ -1063,7 +1064,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
                   overflowY: 'auto',
                 }}
               >
-                {clientesFiltrados.map((c) => (
+                {opcoesCliente.map((c) => (
                   <button
                     key={c.codigo}
                     onMouseDown={() => {

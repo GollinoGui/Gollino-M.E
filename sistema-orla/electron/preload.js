@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('api', {
   // CLIENTES
   clientes: {
     listar: (filtros) => ipcRenderer.invoke('clientes:listar', filtros),
+    proximoCodigo: () => ipcRenderer.invoke('clientes:proximoCodigo'),
     buscar: (codigo) => ipcRenderer.invoke('clientes:buscar', codigo),
     salvar: (dados) => ipcRenderer.invoke('clientes:salvar', dados),
     excluir: (codigo) => ipcRenderer.invoke('clientes:excluir', codigo),

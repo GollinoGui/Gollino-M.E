@@ -228,6 +228,7 @@ function handle(channel, fn) {
 
 // --- CLIENTES ---
 handle('clientes:listar', (_, filtros) => db.clientes.listar(filtros))
+handle('clientes:proximoCodigo', () => db.clientes.proximoCodigo())
 handle('clientes:buscar', (_, codigo) => db.clientes.buscar(codigo))
 handle('clientes:salvar', (_, dados) => db.clientes.salvar(dados))
 handle('clientes:excluir', (_, codigo) => db.clientes.excluir(codigo))

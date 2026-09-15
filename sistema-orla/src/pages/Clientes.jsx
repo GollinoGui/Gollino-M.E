@@ -121,12 +121,7 @@ export default function Clientes({ usuario }) {
   }, [carregar])
 
   async function proximoCodigo() {
-    const todos = await window.api.clientes.listar({})
-    const maxCod = todos.reduce((max, c) => {
-      const n = parseInt(c.codigo) || 0
-      return n > max ? n : max
-    }, 0)
-    return String(maxCod + 1).padStart(6, '0')
+    return window.api.clientes.proximoCodigo()
   }
 
   function abrirEditar(c) {
