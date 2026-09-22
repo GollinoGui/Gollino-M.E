@@ -1245,6 +1245,10 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   // Contagem de estoque
   const [contagem, setContagem] = useState({})
   const [salvandoContagem, setSalvandoContagem] = useState(false)
+  // Guard de duplo-clique síncrono: state só atualiza depois do próximo
+  // render, então dois cliques físicos rápidos podiam passar os dois pelo
+  // "if (salvandoContagem) return" e gerar linhas de ACERTO duplicadas.
+  const salvandoContagemRef = useRef(false)
 
   // Reajuste de preços
   const [reajustes, setReajustes] = useState([])
@@ -1502,7 +1506,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
   }
 
   async function salvarContagem() {
-    if (salvandoContagem) return
+    if (salvandoContagemRef.current) return
     if (Object.keys(contagem).length === 0) return
     const itensAlterados = Object.entries(contagem)
       .map(([produto_id, novaQtde]) => {
@@ -1515,6 +1519,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
       return
     }
 
+    salvandoContagemRef.current = true
     setSalvandoContagem(true)
     try {
       const nomeUsuario = usuario?.nome || usuario?.usuario || 'sistema'
@@ -1538,6 +1543,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
           tipo: 'ACERTO',
           valor_unitario: 0,
           total: 0,
+          usuario: nomeUsuario,
           obs: 'Contagem de estoque',
           data: new Date().toISOString().split('T')[0],
         })
@@ -1551,6 +1557,7 @@ export default function Estoque({ abaInicial = 'movimentos', usuario }) {
       await window.api.dialog.alert(`Não foi possível salvar a contagem: ${err.message}`)
     } finally {
       setSalvandoContagem(false)
+      salvandoContagemRef.current = false
     }
   }
 

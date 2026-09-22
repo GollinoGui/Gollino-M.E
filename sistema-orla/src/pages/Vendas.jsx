@@ -14,6 +14,7 @@ import ModalAviso from '../components/ModalAviso'
 import ModalCancelarVenda from '../components/ModalCancelarVenda'
 import { fmtQtd } from '../utils/formatQtd'
 import { hojeLocal, localDateStr } from '../utils/data'
+import { itensAbaixoDoCusto } from '../utils/vendaAbaixoCusto'
 
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -173,6 +174,11 @@ function ModalItem({ produto, onConfirm, onClose }) {
                 Preço de tabela: {fmt(precoOriginal)}
               </div>
             )}
+            {produto.preco_custo_atual > 0 && preco > 0 && preco < produto.preco_custo_atual && (
+              <div style={{ fontSize: 11, color: '#C53030', marginTop: 3, fontWeight: 600 }}>
+                Abaixo do custo ({fmt(produto.preco_custo_atual)})
+              </div>
+            )}
           </div>
           <div>
             <label
@@ -257,6 +263,8 @@ function ModalItem({ produto, onConfirm, onClose }) {
                 preco_vista: preco,
                 preco_venda_vista: preco,
                 total,
+                precoAlterado,
+                precoOriginal,
               })
             }
             style={{
@@ -575,6 +583,8 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
   const [vendaParaCancelar, setVendaParaCancelar] = useState(null)
   const [acessoNegado, setAcessoNegado] = useState(null)
   const [avisoEstoque, setAvisoEstoque] = useState(null)
+  const [avisoTituloVencido, setAvisoTituloVencido] = useState(null)
+  const [vendaAguardandoAprovacao, setVendaAguardandoAprovacao] = useState(false)
 
   // Dados do banco
   const [todosProds, setTodosProds] = useState([])
@@ -651,6 +661,29 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
       const vendas = await window.api.vendas.listar({ dataInicio: d, dataFim: d, situacao: 'N' })
       setUltimasVendas((vendas || []).slice(-5).reverse())
     } catch (_) {}
+  }
+
+  // Seleciona o cliente no PDV e, se ele tiver título vencido em aberto,
+  // mostra um lembrete (não bloqueia a venda — a decisão de cobrar ou não
+  // fica com quem está no balcão).
+  async function selecionarCliente(c) {
+    setClienteSel(c)
+    setClienteBusca('')
+    setClienteDropdown(false)
+    setAvisoTituloVencido(null)
+    try {
+      const abertas = await window.api.contasReceber.listar({ cliente: c.codigo, situacao: 'A' })
+      const hoje = hojeLocal()
+      const vencidas = (abertas || []).filter((r) => r.data_vencimento && r.data_vencimento < hoje)
+      if (vencidas.length > 0) {
+        setAvisoTituloVencido({
+          qtde: vencidas.length,
+          total: vencidas.reduce((s, r) => s + (r.valor_em_aberto || 0), 0),
+        })
+      }
+    } catch (err) {
+      console.error('Erro ao checar títulos vencidos do cliente:', err)
+    }
   }
 
   function cancelarVenda(orcamento) {
@@ -814,7 +847,21 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
 
       const vendedorLabel = [usuario?.codigo_vendedor, usuario?.nome || usuario?.usuario].filter(Boolean).join(' - ')
 
-      const resultado = await window.api.vendas.salvar({
+      const itensPayload = itens.map((item) => ({
+        codigo_produto: item.codigo,
+        descricao: item.descricao,
+        quantidade: item.qty,
+        unidade: item.unidade || 'UN',
+        preco_unitario: item.preco_venda_vista || item.preco_vista || 0,
+        preco_custo: item.preco_custo_atual || 0,
+        valor_desconto: item.desconto || 0,
+        valor_acrescimo: 0,
+        valor_total: item.total,
+        preco_alterado: !!item.precoAlterado,
+        preco_tabela: item.precoOriginal ?? (item.preco_venda_vista || item.preco_vista || 0),
+      }))
+
+      const vendaPayload = {
         codigo_cliente: codigoCliente,
         nome_cliente: clienteSel.nome,
         data: hojeLocal(),
@@ -831,18 +878,34 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
         ...(pagamentoInfo.chequeNumero !== undefined ? { cheque_numero: pagamentoInfo.chequeNumero } : {}),
         ...(pagamentoInfo.chequeBanco !== undefined ? { cheque_banco: pagamentoInfo.chequeBanco } : {}),
         ...(pagamentoInfo.chequeVencimento !== undefined ? { cheque_vencimento: pagamentoInfo.chequeVencimento } : {}),
-        itens: itens.map((item) => ({
-          codigo_produto: item.codigo,
-          descricao: item.descricao,
-          quantidade: item.qty,
-          unidade: item.unidade || 'UN',
-          preco_unitario: item.preco_venda_vista || item.preco_vista || 0,
-          preco_custo: item.preco_custo_atual || 0,
-          valor_desconto: item.desconto || 0,
-          valor_acrescimo: 0,
-          valor_total: item.total,
-        })),
-      })
+        itens: itensPayload,
+      }
+
+      // Piso de preço: quem não tem alçada (nível < 2) não fecha a venda com
+      // item abaixo do custo — vira um pedido de aprovação (mesmo padrão já
+      // usado pra contagem de estoque e baixa por prejuízo). Nível >= 2 já é
+      // a própria alçada, então segue direto.
+      const nivelUsuario = usuario?.nivel ?? 0
+      if (nivelUsuario < 2 && itensAbaixoDoCusto(itensPayload).length > 0) {
+        const nomeSolicitante = usuario?.nome || usuario?.usuario || 'sistema'
+        const resSolicitacao = await window.api.aprovacoes.solicitar({
+          tipo: 'VENDA_ABAIXO_CUSTO',
+          itens: [vendaPayload],
+          usuario_solicitante: nomeSolicitante,
+        })
+        if (!resSolicitacao.sucesso) {
+          setErroVenda(resSolicitacao.erro || 'Erro ao enviar venda para aprovação.')
+          setTimeout(() => setErroVenda(''), 5000)
+          return
+        }
+        setItens([])
+        setObservacao('')
+        setPagModal(false)
+        setVendaAguardandoAprovacao(true)
+        return
+      }
+
+      const resultado = await window.api.vendas.salvar(vendaPayload)
 
       if (!resultado.sucesso) {
         const msg = resultado.erro || 'Erro ao salvar venda.'
@@ -995,6 +1058,13 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
           onFechar={() => setAvisoEstoque(null)}
         />
       )}
+      {vendaAguardandoAprovacao && (
+        <ModalAviso
+          titulo="Aguardando aprovação"
+          mensagem="Esta venda tem item(ns) com preço abaixo do custo e foi enviada para aprovação de um administrador. Nada foi lançado ainda — o carrinho foi limpo. Você pode acompanhar o status pelo assistente."
+          onFechar={() => setVendaAguardandoAprovacao(false)}
+        />
+      )}
 
       {/* ── PAINEL ESQUERDO — carrinho ── */}
       <div
@@ -1036,6 +1106,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
                 setClienteBusca(e.target.value)
                 setClienteSel(null)
                 setClienteDropdown(true)
+                setAvisoTituloVencido(null)
               }}
               onFocus={() => setClienteDropdown(true)}
               onBlur={() => setTimeout(() => setClienteDropdown(false), 150)}
@@ -1067,11 +1138,7 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
                 {opcoesCliente.map((c) => (
                   <button
                     key={c.codigo}
-                    onMouseDown={() => {
-                      setClienteSel(c)
-                      setClienteBusca('')
-                      setClienteDropdown(false)
-                    }}
+                    onMouseDown={() => selecionarCliente(c)}
                     style={{
                       width: '100%',
                       textAlign: 'left',
@@ -1093,6 +1160,22 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
                     </div>
                   </button>
                 ))}
+              </div>
+            )}
+            {avisoTituloVencido && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: '#B7791F',
+                  background: '#FFF8E6',
+                  border: '1px solid #F6E3B4',
+                  borderRadius: 6,
+                  padding: '6px 8px',
+                  marginTop: 6,
+                }}
+              >
+                ⚠ Cliente tem {avisoTituloVencido.qtde} título{avisoTituloVencido.qtde !== 1 ? 's' : ''} vencido
+                {avisoTituloVencido.qtde !== 1 ? 's' : ''} ({fmt(avisoTituloVencido.total)}) — considere cobrar.
               </div>
             )}
           </div>

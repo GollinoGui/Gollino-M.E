@@ -430,7 +430,8 @@ const vendas = {
 
   async salvar(dados) {
     const { itens, nome_cliente, cheque_numero, cheque_banco, cheque_vencimento, ...venda } = dados
-    const { data: orcamentoSalvo, error } = await supabase.rpc('vendas_salvar', { p_venda: venda, p_itens: itens || [] })
+    const itensParaRpc = (itens || []).map(({ preco_tabela, preco_alterado, ...resto }) => resto)
+    const { data: orcamentoSalvo, error } = await supabase.rpc('vendas_salvar', { p_venda: venda, p_itens: itensParaRpc })
     if (error) return { sucesso: false, erro: error.message }
 
     // Venda paga (ao menos em parte) com cheque: gera o registro em
@@ -451,6 +452,23 @@ const vendas = {
       })
       if (!resCheque.sucesso) {
         console.error('Venda salva, mas falhou ao gerar cheque a receber:', resCheque.erro)
+      }
+    }
+
+    // Preço unitário editado manualmente no PDV (não é reajuste em lote):
+    // loga em reajustes_preco pra manter rastro de quem mudou o quê. Best
+    // effort — não derruba a venda já concluída se o log falhar.
+    for (const item of (itens || []).filter((i) => i.preco_alterado)) {
+      const { error: errLog } = await supabase.rpc('reajustes_preco_registrar_manual', {
+        p_codigo_produto: item.codigo_produto,
+        p_produto: item.descricao,
+        p_preco_anterior: item.preco_tabela,
+        p_preco_novo: item.preco_unitario,
+        p_usuario: venda.usuario_cadastro || '',
+        p_orcamento: orcamentoSalvo,
+      })
+      if (errLog) {
+        console.error('Venda salva, mas falhou ao registrar alteração manual de preço:', errLog.message)
       }
     }
 
@@ -1653,12 +1671,18 @@ const aprovacoes = {
             tipo: 'ACERTO',
             valor_unitario: 0,
             total: 0,
+            usuario,
             obs: `Contagem de estoque (solicitado por ${solicitacao.usuario_solicitante}, aprovado por ${usuario})`,
             data: hoje(),
           },
         })
         if (error) return { sucesso: false, erro: error.message }
       }
+    } else if (solicitacao.tipo === 'VENDA_ABAIXO_CUSTO') {
+      const vendaPayload = solicitacao.itens?.[0]
+      if (!vendaPayload) return { sucesso: false, erro: 'Solicitação de venda inválida (payload ausente).' }
+      const resultadoVenda = await vendas.salvar(vendaPayload)
+      if (!resultadoVenda.sucesso) return { sucesso: false, erro: resultadoVenda.erro }
     } else if (solicitacao.tipo === 'BAIXA_PREJUIZO_CR') {
       const ids = (solicitacao.itens || []).map((item) => item.id)
       const motivo = solicitacao.itens?.[0]?.motivo || ''

@@ -3,6 +3,7 @@ import { MessageCircle, X, Send, Bot, ChevronDown, Check, Ban } from 'lucide-rea
 import ModalConfirmacao from './ModalConfirmacao'
 import { fmtQtd } from '../utils/formatQtd'
 import { hojeLocal } from '../utils/data'
+import { itensAbaixoDoCusto } from '../utils/vendaAbaixoCusto'
 
 const hora = new Date().getHours()
 const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
@@ -45,10 +46,29 @@ function resumoCompletarEntrada(itens) {
   return { numero: s.numero, qtdeItens: itensNovos.length, qtdeFaturas: faturasNovas.length, totalItens, totalFaturas }
 }
 
-// Textos das solicitações de aprovação — hoje existem três tipos:
+// VENDA_ABAIXO_CUSTO guarda o payload inteiro da venda (o mesmo objeto que
+// vendas.salvar espera) em itens[0], com os itens da venda em itens[0].itens.
+function resumoVendaAbaixoCusto(itensSolicitacao) {
+  const venda = (itensSolicitacao || [])[0] || {}
+  const itensVenda = venda.itens || []
+  const abaixo = itensAbaixoDoCusto(itensVenda)
+  const prejuizoEstimado = abaixo.reduce(
+    (s, i) => s + (i.preco_custo - i.valor_total / i.quantidade) * i.quantidade,
+    0,
+  )
+  return {
+    nomeCliente: venda.nome_cliente || 'Cliente',
+    valorTotal: venda.valor_total || 0,
+    qtdeItensAbaixo: abaixo.length,
+    prejuizoEstimado,
+  }
+}
+
+// Textos das solicitações de aprovação — hoje existem quatro tipos:
 // CONTAGEM_ESTOQUE (ajuste de estoque), BAIXA_PREJUIZO_CR (exclusão de
-// contas a receber por dívida incobrável) e COMPLETAR_ENTRADA_MERCADORIA
-// (adicionar itens/faturas que faltaram numa entrada já confirmada).
+// contas a receber por dívida incobrável), COMPLETAR_ENTRADA_MERCADORIA
+// (adicionar itens/faturas que faltaram numa entrada já confirmada) e
+// VENDA_ABAIXO_CUSTO (venda com item abaixo do custo, pendente de aprovação).
 function textoSolicitacaoPendente(s) {
   if (s.tipo === 'BAIXA_PREJUIZO_CR') {
     const { qtde, total } = resumoItensPrejuizo(s.itens)
@@ -57,6 +77,10 @@ function textoSolicitacaoPendente(s) {
   if (s.tipo === 'COMPLETAR_ENTRADA_MERCADORIA') {
     const { numero, qtdeItens, totalItens } = resumoCompletarEntrada(s.itens)
     return `${s.usuario_solicitante || 'Alguém'} pediu para completar a entrada de mercadoria #${numero} (${qtdeItens} item${qtdeItens !== 1 ? 'ns' : ''}, ${fmt(totalItens)})`
+  }
+  if (s.tipo === 'VENDA_ABAIXO_CUSTO') {
+    const { nomeCliente, valorTotal, qtdeItensAbaixo, prejuizoEstimado } = resumoVendaAbaixoCusto(s.itens)
+    return `${s.usuario_solicitante || 'Alguém'} pediu para fechar uma venda para ${nomeCliente} (${fmt(valorTotal)}) com ${qtdeItensAbaixo} produto${qtdeItensAbaixo !== 1 ? 's' : ''} abaixo do custo (prejuízo estimado de ${fmt(prejuizoEstimado)})`
   }
   return `${s.usuario_solicitante || 'Alguém'} solicitou aprovação de contagem de estoque (${(s.itens || []).length} produto${(s.itens || []).length !== 1 ? 's' : ''})`
 }
@@ -74,6 +98,12 @@ function textoSolicitacaoResolvida(s) {
       ? `✅ Seu pedido para completar a entrada #${numero} foi aprovado por ${s.usuario_aprovador || 'um administrador'}. Estoque e contas a pagar atualizados.`
       : `❌ Seu pedido para completar a entrada #${numero} foi rejeitado por ${s.usuario_aprovador || 'um administrador'}.${s.motivo_rejeicao ? ` Motivo: ${s.motivo_rejeicao}` : ''}`
   }
+  if (s.tipo === 'VENDA_ABAIXO_CUSTO') {
+    const { nomeCliente, valorTotal } = resumoVendaAbaixoCusto(s.itens)
+    return s.situacao === 'APROVADO'
+      ? `✅ Sua venda para ${nomeCliente} (${fmt(valorTotal)}) foi aprovada por ${s.usuario_aprovador || 'um administrador'} e já está lançada.`
+      : `❌ Sua venda para ${nomeCliente} (${fmt(valorTotal)}) foi rejeitada por ${s.usuario_aprovador || 'um administrador'}.${s.motivo_rejeicao ? ` Motivo: ${s.motivo_rejeicao}` : ''}`
+  }
   return s.situacao === 'APROVADO'
     ? `✅ Sua contagem de estoque foi aprovada por ${s.usuario_aprovador || 'um administrador'}. Estoque atualizado.`
     : `❌ Sua contagem de estoque foi rejeitada por ${s.usuario_aprovador || 'um administrador'}.`
@@ -89,6 +119,10 @@ function textoMinhaPendente(s) {
   if (s.tipo === 'COMPLETAR_ENTRADA_MERCADORIA') {
     const { numero, qtdeItens, totalItens } = resumoCompletarEntrada(s.itens)
     return `Você pediu para completar a entrada de mercadoria #${numero} (${qtdeItens} item${qtdeItens !== 1 ? 'ns' : ''}, ${fmt(totalItens)}) — aguardando aprovação.`
+  }
+  if (s.tipo === 'VENDA_ABAIXO_CUSTO') {
+    const { nomeCliente, valorTotal } = resumoVendaAbaixoCusto(s.itens)
+    return `Você pediu para fechar uma venda para ${nomeCliente} (${fmt(valorTotal)}) com preço abaixo do custo — aguardando aprovação.`
   }
   return `Você solicitou aprovação de contagem de estoque (${(s.itens || []).length} produto${(s.itens || []).length !== 1 ? 's' : ''}) — aguardando aprovação.`
 }
@@ -1226,7 +1260,9 @@ export default function Assistente({ caixaAberto, onNavigate, usuario, pagina })
               ? 'Aprovar exclusão por prejuízo'
               : confirmacaoAprovacao.solicitacao.tipo === 'COMPLETAR_ENTRADA_MERCADORIA'
                 ? 'Aprovar complemento de entrada'
-                : 'Aprovar contagem'
+                : confirmacaoAprovacao.solicitacao.tipo === 'VENDA_ABAIXO_CUSTO'
+                  ? 'Aprovar venda abaixo do custo'
+                  : 'Aprovar contagem'
           }
           mensagem={
             confirmacaoAprovacao.solicitacao.tipo === 'BAIXA_PREJUIZO_CR'
@@ -1239,7 +1275,12 @@ export default function Assistente({ caixaAberto, onNavigate, usuario, pagina })
                     const { numero, qtdeItens, qtdeFaturas, totalItens, totalFaturas } = resumoCompletarEntrada(confirmacaoAprovacao.solicitacao.itens)
                     return `Aprovar o complemento da entrada #${numero} pedido por ${confirmacaoAprovacao.solicitacao.usuario_solicitante || 'este usuário'}: ${qtdeItens} item${qtdeItens !== 1 ? 'ns' : ''} novo${qtdeItens !== 1 ? 's' : ''} (${fmt(totalItens)})${qtdeFaturas > 0 ? ` e ${qtdeFaturas} fatura${qtdeFaturas !== 1 ? 's' : ''} (${fmt(totalFaturas)})` : ''}? Atualiza estoque, custo médio e contas a pagar.`
                   })()
-                : `Aprovar a contagem de estoque enviada por ${confirmacaoAprovacao.solicitacao.usuario_solicitante || 'este usuário'}? As quantidades serão atualizadas no estoque.`
+                : confirmacaoAprovacao.solicitacao.tipo === 'VENDA_ABAIXO_CUSTO'
+                  ? (() => {
+                      const { nomeCliente, valorTotal, qtdeItensAbaixo, prejuizoEstimado } = resumoVendaAbaixoCusto(confirmacaoAprovacao.solicitacao.itens)
+                      return `Aprovar a venda para ${nomeCliente} (${fmt(valorTotal)}), pedida por ${confirmacaoAprovacao.solicitacao.usuario_solicitante || 'este usuário'}? ${qtdeItensAbaixo} produto${qtdeItensAbaixo !== 1 ? 's' : ''} está${qtdeItensAbaixo !== 1 ? 'ão' : ''} abaixo do custo (prejuízo estimado de ${fmt(prejuizoEstimado)}). A venda será lançada de fato, com baixa de estoque.`
+                    })()
+                  : `Aprovar a contagem de estoque enviada por ${confirmacaoAprovacao.solicitacao.usuario_solicitante || 'este usuário'}? As quantidades serão atualizadas no estoque.`
           }
           icone={Check}
           corIcone='#22863A'
@@ -1258,14 +1299,18 @@ export default function Assistente({ caixaAberto, onNavigate, usuario, pagina })
               ? 'Rejeitar exclusão por prejuízo'
               : confirmacaoAprovacao.solicitacao.tipo === 'COMPLETAR_ENTRADA_MERCADORIA'
                 ? 'Rejeitar complemento de entrada'
-                : 'Rejeitar contagem'
+                : confirmacaoAprovacao.solicitacao.tipo === 'VENDA_ABAIXO_CUSTO'
+                  ? 'Rejeitar venda abaixo do custo'
+                  : 'Rejeitar contagem'
           }
           mensagem={
             confirmacaoAprovacao.solicitacao.tipo === 'BAIXA_PREJUIZO_CR'
               ? 'Rejeitar este pedido de exclusão por prejuízo? As contas continuam em aberto normalmente.'
               : confirmacaoAprovacao.solicitacao.tipo === 'COMPLETAR_ENTRADA_MERCADORIA'
                 ? 'Rejeitar este pedido de complemento de entrada? Nada é alterado no estoque ou nas contas a pagar.'
-                : 'Rejeitar esta contagem de estoque? As quantidades não serão alteradas.'
+                : confirmacaoAprovacao.solicitacao.tipo === 'VENDA_ABAIXO_CUSTO'
+                  ? 'Rejeitar esta venda? Nada será lançado — nem estoque, nem contas a receber.'
+                  : 'Rejeitar esta contagem de estoque? As quantidades não serão alteradas.'
           }
           icone={Ban}
           corIcone='#C53030'
