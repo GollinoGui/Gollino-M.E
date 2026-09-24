@@ -1902,9 +1902,18 @@ const nfe = {
   // Emite a NF-e de verdade via API da Bling (cria + envia pra autorização)
   // a partir dos dados já registrados na venda. Salva o id/situação na venda
   // pra permitir consultar o andamento depois com blingConsultar.
-  async emitirBling(orcamento) {
+  async emitirBling(orcamento, itensNfe) {
     const detalhesVenda = await this.detalhes(orcamento)
     if (!detalhesVenda) throw new Error(`Venda #${orcamento} não encontrada.`)
+
+    // Descrição revisada na tela de conferência (NotaFiscal.jsx) substitui a
+    // gravada na venda só pra esse envio — não reescreve o histórico da venda.
+    if (itensNfe?.length) {
+      const descPorId = Object.fromEntries(itensNfe.filter((it) => it.descricao).map((it) => [it.id, it.descricao]))
+      detalhesVenda.itens = detalhesVenda.itens.map((it) =>
+        descPorId[it.id] ? { ...it, descricao: descPorId[it.id] } : it,
+      )
+    }
 
     const codigosProduto = [...new Set(detalhesVenda.itens.map((i) => i.codigo_produto))]
     const { data: produtos } = await supabase

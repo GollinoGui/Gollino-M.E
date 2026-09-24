@@ -221,7 +221,7 @@ contextBridge.exposeInMainWorld('api', {
     abrirPortal: (url) => ipcRenderer.invoke('nfe:abrirPortal', url),
     blingStatusAutorizacao: () => ipcRenderer.invoke('nfe:blingStatusAutorizacao'),
     blingAutorizar: () => ipcRenderer.invoke('nfe:blingAutorizar'),
-    emitirBling: (orcamento) => ipcRenderer.invoke('nfe:emitirBling', orcamento),
+    emitirBling: (orcamento, itensNfe) => ipcRenderer.invoke('nfe:emitirBling', orcamento, itensNfe),
     consultarBling: (orcamento) => ipcRenderer.invoke('nfe:consultarBling', orcamento),
     blingNaturezas: () => ipcRenderer.invoke('nfe:blingNaturezas'),
     blingFormasPagamento: () => ipcRenderer.invoke('nfe:blingFormasPagamento'),

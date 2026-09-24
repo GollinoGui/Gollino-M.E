@@ -82,6 +82,12 @@ export default function NotaFiscal() {
   const [conectando, setConectando] = useState(false)
   const [emitindo, setEmitindo] = useState(null) // orcamento em emissão/consulta agora
 
+  // --- Conferência de itens antes de emitir (evita mandar descrição errada
+  // pra Bling/SEFAZ sem chance de revisão — ver incidente 2026-09-24) ---
+  const [conferencia, setConferencia] = useState(null) // venda sendo conferida
+  const [itensConferencia, setItensConferencia] = useState([])
+  const [carregandoConferencia, setCarregandoConferencia] = useState(false)
+
   // --- Modal "+ Nova NF-e" (venda avulsa, devolução ou outra — não presa a
   // uma venda já registrada, igual o "Novo" do Orlasoft) ---
   const [modalManual, setModalManual] = useState(false)
@@ -146,10 +152,10 @@ export default function NotaFiscal() {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
-  async function emitirComBling(v) {
+  async function emitirComBling(v, itensNfe) {
     setEmitindo(v.orcamento)
     try {
-      const r = await window.api.nfe.emitirBling(v.orcamento)
+      const r = await window.api.nfe.emitirBling(v.orcamento, itensNfe)
       if (!r?.sucesso) {
         window.alert(r?.erro || 'Falha ao emitir a NF-e.')
         await carregar()
@@ -169,6 +175,33 @@ export default function NotaFiscal() {
     } finally {
       setEmitindo(null)
     }
+  }
+
+  // Antes de emitir de verdade pra Bling/SEFAZ, mostra os itens (com a
+  // descrição gravada na venda) pra secretária confirmar — se algo saiu
+  // errado no cadastro do produto na hora da venda, dá pra corrigir aqui
+  // sem precisar cancelar a nota depois.
+  async function abrirConferencia(v) {
+    setConferencia(v)
+    setItensConferencia([])
+    setCarregandoConferencia(true)
+    try {
+      const d = await window.api.nfe.detalhes(v.orcamento)
+      setItensConferencia((d?.itens || []).map((it) => ({ ...it })))
+    } finally {
+      setCarregandoConferencia(false)
+    }
+  }
+
+  function atualizarDescricaoConferencia(id, valor) {
+    setItensConferencia((lista) => lista.map((it) => (it.id === id ? { ...it, descricao: valor } : it)))
+  }
+
+  function confirmarEmissao() {
+    const v = conferencia
+    const itensNfe = itensConferencia.map((it) => ({ id: it.id, descricao: it.descricao.trim() }))
+    setConferencia(null)
+    emitirComBling(v, itensNfe)
   }
 
   function imprimirDanfe(link) {
@@ -481,6 +514,75 @@ export default function NotaFiscal() {
                 }}
               >
                 {salvando ? 'Salvando…' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal conferência — última checagem dos itens antes de emitir de verdade */}
+      {conferencia && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 550,
+        }}>
+          <div style={{
+            background: 'var(--surface)', borderRadius: 12, padding: 28,
+            width: 560, maxHeight: '86vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+          }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+              Conferir antes de emitir
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+              Venda #{conferencia.orcamento} — {conferencia.nome_cliente} — {fmt(conferencia.valor_total)}
+            </div>
+
+            {carregandoConferencia ? (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '20px 0' }}>Carregando…</div>
+            ) : (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 8 }}>
+                  Descrição dos itens que vão pra nota
+                </div>
+                {itensConferencia.map((it) => (
+                  <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', width: 70, flexShrink: 0 }}>
+                      {fmtQtd(it.quantidade, it.unidade)}x
+                    </span>
+                    <input
+                      value={it.descricao}
+                      onChange={(e) => atualizarDescricaoConferencia(it.id, e.target.value)}
+                      style={{ flex: 1, height: 34, padding: '0 10px', borderRadius: 7, border: `1px solid ${it.descricao.trim() ? 'var(--border)' : '#FCA5A5'}`, fontSize: 13 }}
+                    />
+                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', width: 70, textAlign: 'right', flexShrink: 0 }}>
+                      {fmt(it.valor_total)}
+                    </span>
+                  </div>
+                ))}
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, marginBottom: 20 }}>
+                  Corrigir aqui muda só o texto que vai pra nota fiscal — não altera o registro da venda.
+                </div>
+              </>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setConferencia(null)}
+                style={{ padding: '8px 18px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer' }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarEmissao}
+                disabled={carregandoConferencia || itensConferencia.some((it) => !it.descricao.trim())}
+                style={{
+                  padding: '8px 20px', borderRadius: 7,
+                  background: carregandoConferencia || itensConferencia.some((it) => !it.descricao.trim()) ? 'var(--gray-200)' : 'var(--blue-700)',
+                  color: carregandoConferencia || itensConferencia.some((it) => !it.descricao.trim()) ? 'var(--text-muted)' : '#fff',
+                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Confirmar e emitir
               </button>
             </div>
           </div>
@@ -957,7 +1059,7 @@ export default function NotaFiscal() {
                   ) : (
                     <>
                       <button
-                        onClick={() => emitirComBling(v)}
+                        onClick={() => abrirConferencia(v)}
                         disabled={Boolean(emitindo) || blingAutorizado === false}
                         title={blingAutorizado === false ? 'Conecte com a Bling primeiro' : ''}
                         style={{

@@ -304,7 +304,7 @@ handle('nfe:abrirPortal', (_, url) => {
 })
 handle('nfe:blingStatusAutorizacao', () => db.nfe.blingStatusAutorizacao())
 handle('nfe:blingAutorizar', () => db.nfe.blingAutorizar())
-handle('nfe:emitirBling', (_, orcamento) => db.nfe.emitirBling(orcamento))
+handle('nfe:emitirBling', (_, orcamento, itensNfe) => db.nfe.emitirBling(orcamento, itensNfe))
 handle('nfe:consultarBling', (_, orcamento) => db.nfe.consultarBling(orcamento))
 handle('nfe:blingNaturezas', () => db.nfe.blingNaturezas())
 handle('nfe:blingFormasPagamento', () => db.nfe.blingFormasPagamento())
