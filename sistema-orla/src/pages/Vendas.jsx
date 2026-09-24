@@ -746,25 +746,11 @@ export default function Vendas({ onNavigate, usuario, caixaAberto }) {
       }
     }
 
+    // Cada confirmação no modal vira sua própria linha, mesmo repetindo o
+    // mesmo produto/preço — combinar automaticamente juntava vendas que a
+    // secretária lançou separadas de propósito (ex: mesma chapa cortada em
+    // pesos diferentes pra clientes diferentes de um revendedor).
     setItens((prev) => {
-      // Só combina com uma linha existente se preço e desconto forem iguais
-      // (preço unitário agora é editável na venda, então o mesmo produto
-      // pode ter linhas distintas com preços especiais diferentes)
-      const idx = prev.findIndex(
-        (i) =>
-          i.codigo === item.codigo &&
-          i.preco_vista === preco &&
-          i.desconto === item.desconto,
-      )
-      if (idx >= 0) {
-        const copy = [...prev]
-        copy[idx] = {
-          ...copy[idx],
-          qty: copy[idx].qty + item.qty,
-          total: copy[idx].total + item.total,
-        }
-        return copy
-      }
       const id = `${item.codigo}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
       return [...prev, { ...item, preco_vista: preco, id }]
     })

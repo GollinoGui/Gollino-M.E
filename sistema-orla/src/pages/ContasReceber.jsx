@@ -38,7 +38,12 @@ function ModalConfirmarRecebimento({ contas, onClose, onConfirm }) {
   const contasOrdenadas = [...contas].sort((a, b) =>
     (a.data_vencimento || '9999-99-99').localeCompare(b.data_vencimento || '9999-99-99'),
   )
-  const [forma, setForma] = useState(null)
+  // Forma de pagamento por título, não uma só pro lote inteiro — um cliente
+  // pode quitar vários títulos na mesma recebida usando formas diferentes
+  // (parte pix, parte dinheiro), e gravar tudo com uma forma só maquiava o
+  // extrato (ver relato de recebida de 5 títulos do Gabriel toda como PIX,
+  // quando só parte foi pix de verdade).
+  const [formaPorConta, setFormaPorConta] = useState({})
   const [valorInformado, setValorInformado] = useState(totalEmAberto.toFixed(2))
   const [data, setData] = useState(hojeLocal())
   const [salvando, setSalvando] = useState(false)
@@ -48,7 +53,6 @@ function ModalConfirmarRecebimento({ contas, onClose, onConfirm }) {
   // não rejeitar no front algo que o backend aceitaria (arredondamento).
   const excedeSaldo = parseFloat(valorInformado) > totalEmAberto + 0.01
   const valorValido = parseFloat(valorInformado) > 0 && !excedeSaldo
-  const podeConfirmar = !!forma && valorValido
 
   let restante = valorFinal
   const alocacoes = contasOrdenadas.map((c) => {
@@ -57,15 +61,31 @@ function ModalConfirmarRecebimento({ contas, onClose, onConfirm }) {
     restante = Math.max(0, restante - aplicado)
     return { conta: c, aberto, aplicado, falta: aberto - aplicado }
   })
+
+  const contasAtivas = alocacoes.filter((a) => a.aplicado > 0)
+  const podeConfirmar = contasAtivas.length > 0 && contasAtivas.every((a) => formaPorConta[a.conta.id]) && valorValido
+
+  function aplicarFormaATodos(f) {
+    setFormaPorConta((prev) => {
+      const novo = { ...prev }
+      for (const a of contasAtivas) novo[a.conta.id] = f
+      return novo
+    })
+  }
+  function definirFormaConta(contaId, f) {
+    setFormaPorConta((prev) => ({ ...prev, [contaId]: f }))
+  }
   const falta = Math.max(totalEmAberto - valorFinal, 0)
 
   async function handleConfirm() {
     if (!podeConfirmar) return
     setSalvando(true)
-    const pagamentos = alocacoes
-      .filter((a) => a.aplicado > 0)
-      .map((a) => ({ id: a.conta.id, valor_pagamento: a.aplicado }))
-    await onConfirm(pagamentos, forma, data)
+    const pagamentos = contasAtivas.map((a) => ({
+      id: a.conta.id,
+      valor_pagamento: a.aplicado,
+      forma: formaPorConta[a.conta.id],
+    }))
+    await onConfirm(pagamentos, data)
     setSalvando(false)
   }
 
@@ -167,6 +187,26 @@ function ModalConfirmarRecebimento({ contas, onClose, onConfirm }) {
                       de {fmt(a.aberto)} · falta {fmt(a.falta)}
                     </div>
                   )}
+                  {!unico && a.aplicado > 0 && (
+                    <select
+                      value={formaPorConta[a.conta.id] || ''}
+                      onChange={(e) => definirFormaConta(a.conta.id, e.target.value)}
+                      style={{
+                        marginTop: 4,
+                        height: 24,
+                        fontSize: 11,
+                        borderRadius: 5,
+                        border: `1px solid ${formaPorConta[a.conta.id] ? 'var(--border-md)' : '#FCA5A5'}`,
+                        color: 'var(--text-secondary)',
+                        background: 'var(--surface)',
+                      }}
+                    >
+                      <option value='' disabled>forma...</option>
+                      {['Dinheiro', 'Cartão', 'Cheque', 'Haver', 'PIX'].map((f) => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
             ))}
@@ -181,28 +221,35 @@ function ModalConfirmarRecebimento({ contas, onClose, onConfirm }) {
                 fontWeight: 500,
               }}
             >
-              FORMA DE PAGAMENTO
+              {unico ? 'FORMA DE PAGAMENTO' : 'FORMA DE PAGAMENTO — aplicar a todos os títulos acima'}
             </div>
             <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-              {['Dinheiro', 'Cartão', 'Cheque', 'Haver', 'PIX'].map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setForma(f)}
-                  style={{
-                    padding: '7px 14px',
-                    borderRadius: 8,
-                    fontSize: 13,
-                    border:
-                      forma === f ? '2px solid #185FA5' : '1px solid var(--border-md)',
-                    background: forma === f ? '#EBF3FC' : 'var(--surface)',
-                    color: forma === f ? '#185FA5' : 'var(--text-secondary)',
-                    fontWeight: forma === f ? 600 : 400,
-                  }}
-                >
-                  {f}
-                </button>
-              ))}
+              {['Dinheiro', 'Cartão', 'Cheque', 'Haver', 'PIX'].map((f) => {
+                const ativa = contasAtivas.length > 0 && contasAtivas.every((a) => formaPorConta[a.conta.id] === f)
+                return (
+                  <button
+                    key={f}
+                    onClick={() => aplicarFormaATodos(f)}
+                    style={{
+                      padding: '7px 14px',
+                      borderRadius: 8,
+                      fontSize: 13,
+                      border: ativa ? '2px solid #185FA5' : '1px solid var(--border-md)',
+                      background: ativa ? '#EBF3FC' : 'var(--surface)',
+                      color: ativa ? '#185FA5' : 'var(--text-secondary)',
+                      fontWeight: ativa ? 600 : 400,
+                    }}
+                  >
+                    {f}
+                  </button>
+                )
+              })}
             </div>
+            {!unico && (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                Pagou em mais de uma forma? Ajuste cada título individualmente na lista acima.
+              </div>
+            )}
           </div>
 
           <div
@@ -641,6 +688,84 @@ function ModalDetalheDocumento({ nroDocto, contaResumo, pagamentoContexto, onClo
   )
 }
 
+// Marca clientes que ficam de fora do PDF/Excel exportado (ex: o dono, que
+// não precisa ser "cobrado" no relatório de algo que ele mesmo sabe que
+// deve). Não mexe na tela nem nos totais — só no arquivo gerado.
+function ModalExcluirClientesRelatorio({ clientes, excluidos, busca, onBusca, onToggle, onFechar }) {
+  const lista = clientes.filter(
+    (c) => !busca || c.nome.toLowerCase().includes(busca.toLowerCase()) || c.codigo.includes(busca),
+  )
+  return (
+    <div
+      style={{
+        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 260,
+      }}
+    >
+      <div
+        style={{
+          background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border-md)',
+          width: 420, maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+          boxShadow: '0 16px 40px rgba(0,0,0,0.14)', overflow: 'hidden',
+        }}
+      >
+        <div style={{ padding: '16px 20px 10px' }}>
+          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Excluir clientes do relatório</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+            Quem for marcado aqui não entra no PDF/Excel exportado — continua normal na tela, nos totais e na cobrança.
+          </div>
+          <input
+            value={busca}
+            onChange={(e) => onBusca(e.target.value)}
+            placeholder='Buscar cliente...'
+            autoFocus
+            style={{ width: '100%', height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13 }}
+          />
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px' }}>
+          {lista.length === 0 ? (
+            <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+              Nenhum cliente encontrado.
+            </div>
+          ) : (
+            lista.map((c) => {
+              const marcado = excluidos.some((x) => x.codigo === c.codigo)
+              return (
+                <label
+                  key={c.codigo}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}
+                >
+                  <input
+                    type='checkbox'
+                    checked={marcado}
+                    onChange={() => onToggle(c)}
+                    style={{ width: 14, height: 14, cursor: 'pointer', flexShrink: 0 }}
+                  />
+                  {c.nome} <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>(#{c.codigo})</span>
+                </label>
+              )
+            })
+          )}
+        </div>
+        <div
+          style={{
+            padding: '10px 20px', borderTop: '1px solid var(--border-md)',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}
+        >
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{excluidos.length} excluído(s)</span>
+          <button
+            onClick={onFechar}
+            style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid var(--border-md)', fontSize: 13, color: 'var(--text-secondary)' }}
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Kpi({ label, value, color }) {
   return (
     <div
@@ -947,6 +1072,37 @@ export default function ContasReceber({ usuario }) {
   const [dadosTotais, setDadosTotais] = useState([])
   const [agruparCliente, setAgruparCliente] = useState(false)
 
+  // Clientes que não devem aparecer no PDF/Excel exportado (ex: o próprio
+  // dono, que "compra fiado" de si mesmo e já sabe o que deve — não faz
+  // sentido cobrar ele no relatório). Só afeta o arquivo exportado: tela,
+  // totais e cobrança continuam normais, porque a dívida é real. Fica salvo
+  // no navegador pra não precisar marcar de novo toda vez.
+  const [clientesExcluidos, setClientesExcluidos] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('cr_clientes_excluidos_relatorio') || '[]')
+    } catch {
+      return []
+    }
+  })
+  const [painelExcluir, setPainelExcluir] = useState(false)
+  const [buscaExcluir, setBuscaExcluir] = useState('')
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('cr_clientes_excluidos_relatorio', JSON.stringify(clientesExcluidos))
+    } catch {
+      // localStorage indisponível (ex: modo privado) — só não persiste entre sessões
+    }
+  }, [clientesExcluidos])
+
+  function alternarExclusaoCliente(c) {
+    setClientesExcluidos((prev) =>
+      prev.some((x) => x.codigo === c.codigo)
+        ? prev.filter((x) => x.codigo !== c.codigo)
+        : [...prev, c],
+    )
+  }
+
   // ── Carrega do banco ─────────────────────────────────────────
   // dados = respeita o filtro de status (o que a TABELA mostra). dadosTotais
   // = sempre todas as situações (exceto cancelada) — os cards do topo (Em
@@ -1027,18 +1183,6 @@ export default function ContasReceber({ usuario }) {
     .filter((c) => c.situacao_docto === 'X')
     .reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
 
-  // Totais das linhas atualmente na TABELA (respeitam o filtro de status),
-  // usados só nos relatórios Excel/PDF — o "TOTAL GERAL" do PDF tem que
-  // bater com as linhas impressas nele, diferente dos cards do topo (sempre
-  // gerais, ver totaisFiltrados acima).
-  const totalPagoFiltrados = filtrados.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
-  const totalDoctoTabela = filtrados
-    .filter((c) => c.situacao_docto !== 'C')
-    .reduce((s, c) => s + (c.valor_docto || 0), 0)
-  const totalEmAbertoTabela = filtrados
-    .filter((c) => c.situacao_docto === 'A')
-    .reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
-
   const { ordenados, coluna, direcao, alternar } = useOrdenacao(filtrados, {
     acessores: {
       nome_cliente: (c) => c.nome_cliente || c.codigo_cliente || '',
@@ -1049,6 +1193,33 @@ export default function ContasReceber({ usuario }) {
 
   // ── Relatório (Excel/PDF), em ordem de vencimento ───────────────────────
   const nomeClienteDe = (c) => c.codigo_cliente ? `${c.nome_cliente} (#${c.codigo_cliente})` : c.nome_cliente
+
+  // Lista de clientes pra marcar exclusão no relatório — só quem tem conta
+  // a receber carregada (não precisa buscar todo o cadastro de clientes).
+  const clientesDisponiveis = (() => {
+    const mapa = new Map()
+    for (const c of dadosTotais) {
+      if (c.codigo_cliente && !mapa.has(c.codigo_cliente)) {
+        mapa.set(c.codigo_cliente, c.nome_cliente || c.codigo_cliente)
+      }
+    }
+    return [...mapa.entries()]
+      .map(([codigo, nome]) => ({ codigo, nome }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  })()
+
+  // Base do PDF/Excel exportado, sem os clientes marcados pra ficar de fora
+  // (ex: o dono) — a tabela na tela e os cards de totais continuam com todo
+  // mundo, só o arquivo exportado que muda.
+  const codigosExcluidosRelatorio = new Set(clientesExcluidos.map((c) => c.codigo))
+  const filtradosRelatorio = filtrados.filter((c) => !codigosExcluidosRelatorio.has(c.codigo_cliente))
+  const totalDoctoRelatorio = filtradosRelatorio
+    .filter((c) => c.situacao_docto !== 'C')
+    .reduce((s, c) => s + (c.valor_docto || 0), 0)
+  const totalPagoRelatorio = filtradosRelatorio.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
+  const totalEmAbertoRelatorio = filtradosRelatorio
+    .filter((c) => c.situacao_docto === 'A')
+    .reduce((s, c) => s + (c.valor_docto - (c.valor_pagamento || 0)), 0)
 
   // Um grupo por cliente (ordem alfabética), parcelas de cada um por vencimento —
   // usado tanto no Excel quanto no PDF quando "Agrupar por cliente" está ativo.
@@ -1082,7 +1253,7 @@ export default function ContasReceber({ usuario }) {
     let linhas
     if (agruparCliente) {
       linhas = []
-      for (const { nome, itens } of agruparPorCliente(filtrados)) {
+      for (const { nome, itens } of agruparPorCliente(filtradosRelatorio)) {
         linhas.push(...itens.map((c) => linhaDe(c, nome)))
         const subVal = itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
         const subPago = itens.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
@@ -1095,7 +1266,7 @@ export default function ContasReceber({ usuario }) {
         })
       }
     } else {
-      const porVencimento = [...filtrados].sort((a, b) =>
+      const porVencimento = [...filtradosRelatorio].sort((a, b) =>
         (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
       )
       linhas = porVencimento.map((c) => linhaDe(c, nomeClienteDe(c)))
@@ -1105,9 +1276,9 @@ export default function ContasReceber({ usuario }) {
       Documento: '',
       Cliente: 'TOTAL GERAL',
       Vencimento: '',
-      'Valor (R$)': totalDoctoTabela.toFixed(2).replace('.', ','),
-      'Pago (R$)': totalPagoFiltrados.toFixed(2).replace('.', ','),
-      'Em Aberto (R$)': totalEmAbertoTabela.toFixed(2).replace('.', ','),
+      'Valor (R$)': totalDoctoRelatorio.toFixed(2).replace('.', ','),
+      'Pago (R$)': totalPagoRelatorio.toFixed(2).replace('.', ','),
+      'Em Aberto (R$)': totalEmAbertoRelatorio.toFixed(2).replace('.', ','),
       Situação: '',
     })
     exportarCSV(linhas, `contas_receber${agruparCliente ? '_por_cliente' : ''}_${new Date().toISOString().slice(0, 10)}`)
@@ -1131,7 +1302,7 @@ export default function ContasReceber({ usuario }) {
         const emAberto = c.valor_docto - (c.valor_pagamento || 0)
         return `<tr><td>${c.nro_docto || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(c.valor_pagamento || 0)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${STATUS_CFG[getSituacao(c)].label}</td></tr>`
       }
-      const grupos = agruparPorCliente(filtrados)
+      const grupos = agruparPorCliente(filtradosRelatorio)
       const secoes = grupos.map(({ nome, itens }) => {
         const subVal = itens.reduce((s, c) => s + (c.valor_docto || 0), 0)
         const subPago = itens.reduce((s, c) => s + (c.valor_pagamento || 0), 0)
@@ -1148,11 +1319,11 @@ export default function ContasReceber({ usuario }) {
       html = gerarHtmlSecoes({
         empresa,
         titulo: 'Contas a Receber por Cliente',
-        subtitulo: `${filtrados.length} parcela(s) — ${grupos.length} cliente(s) — gerado em ${dataGerado}`,
+        subtitulo: `${filtradosRelatorio.length} parcela(s) — ${grupos.length} cliente(s) — gerado em ${dataGerado}`,
         secoes,
       })
     } else {
-      const porVencimento = [...filtrados].sort((a, b) =>
+      const porVencimento = [...filtradosRelatorio].sort((a, b) =>
         (a.data_vencimento || '').localeCompare(b.data_vencimento || ''),
       )
       const colunas = [
@@ -1167,7 +1338,7 @@ export default function ContasReceber({ usuario }) {
       html = gerarHtmlListaSimples({
         empresa,
         titulo: 'Contas a Receber',
-        subtitulo: `${filtrados.length} parcela(s), ordenadas por vencimento — gerado em ${dataGerado}`,
+        subtitulo: `${filtradosRelatorio.length} parcela(s), ordenadas por vencimento — gerado em ${dataGerado}`,
         colunas,
         linhas: porVencimento,
         montarLinha: (c) => {
@@ -1175,7 +1346,7 @@ export default function ContasReceber({ usuario }) {
           return `<tr><td>${c.nro_docto || '—'}</td><td>${c.nome_cliente || c.codigo_cliente || '—'}</td><td>${fmtDate(c.data_vencimento)}</td><td class="num">${fmtMoedaBR(c.valor_docto)}</td><td class="num">${fmtMoedaBR(c.valor_pagamento || 0)}</td><td class="num">${fmtMoedaBR(emAberto)}</td><td>${STATUS_CFG[getSituacao(c)].label}</td></tr>`
         },
         montarTotalGeral: () =>
-          `<td colspan="3">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDoctoTabela)}</td><td class="num">${fmtMoedaBR(totalPagoFiltrados)}</td><td class="num">${fmtMoedaBR(totalEmAbertoTabela)}</td><td></td>`,
+          `<td colspan="3">TOTAL GERAL</td><td class="num">${fmtMoedaBR(totalDoctoRelatorio)}</td><td class="num">${fmtMoedaBR(totalPagoRelatorio)}</td><td class="num">${fmtMoedaBR(totalEmAbertoRelatorio)}</td><td></td>`,
       })
     }
     await gerarPdfRelatorio(html, `contas_receber${agruparCliente ? '_por_cliente' : ''}_${new Date().toISOString().slice(0, 10)}`)
@@ -1198,7 +1369,7 @@ export default function ContasReceber({ usuario }) {
   // uma via a mesma RPC de sempre — não existe um "receber em lote" no banco,
   // então repete a chamada já auditada por conta em vez de criar uma via de
   // escrita direta na tabela.
-  async function confirmarRecebimento(pagamentos, forma, data) {
+  async function confirmarRecebimento(pagamentos, data) {
     const contasAlvo = dados.filter((c) => pagamentos.some((p) => p.id === c.id))
     const recebidas = []
     const falhas = []
@@ -1208,7 +1379,7 @@ export default function ContasReceber({ usuario }) {
         const resultado = await window.api.contasReceber.receber({
           id: p.id,
           valor_pagamento: p.valor_pagamento,
-          forma,
+          forma: p.forma,
           data_pagamento: data,
           usuario: usuario?.usuario || 'sistema',
         })
@@ -1450,6 +1621,17 @@ export default function ContasReceber({ usuario }) {
           nroDocto={detalheDocumento.nroDocto}
           contaResumo={detalheDocumento.contaResumo}
           onClose={() => setDetalheDocumento(null)}
+        />
+      )}
+
+      {painelExcluir && (
+        <ModalExcluirClientesRelatorio
+          clientes={clientesDisponiveis}
+          excluidos={clientesExcluidos}
+          busca={buscaExcluir}
+          onBusca={setBuscaExcluir}
+          onToggle={alternarExclusaoCliente}
+          onFechar={() => setPainelExcluir(false)}
         />
       )}
 
@@ -1824,6 +2006,19 @@ export default function ContasReceber({ usuario }) {
           />
           Agrupar por cliente
         </label>
+        <button
+          onClick={() => setPainelExcluir(true)}
+          title='Clientes marcados aqui não entram no PDF/Excel exportado'
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px', borderRadius: 8,
+            fontSize: 12, border: '1px solid var(--border-md)',
+            background: clientesExcluidos.length ? '#FFF5F5' : 'transparent',
+            color: clientesExcluidos.length ? '#C53030' : 'var(--text-secondary)',
+            cursor: 'pointer',
+          }}
+        >
+          <Filter size={13} /> Excluir do relatório{clientesExcluidos.length ? ` (${clientesExcluidos.length})` : ''}
+        </button>
         <BotoesRelatorio onExportarExcel={exportarExcel} onGerarPDF={gerarRelatorioPDF} abrirParaCima />
         <div style={{ flex: 1 }} />
         <button

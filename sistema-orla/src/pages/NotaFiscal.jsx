@@ -5,6 +5,12 @@ import { fmtQtd } from '../utils/formatQtd'
 const fmt = (v) =>
   (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
+// Qtd/Valor da NF-e manual são digitados à mão (produtos por KG usam vírgula,
+// ex: "39,000") — sem isso, Number("39,000") vira NaN e a Bling recebe 1.
+function parseNum(v) {
+  return parseFloat(String(v).replace(',', '.')) || 0
+}
+
 function enderecoCompleto(c) {
   if (!c) return ''
   const linha1 = [c.endereco, c.numero].filter(Boolean).join(', ')
@@ -298,8 +304,16 @@ export default function NotaFiscal() {
     const destinatario = clienteAvulso ? destAvulso : clienteSelecionado
     if (!destinatario) return window.alert('Selecione um cliente ou preencha os dados do destinatário.')
     if (!(destinatario.nome || '').trim()) return window.alert('Informe o nome do destinatário.')
-    if (itensManuais.some((it) => !it.descricao || !it.ncm || !it.valor)) {
-      return window.alert('Preencha descrição, NCM e valor de todos os itens.')
+
+    // Normaliza qtd/valor aqui (aceita vírgula decimal) antes de checar e de
+    // mandar pra Bling — evita o valor digitado "não bater" na nota emitida.
+    const itensParaEnviar = itensManuais.map((it) => ({
+      ...it,
+      quantidade: parseNum(it.quantidade),
+      valor: parseNum(it.valor),
+    }))
+    if (itensParaEnviar.some((it) => !it.descricao || !it.ncm || !it.valor || !it.quantidade)) {
+      return window.alert('Preencha descrição, NCM, quantidade e valor de todos os itens.')
     }
     if (tipoManual === 'outra' && !naturezaManual) return window.alert('Escolha a natureza de operação.')
 
@@ -309,7 +323,7 @@ export default function NotaFiscal() {
       const r = await window.api.nfe.emitirManual({
         tipoOperacao: tipoManual,
         destinatario,
-        itens: itensManuais,
+        itens: itensParaEnviar,
         formaPagamentoDescricao: formaPagManual,
         dataOperacao: dataManual,
         dataVencimento: vencimentoManual,
